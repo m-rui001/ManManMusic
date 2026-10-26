@@ -203,6 +203,52 @@ Future<void> openFromClipboard(BuildContext context) async {
   await openBiliShareText(context, text);
 }
 
+/// 记录上次自动处理的剪贴板内容，避免重复处理
+String _lastAutoClipboard = "";
+DateTime? _lastAutoClipboardTime;
+
+/// 冷启动时自动检查剪贴板并处理分享内容
+///
+/// 命中满满音乐分享或 B 站链接则直接处理，否则静默返回（不弹提示）。
+Future<void> autoCheckClipboard(BuildContext context) async {
+  String text = "";
+
+  try {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    text = (data?.text ?? "").trim();
+  } catch (_) {
+    return;
+  }
+
+  if (text.isEmpty) return;
+
+  // 同一内容 30 秒内不重复处理
+  final now = DateTime.now();
+  if (text == _lastAutoClipboard &&
+      _lastAutoClipboardTime != null &&
+      now.difference(_lastAutoClipboardTime!).inSeconds < 30) {
+    return;
+  }
+
+  final manman = parseManmanShareText(text);
+  final isBili = extractBiliUrl(text) != null;
+
+  // 都不是就静默返回
+  if (manman == null && !isBili) return;
+
+  _lastAutoClipboard = text;
+  _lastAutoClipboardTime = now;
+
+  if (!context.mounted) return;
+
+  if (manman != null) {
+    await handleSharePayload(context, manman);
+    return;
+  }
+
+  await openBiliShareText(context, text);
+}
+
 /// 处理解析出来的满满音乐分享
 Future<void> handleSharePayload(
   BuildContext context,

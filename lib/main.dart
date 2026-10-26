@@ -8,6 +8,7 @@ import "package:bobomusic/constants/notification.dart";
 import "package:bobomusic/db/db.dart";
 import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/download/model.dart";
+import "package:bobomusic/modules/history/play_history.dart";
 import "package:bobomusic/permission/permission.dart";
 import "package:bobomusic/utils/get_cache_color.dart";
 import "package:bobomusic/utils/window_manage.dart";
@@ -89,6 +90,9 @@ void main() async {
   // 读取 B 站登录态（失败不影响启动）
   await BiliAuth.instance.init();
 
+  // 历史播放（纯本地）
+  await PlayHistory.instance.init();
+
   primaryColor = await getCacheColor();
 
   runApp(
@@ -140,6 +144,11 @@ class MyAppState extends State<MyApp> {
       playerHandler: widget.playerHandler,
       playerService: widget.playerService,
     );
+
+    // 记录历史播放
+    widget.playerHandler.player.onPlayRecord = (music) {
+      PlayHistory.instance.record(music);
+    };
     _currentTheme = widget.initialTheme;
 
     // 一起听：挂载播放器
@@ -165,6 +174,14 @@ class MyAppState extends State<MyApp> {
     });
 
     Permissions.requestNotificationPermission();
+
+    // 冷启动延时读取剪贴板，自动识别分享链接（避开首页登录弹窗）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (!mounted) return;
+        autoCheckClipboard(context);
+      });
+    });
   }
 
   StreamSubscription<Uri>? _linkSub;

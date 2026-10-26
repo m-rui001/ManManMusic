@@ -36,6 +36,9 @@ class BBPlayer {
   final List<MusicItem> playerList = [];
   PlayerMode playerMode = PlayerMode.listLoop;
 
+  /// 开始播放时的回调（用于记录历史播放）
+  void Function(MusicItem music)? onPlayRecord;
+
   late AutoCloseMusic autoClose;
 
   Future<void> init() async {
@@ -447,6 +450,8 @@ class BBPlayer {
 
     if (isPlay) {
       await audio.play();
+      // 真正开始播放时才记账：当前这首歌
+      if (current != null) onPlayRecord?.call(current!);
     } else {
       await audio.pause();
     }

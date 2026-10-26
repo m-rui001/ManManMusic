@@ -36,6 +36,16 @@
 - Android 深链 + 系统分享：`MainActivity` 继承 `AudioServiceActivity`（保后台播放），
   通过 `MethodChannel("manman/share")` 把 `ACTION_SEND`/`ACTION_VIEW` 的文本交给 Dart。
 
+## 歌单 / 设置 / 剪贴板（已重构）
+- 歌单页 `lib/modules/music_order/music_order.dart`：已去掉「本地」Tab 与 `components/top_bar.dart`（TopBar）横向分栏，
+  改为纵向卡片列表（我喜欢 + 自定义歌单），点击 push `Scaffold + AppBar + MusicListCommon`，长按删除该歌单歌曲。
+  `TopBar` 仍被 `lib/modules/player/player_card/card.dart` 引用（FrozenTab.iLike），故文件保留。
+- `pages/music_local.dart` 仍存在但已无入口（MusicLocal 不再被任何地方引用），文件保留。
+- 设置页 `lib/modules/setting/setting.dart` 只保留：应用信息头、更换主题色、哔哩哔哩账号、检查更新、版本号、Copyright。
+  已删 help_doc / limit / support_me / thanks 四个页面；一起听与「打开分享链接」入口也移除。
+- 分享改为冷启动自动读剪贴板：`share_handler.dart` 的 `autoCheckClipboard(context)`，
+  在 `main.dart` initState 里 postFrameCallback + 1.5s 延迟调用；同一内容 30s 内不重复处理。
+
 ## 常用命令
 ```bash
 # 图标重新生成

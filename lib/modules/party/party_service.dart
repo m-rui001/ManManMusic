@@ -426,8 +426,7 @@ class PartyService {
   }
 
   /// 清理 90 秒没动静的成员
-  void _pruneMembers() {
-    final now = DateTime.now().millisecondsSinceEpoch;
+  void _pruneMembers() {    final now = DateTime.now().millisecondsSinceEpoch;
     final stale = _memberSeen.entries
         .where((e) => now - e.value > 90000)
         .map((e) => e.key)
@@ -461,4 +460,105 @@ class PartyService {
     _membersController.close();
     _disconnect();
   }
+
+  /// 探测某房间最近是否有人在听（一次性拉取，不建长连接）
+  ///
+  /// 用 ntfy 的 poll 参数只拿最近 60 秒的历史消息，避免长连接开销，
+  /// 也不会对免费公共中继造成压力。
+  Future<PartyProbe?> probeRoom(String targetRoom) async {
+    if (targetRoom.trim().isEmpty) return null;
+    final targetTopic = "manman_party_${targetRoom.trim()}";
+
+    try {
+      final resp = await Dio(
+        BaseOptions(
+          connectTimeout: const Duration(seconds: 5),
+          receiveTimeout: const Duration(seconds: 5),
+          validateStatus: (_) => true,
+          responseType: ResponseType.plain,
+          headers: {"User-Agent": "manman-music/party"},
+        ),
+      ).get<String>("$relayBase/$targetTopic/json?poll=1&since=60s");
+
+      if (resp.statusCode != 200) return null;
+      final text = resp.data ?? "";
+      if (text.isEmpty) return null;
+
+      PartyProbe? latest;
+
+      for (final line in text.split("\n")) {
+        final trimmed = line.trim();
+        if (trimmed.isEmpty) continue;
+
+        Map<String, dynamic> json;
+        try {
+          final decoded = jsonDecode(trimmed);
+          if (decoded is! Map) continue;
+          json = Map<String, dynamic>.from(decoded);
+        } catch (_) {
+          continue;
+        }
+
+        if (json["event"] != null && json["event"] != "message") continue;
+
+        final message = json["message"];
+        if (message is! String || message.isEmpty) continue;
+
+        Map<String, dynamic> payload;
+        try {
+          final decoded = jsonDecode(message);
+          if (decoded is! Map) continue;
+          payload = Map<String, dynamic>.from(decoded);
+        } catch (_) {
+          continue;
+        }
+
+        final state = PartyState.fromJson(payload);
+        if (state.roomId != targetRoom.trim()) continue;
+        if (state.type != PartyMessageType.state) continue;
+        if (state.musicId.isEmpty) continue;
+
+        // 只保留最新的一条
+        if (latest == null || state.at > latest.at) {
+          latest = PartyProbe(
+            nick: state.fromName,
+            musicName: state.name,
+            author: state.author,
+            cover: state.cover,
+            playing: state.playing,
+            at: state.at,
+          );
+        }
+      }
+
+      return latest;
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+/// 房间探测结果
+class PartyProbe {
+  final String nick;
+  final String musicName;
+  final String author;
+  final String cover;
+  final bool playing;
+
+  /// 对方发出状态的本机时间戳（毫秒）
+  final int at;
+
+  const PartyProbe({
+    required this.nick,
+    required this.musicName,
+    this.author = "",
+    this.cover = "",
+    this.playing = true,
+    required this.at,
+  });
+
+  /// 超过这个时长没更新就当作没在听
+  bool get isFresh =>
+      DateTime.now().millisecondsSinceEpoch - at < 90000;
 }

@@ -28,3 +28,12 @@ class ThemeColorChanged {
 
   ThemeColorChanged(this.newColor);
 }
+
+/// 切换底部导航页（0 首页 / 1 一起听 / 2 歌单 / 3 设置）
+class SwitchTab {
+  final int index;
+  SwitchTab(this.index);
+}
+
+/// 历史播放有更新，首页可以据此刷新
+class RefreshPlayHistory {}

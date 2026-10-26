@@ -378,4 +378,64 @@ class BiliAuth {
     if (data is! Map) return null;
     return Map<String, dynamic>.from(data);
   }
+
+  /// 拉取我关注的人（需要登录）
+  ///
+  /// 说明：B 站没有公开的「互关好友」接口，这里用关注列表代替。
+  /// 只在用户主动打开「一起听」时拉一页，不做翻页/轮询，避免触发风控。
+  Future<List<BiliFriend>> fetchFriends({int page = 1, int pageSize = 20}) async {
+    if (!isLogin) throw Exception("请先登录哔哩哔哩账号");
+    if (mid == 0) await refreshUserInfo();
+
+    final resp = await _dio.get(
+      "https://api.bilibili.com/x/relation/followings",
+      queryParameters: {
+        "vmid": "$mid",
+        "pn": "$page",
+        "ps": "$pageSize",
+        "order": "desc",
+        "order_type": "",
+      },
+      options: Options(headers: {"Cookie": cookieHeader}),
+    );
+
+    final data = _pick(resp.data);
+    if (data == null) return [];
+
+    final list = data["list"];
+    if (list is! List) return [];
+
+    return list
+        .whereType<Map>()
+        .map((e) => BiliFriend.fromJson(Map<String, dynamic>.from(e)))
+        .where((e) => e.mid > 0)
+        .toList();
+  }
+}
+
+/// 关注的 UP 主 / 用户
+class BiliFriend {
+  final int mid;
+  final String uname;
+  final String face;
+  final String sign;
+
+  const BiliFriend({
+    required this.mid,
+    required this.uname,
+    required this.face,
+    required this.sign,
+  });
+
+  factory BiliFriend.fromJson(Map<String, dynamic> json) {
+    return BiliFriend(
+      mid: (json["mid"] is int) ? json["mid"] : int.tryParse("${json["mid"]}") ?? 0,
+      uname: "${json["uname"] ?? ""}",
+      face: "${json["face"] ?? ""}",
+      sign: "${json["sign"] ?? ""}",
+    );
+  }
+
+  /// 该好友的个人房间号（与自己房间号规则一致）
+  String get roomId => "bili_$mid";
 }
