@@ -49,7 +49,7 @@ class DownloadModel extends ChangeNotifier {
 
 Future<Directory?> getDownloadDir() async {
   if (Platform.isAndroid) {
-    return Directory("/storage/emulated/0/Download/啵啵音乐");
+    return Directory("/storage/emulated/0/Download/满满音乐");
   }
   return await getDownloadsDirectory();
 }

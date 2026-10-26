@@ -1,33 +1,34 @@
-# flutter pub run flutter_launcher_icons
+# Flutter Launcher Icons 配置（可选工具）
+#
+# 本项目的图标由 tools/gen_icons.py 直接从不带文字的 logo.jpg 生成并写入
+# 各平台资源目录，无需再跑 flutter_launcher_icons。
+# 如需临时用官方工具重新生成，可执行：
+#   dart run flutter_launcher_icons
 flutter_launcher_icons:
   image_path: "assets/ic_launch.png"
-  background_color: "#000000"
-  adaptive_icon_background: "#000000"
+  background_color: "#CFC4AA"
+  adaptive_icon_background: "#CFC4AA"
   adaptive_icon_foreground: "assets/ic_launch.png"
 
   android: "launcher_icon"
-  # image_path_android: "assets/icon/icon.png"
-  min_sdk_android: 21 # android min sdk min:16, default 21
-  # adaptive_icon_background: "assets/icon/background.png"
-  # adaptive_icon_foreground: "assets/icon/foreground.png"
+  min_sdk_android: 21
 
   ios: true
-  # image_path_ios: "assets/icon/icon.png"
   remove_alpha_channel_ios: true
 
   web:
     generate: true
     image_path: "assets/ic_launch.png"
-    background_color: "#000000"
-    theme_color: "#hexcode"
+    background_color: "#CFC4AA"
+    theme_color: "#CFC4AA"
 
   windows:
     generate: true
     image_path: "assets/ic_launch.png"
-    icon_size: 48 # min:48, max:256, default: 48
-    background_color: "#000000"
+    icon_size: 48
+    background_color: "#CFC4AA"
 
   macos:
     generate: true
     image_path: "assets/ic_launch.png"
-    background_color: "#000000"
+    background_color: "#CFC4AA"

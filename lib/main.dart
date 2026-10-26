@@ -2,6 +2,7 @@ import "dart:async";
 import "dart:io";
 
 import "package:audio_service/audio_service.dart";
+import "package:bobomusic/constants/app_info.dart";
 import "package:bobomusic/constants/notification.dart";
 import "package:bobomusic/db/db.dart";
 import "package:bobomusic/event_bus/event_bus.dart";
@@ -60,6 +61,7 @@ void main() async {
   }
 
   WidgetsFlutterBinding.ensureInitialized();
+  await loadAppInfo();
   JustAudioMediaKit.ensureInitialized(
     iOS: false,
     android: false,

@@ -1,3 +1,4 @@
+import "package:bobomusic/constants/app_info.dart";
 import "package:bobomusic/constants/cache_key.dart";
 import "package:bobomusic/db/db.dart";
 import "package:bobomusic/event_bus/event_bus.dart";
@@ -49,12 +50,12 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                         children: [
                           const CircleAvatar(
                             radius: 12,
-                            backgroundImage: AssetImage("assets/ic_launch.png"),
+                            backgroundImage: AssetImage(appLogoAsset),
                           ),
                           const SizedBox(width: 18),
-                          Text("啵啵音乐", style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 16)),
+                          Text(appName, style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 16)),
                           const SizedBox(width: 12),
-                          const Text("听歌自由", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                          const Text(appSlogan, style: TextStyle(color: Colors.grey, fontSize: 12)),
                         ],
                       ),
                     )
@@ -185,15 +186,15 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                   ],
                 ),
                 const SizedBox(height: 20),
-                const Row(
+                Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    CircleAvatar(
+                    const CircleAvatar(
                       radius: 8,
-                      backgroundImage: AssetImage("assets/ic_launch.png"),
+                      backgroundImage: AssetImage(appLogoAsset),
                     ),
-                    SizedBox(width: 6),
-                    Text("啵啵音乐v2.7.0", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                    const SizedBox(width: 6),
+                    Text("$appName v$appVersion", style: const TextStyle(color: Colors.grey, fontSize: 12)),
                   ],
                 ),
                 const SizedBox(height: 6),

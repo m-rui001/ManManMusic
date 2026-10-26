@@ -1,4 +1,5 @@
 import "package:bobomusic/components/custom_dialog/custom_dialog.dart";
+import "package:bobomusic/constants/app_info.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:dio/dio.dart";
 import "package:flutter/gestures.dart";
@@ -11,8 +12,8 @@ import "package:url_launcher/url_launcher.dart";
 updateAppVersion(BuildContext context, {bool? showToast = true}) async {
   try {
     final checker = ReleaseChecker(
-      owner: "Redstone-1",
-      repo: "bobomusic",
+      owner: appRepoOwner,
+      repo: appRepoName,
     );
 
     EasyLoading.show(maskType: EasyLoadingMaskType.black);
@@ -63,7 +64,7 @@ updateAppVersion(BuildContext context, {bool? showToast = true}) async {
                       style: const TextStyle(color: Colors.grey, fontSize: 12),
                       children: [
                         TextSpan(
-                          text: "啵啵音乐",
+                          text: appName,
                           style: const TextStyle(
                             color: Colors.blue,
                             decoration: TextDecoration.underline,

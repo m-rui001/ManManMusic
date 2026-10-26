@@ -1,9 +1,9 @@
 {
-    "name": "bobomusic",
-    "short_name": "bobomusic",
+    "name": "满满音乐",
+    "short_name": "满满音乐",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#000000",
+    "background_color": "#CFC4AA",
     "theme_color": "#hexcode",
     "description": "A new Flutter project.",
     "orientation": "portrait-primary",
