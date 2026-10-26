@@ -6,6 +6,7 @@ import "package:bobomusic/icons/icons_svg.dart";
 import "package:bobomusic/modules/setting/components/setting_card.dart";
 import "package:bobomusic/modules/bili_account/bili_account_page.dart";
 import "package:bobomusic/modules/party/party_pick_page.dart";
+import "package:bobomusic/modules/party/party_page.dart";
 import "package:bobomusic/modules/party/party_roster.dart";
 import "package:bobomusic/modules/party/party_tone.dart";
 import "package:bobomusic/modules/setting/pages/theme_color_setting.dart";
@@ -181,7 +182,9 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                             builder: (_) => const PartyPickPage(),
                           ),
                         );
-                        _refreshRoster();
+                        await _refreshRoster();
+                        // 名单改了要立刻生效：新加的人能进，移出的人被请出去
+                        PartySession.instance.refreshPermissions();
                       },
                     ),
                   ],
