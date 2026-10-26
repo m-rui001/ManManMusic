@@ -1,4 +1,5 @@
 import "package:bobomusic/constants/app_info.dart";
+import "package:bobomusic/modules/history/play_history.dart";
 import "package:bobomusic/modules/share/share_payload.dart";
 import "package:bobomusic/origin_sdk/bili/utils.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
@@ -88,6 +89,48 @@ void main() {
       expect(restored.origin, OriginType.bili);
       expect(restored.orderName, "我喜欢");
       expect(restored.playId, "play-1");
+    });
+  });
+
+  group("历史播放条目序列化", () {
+    test("HistoryEntry 往返一致", () {
+      final music = MusicItem(
+        id: "1_BV1xx411c7mD_2",
+        cover: "https://example.com/c.jpg",
+        name: "历史里的歌",
+        duration: 180,
+        author: "某个UP",
+        origin: OriginType.bili,
+        playId: "p-9",
+        orderName: "我喜欢",
+      );
+
+      final entry = HistoryEntry(
+        music: music,
+        playedAt: DateTime.fromMillisecondsSinceEpoch(1700000000000),
+        count: 3,
+      );
+
+      final restored = HistoryEntry.fromJson(entry.toJson());
+
+      expect(restored.music.id, music.id);
+      expect(restored.music.name, music.name);
+      expect(restored.music.author, music.author);
+      expect(restored.music.duration, music.duration);
+      expect(restored.music.playId, "p-9");
+      expect(restored.music.orderName, "我喜欢");
+      expect(restored.music.origin, OriginType.bili);
+      expect(restored.playedAt.millisecondsSinceEpoch, 1700000000000);
+      expect(restored.count, 3);
+    });
+
+    test("缺少字段时回退到安全默认值", () {
+      final restored = HistoryEntry.fromJson(<String, dynamic>{});
+
+      expect(restored.music.id, "");
+      expect(restored.music.duration, 0);
+      expect(restored.count, 1);
+      expect(restored.music.origin, OriginType.bili);
     });
   });
 }
