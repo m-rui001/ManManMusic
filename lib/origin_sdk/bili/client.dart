@@ -5,9 +5,10 @@ import "package:bobomusic/origin_sdk/bili/utils.dart";
 import "package:dio/dio.dart";
 import "package:shared_preferences/shared_preferences.dart";
 import "../origin_types.dart";
+import "./auth.dart";
 import "./sign.dart";
-import "./types.dart";
 import "./ticket.dart";
+import "./types.dart";
 
 const _userAgent =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -51,7 +52,16 @@ class BiliClient implements OriginService {
             cookies.add("buvid3=${spiData?.b3};");
             cookies.add("bili_ticket=$ticket;");
             cookies.add("b_nut=$bNut;");
-            final cookie = cookies.join(" ");
+          }
+
+          // 已登录时带上账号 Cookie（正常 web 端行为，用于拿到更高音质）
+          final loginCookie = BiliAuth.instance.cookieHeader;
+          if (BiliAuth.instance.isLogin && loginCookie.isNotEmpty) {
+            cookies.add(loginCookie);
+          }
+
+          final cookie = cookies.where((e) => e.trim().isNotEmpty).join(" ");
+          if (cookie.isNotEmpty) {
             options.headers["cookie"] = cookie;
           }
           return handler.next(options);
@@ -319,6 +329,9 @@ class BiliClient implements OriginService {
   }
 
   // 获取音乐播放地址
+  //
+  // 已登录（且为大会员）时请求 fnval=4048，可拿到 Hi-Res / 杜比 / 无损音轨；
+  // 未登录时退回 fnval=16，只拿普通 DASH 音轨。
   @override
   Future<MusicUrl> getMusicUrl(String id) async {
     BiliId biliid = BiliId.unicode(id);
@@ -328,24 +341,74 @@ class BiliClient implements OriginService {
     await init();
     const apiPath = "https://api.bilibili.com/x/player/wbi/playurl";
     // const url = "https://api.bilibili.com/x/player/playurl";
+    final tryHiRes = BiliAuth.instance.isLogin;
     Map<String, String> query = _signParams({
       "avid": biliid.aid,
       "bvid": biliid.bvid,
       "cid": biliid.cid!,
-      "fnval": "16",
+      "fnval": tryHiRes ? "4048" : "16",
+      "fourk": "1",
     });
     final uri = Uri.parse(apiPath).replace(queryParameters: query).toString();
-    final response = await dio.get(uri);
-    final data = response.data["data"];
-    List<dynamic> audioList = data["dash"]?["audio"]?.toList() ?? [];
-    if (audioList.isEmpty) {
-      throw response.data;
+    dynamic response;
+    try {
+      response = await dio.get(uri);
+    } catch (e) {
+      // 高音质请求被拒时，静默退回普通音质，避免影响播放
+      if (!tryHiRes) rethrow;
+      query = _signParams({
+        "avid": biliid.aid,
+        "bvid": biliid.bvid,
+        "cid": biliid.cid!,
+        "fnval": "16",
+      });
+      response = await dio.get(
+        Uri.parse(apiPath).replace(queryParameters: query).toString(),
+      );
     }
-    // 排序，取带宽最大的音质最高
-    audioList.sort((a, b) => b["bandwidth"].compareTo(a["bandwidth"]));
-    String murl = audioList[0]["baseUrl"];
+
+    final data = response.data["data"];
+    final dash = data["dash"];
+    if (dash == null) {
+      throw Exception("该视频没有音频流");
+    }
+
+    // 汇总所有可选音轨
+    final List<Map> candidates = [];
+    final audioList = (dash["audio"] as List?) ?? [];
+    for (final a in audioList) {
+      if (a is Map) candidates.add(a);
+    }
+    // Hi-Res / 无损
+    final flac = dash["flac"];
+    if (flac is Map && flac["audio"] is Map) {
+      candidates.add(Map.from(flac["audio"] as Map));
+    }
+    // 杜比全景声
+    final dolby = dash["dolby"];
+    if (dolby is Map && dolby["audio"] is List) {
+      for (final a in (dolby["audio"] as List)) {
+        if (a is Map) candidates.add(Map.from(a));
+      }
+    }
+
+    if (candidates.isEmpty) {
+      throw Exception("获取音频地址失败：没有可用音轨");
+    }
+
+    // 按带宽排序，取最高音质
+    candidates.sort(
+      (a, b) => (b["bandwidth"] ?? 0).compareTo(a["bandwidth"] ?? 0),
+    );
+    final best = candidates.first;
+    final murl =
+        best["baseUrl"] ?? best["base_url"] ?? best["base_url_backup"];
+    if (murl == null) {
+      throw Exception("获取音频地址失败");
+    }
+
     return MusicUrl(
-      url: murl,
+      url: "$murl",
       headers: {"Referer": _referer},
     );
   }

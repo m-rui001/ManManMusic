@@ -136,7 +136,7 @@ class CurrentListState extends State<CurrentList> {
           return Container(
             decoration: isCurrentPlaying
                 ? BoxDecoration(
-                    color: Theme.of(context).primaryColor.withOpacity(0.1),
+                    color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
                   )
                 : null,
             child: MusicListTile(

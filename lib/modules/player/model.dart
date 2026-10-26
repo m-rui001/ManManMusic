@@ -25,6 +25,9 @@ class PlayerModel extends ChangeNotifier {
 
   bool get isLoading => _playerHandler?.player.isLoading ?? false;
 
+  /// 当前播放进度
+  Duration get currentPosition => _audio?.position ?? Duration.zero;
+
   bool get isPlaying {
     return _playerHandler?.player.isPlaying ?? false;
   }

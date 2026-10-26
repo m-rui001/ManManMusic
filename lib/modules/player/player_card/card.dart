@@ -15,6 +15,7 @@ import "package:bobomusic/modules/player/lyrics_card/lyric_scroller.dart";
 import "package:bobomusic/modules/player/player_card/current_list.dart";
 import "package:bobomusic/modules/player/player_card/vinyl_record.dart";
 import "package:bobomusic/modules/player/utils.dart";
+import "package:bobomusic/modules/share/share_sheet.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:bobomusic/origin_sdk/service.dart";
 import "package:bobomusic/utils/check_music_local_repeat.dart";
@@ -415,6 +416,13 @@ class PlayerCardState extends State<PlayerCard> {
               } else {
                 BotToast.showText(text: "找不到视频");
               }
+            },
+          ),
+          RippleIcon(
+            size: 28,
+            child: Icon(Icons.ios_share, size: 27, color: primaryColor),
+            onTap: () {
+              showShareSheet(context);
             },
           ),
           if(player.current!.orderName.isNotEmpty)

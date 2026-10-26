@@ -1,6 +1,7 @@
 import "dart:async";
 import "dart:io";
 
+import "package:app_links/app_links.dart";
 import "package:audio_service/audio_service.dart";
 import "package:bobomusic/constants/app_info.dart";
 import "package:bobomusic/constants/notification.dart";
@@ -13,8 +14,13 @@ import "package:bobomusic/utils/window_manage.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
 import "package:bobomusic/modules/home/home.dart";
+import "package:bobomusic/modules/party/party_page.dart";
 import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/modules/player/service.dart";
+import "package:bobomusic/modules/share/share_handler.dart";
+import "package:bobomusic/modules/share/share_payload.dart";
+import "package:bobomusic/origin_sdk/bili/auth.dart";
+import "package:bobomusic/utils/bili_link.dart";
 import "package:flutter/services.dart";
 import "package:flutter_easyloading/flutter_easyloading.dart";
 import "package:just_audio_media_kit/just_audio_media_kit.dart";
@@ -80,6 +86,9 @@ void main() async {
 
   await db.deleteAll(TableName.musicWaitPlay);
 
+  // 读取 B 站登录态（失败不影响启动）
+  await BiliAuth.instance.init();
+
   primaryColor = await getCacheColor();
 
   runApp(
@@ -132,6 +141,15 @@ class MyAppState extends State<MyApp> {
       playerService: widget.playerService,
     );
     _currentTheme = widget.initialTheme;
+
+    // 一起听：挂载播放器
+    PartySession.instance.attach(
+      Provider.of<PlayerModel>(context, listen: false),
+    );
+
+    _initDeepLinks();
+    IncomingShare.listen((text) => _onSharedText(text));
+
     _themeColorSubscription = eventBus.on<ThemeColorChanged>().listen((event) {
       setState(() {
         primaryColor = event.newColor;
@@ -149,9 +167,55 @@ class MyAppState extends State<MyApp> {
     Permissions.requestNotificationPermission();
   }
 
+  StreamSubscription<Uri>? _linkSub;
+
+  /// 监听深度链接（满满音乐 / manman:// 与 B 站分享）
+  void _initDeepLinks() {
+    final appLinks = AppLinks();
+    _linkSub = appLinks.uriLinkStream.listen(_onUri);
+
+    // 冷启动时可能已有链接
+    appLinks.getInitialLink().then((uri) {
+      if (uri != null) _onUri(uri);
+    });
+  }
+
+  /// 其它 App 分享过来的文本
+  Future<void> _onSharedText(String text) async {
+    if (!mounted) return;
+    final payload = parseManmanShareText(text);
+    if (payload != null) {
+      await handleSharePayload(context, payload);
+      return;
+    }
+    if (extractBiliUrl(text) != null) {
+      await openBiliShareText(context, text);
+      return;
+    }
+    BotToast.showText(text: "没有识别到可播放的内容");
+  }
+
+  Future<void> _onUri(Uri uri) async {
+    if (!mounted) return;
+
+    // 满满音乐分享
+    final payload = parseManmanUri(uri);
+    if (payload != null) {
+      await handleSharePayload(context, payload);
+      return;
+    }
+
+    // B 站链接
+    final text = uri.toString();
+    if (extractBiliUrl(text) != null) {
+      await openBiliShareText(context, text);
+    }
+  }
+
   @override
   void dispose() {
     _themeColorSubscription?.cancel();
+    _linkSub?.cancel();
     super.dispose();
   }
 

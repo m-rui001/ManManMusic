@@ -1,6 +1,8 @@
 import "package:bobomusic/constants/app_info.dart";
+import "package:bobomusic/modules/share/share_payload.dart";
 import "package:bobomusic/origin_sdk/bili/utils.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
+import "package:bobomusic/utils/bili_link.dart";
 import "package:bobomusic/utils/clear_html_tags.dart";
 import "package:flutter_test/flutter_test.dart";
 
@@ -14,6 +16,8 @@ void main() {
       expect(appLogoAsset, "assets/logo.png");
     });
   });
+
+  _moreTests();
 
   group("BiliId 编解码", () {
     test("只含 aid 与 bvid 时往返一致", () {
@@ -84,6 +88,155 @@ void main() {
       expect(restored.origin, OriginType.bili);
       expect(restored.orderName, "我喜欢");
       expect(restored.playId, "play-1");
+    });
+  });
+}
+
+// ===== 新增测试（分享 / 链接解析 / 一起听） =====
+
+void _moreTests() {
+  group("分享载荷编解码", () {
+    test("单曲分享往返一致", () {
+      const payload = SharePayload(
+        type: SharePayloadType.music,
+        musicId: "123_BV1xx411c7mD_456",
+        origin: "bili",
+        name: "某个视频标题",
+        author: "某个UP主",
+        cover: "https://i0.hdslb.com/cover.jpg",
+        duration: 213,
+        position: 41000,
+        from: "小明",
+      );
+
+      final code = payload.encode();
+      final decoded = SharePayload.decode(code);
+
+      expect(decoded, isNotNull);
+      expect(decoded!.type, SharePayloadType.music);
+      expect(decoded.musicId, payload.musicId);
+      expect(decoded.name, payload.name);
+      expect(decoded.author, payload.author);
+      expect(decoded.duration, 213);
+      expect(decoded.position, 41000);
+      expect(decoded.from, "小明");
+    });
+
+    test("一起听分享带房间号", () {
+      const payload = SharePayload(
+        type: SharePayloadType.party,
+        musicId: "1_BV1xx411c7mD_2",
+        name: "歌名",
+        roomId: "123456",
+      );
+      final decoded = SharePayload.decode(payload.encode());
+      expect(decoded!.type, SharePayloadType.party);
+      expect(decoded.roomId, "123456");
+    });
+
+    test("中文与 emoji 能正确还原", () {
+      const payload = SharePayload(
+        type: SharePayloadType.music,
+        musicId: "1_BV1xx411c7mD_2",
+        name: "夜に駆ける 🎵「测试」",
+        from: "小王",
+      );
+      final decoded = SharePayload.decode(payload.encode());
+      expect(decoded!.name, "夜に駆ける 🎵「测试」");
+      expect(decoded.from, "小王");
+    });
+
+    test("编码结果不含 URL 不安全字符", () {
+      const payload = SharePayload(
+        type: SharePayloadType.music,
+        musicId: "1_BV1xx411c7mD_2",
+        name: "测试",
+      );
+      final code = payload.encode();
+      expect(code.contains("+"), isFalse);
+      expect(code.contains("/"), isFalse);
+      expect(code.contains("="), isFalse);
+    });
+
+    test("损坏的编码返回 null 而不抛异常", () {
+      expect(SharePayload.decode("!!!!"), isNull);
+      expect(SharePayload.decode(""), isNull);
+      expect(SharePayload.decode("YWJj"), isNull);
+    });
+  });
+
+  group("分享链接", () {
+    test("生成的链接能被解析回来", () {
+      const payload = SharePayload(
+        type: SharePayloadType.music,
+        musicId: "1_BV1xx411c7mD_2",
+        name: "一首歌",
+        roomId: "",
+      );
+      final link = buildManmanLink(payload);
+      expect(link.startsWith("manman://play?d="), isTrue);
+
+      final parsed = parseManmanUri(Uri.parse(link));
+      expect(parsed, isNotNull);
+      expect(parsed!.name, "一首歌");
+      expect(parsed.musicId, "1_BV1xx411c7mD_2");
+    });
+
+    test("能从整段分享文案里提取链接", () {
+      const payload = SharePayload(
+        type: SharePayloadType.music,
+        musicId: "1_BV1xx411c7mD_2",
+        name: "测试歌曲",
+      );
+      final text = buildShareText(payload);
+      final parsed = parseManmanShareText(text);
+      expect(parsed, isNotNull);
+      expect(parsed!.name, "测试歌曲");
+    });
+
+    test("非满满音乐的文本解析为 null", () {
+      expect(parseManmanShareText("今天天气不错"), isNull);
+      expect(parseManmanUri(Uri.parse("https://www.bilibili.com")), isNull);
+    });
+  });
+
+  group("B 站链接解析", () {
+    test("识别完整视频链接", () {
+      final info = parseBiliUrl("https://www.bilibili.com/video/BV1xx411c7mD");
+      expect(info, isNotNull);
+      expect(info!.bvid, "BV1xx411c7mD");
+      expect(info.page, 1);
+    });
+
+    test("识别分 P 参数", () {
+      final info = parseBiliUrl(
+        "https://www.bilibili.com/video/BV1xx411c7mD?p=3&t=10",
+      );
+      expect(info!.page, 3);
+    });
+
+    test("识别 av 号", () {
+      final info = parseBiliUrl("https://www.bilibili.com/video/av170001");
+      expect(info, isNotNull);
+      expect(info!.aid, "170001");
+    });
+
+    test("从微信/QQ 分享文本里提取链接", () {
+      const text = "【某视频】这个太好听了 https://b23.tv/abcdefg 快来看";
+      final url = extractBiliUrl(text);
+      expect(url, "https://b23.tv/abcdefg");
+    });
+
+    test("链接尾部的中文标点会被去掉", () {
+      const text = "看这个 https://www.bilibili.com/video/BV1xx411c7mD，好笑";
+      final url = extractBiliUrl(text);
+      expect(url, "https://www.bilibili.com/video/BV1xx411c7mD");
+      expect(parseBiliUrl(url!)!.bvid, "BV1xx411c7mD");
+    });
+
+    test("非 B 站链接返回 null", () {
+      expect(extractBiliUrl("https://example.com/video/1"), isNull);
+      expect(parseBiliUrl("https://example.com/video/1"), isNull);
     });
   });
 }

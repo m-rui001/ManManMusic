@@ -45,6 +45,9 @@ dependencies:
   flutter_svg: ^2.0.17
   flutter_lyric: ^2.0.4+6
   like_button: ^2.0.5
+  qr_flutter: ^4.1.0
+  share_plus: ^12.0.2
+  app_links: ^6.4.1
 
 dev_dependencies:
   flutter_test:

@@ -8,7 +8,10 @@ import "package:bobomusic/modules/setting/pages/help_doc.dart";
 import "package:bobomusic/modules/setting/pages/limit.dart";
 import "package:bobomusic/modules/setting/pages/support_me.dart";
 import "package:bobomusic/modules/setting/pages/thanks.dart";
+import "package:bobomusic/modules/bili_account/bili_account_page.dart";
+import "package:bobomusic/modules/party/party_page.dart";
 import "package:bobomusic/modules/setting/pages/theme_color_setting.dart";
+import "package:bobomusic/modules/share/share_handler.dart";
 import "package:bobomusic/utils/get_cache_color.dart";
 import "package:bobomusic/utils/update_version.dart";
 import "package:flutter/material.dart";
@@ -91,6 +94,48 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                         }
                       }
                     )
+                  ],
+                ),
+                const SizedBox(height: 16),
+                SettingCard(
+                  settingItems: [
+                    SettingItem(
+                      leadingIcon: Icons.account_circle_outlined,
+                      title: "哔哩哔哩账号",
+                      trailing: Icon(Icons.chevron_right, color: primaryColor),
+                      onTap: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (BuildContext context) {
+                              return const BiliAccountPage();
+                            },
+                          ),
+                        );
+                        if (context.mounted) setState(() {});
+                      },
+                    ),
+                    SettingItem(
+                      leadingIcon: Icons.link,
+                      title: "打开分享链接",
+                      trailing: Icon(Icons.chevron_right, color: primaryColor),
+                      onTap: () {
+                        openFromClipboard(context);
+                      },
+                    ),
+                    SettingItem(
+                      leadingIcon: Icons.headphones_outlined,
+                      title: "一起听",
+                      trailing: Icon(Icons.chevron_right, color: primaryColor),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (BuildContext context) {
+                              return const PartyPage();
+                            },
+                          ),
+                        );
+                      },
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
