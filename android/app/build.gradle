@@ -59,22 +59,30 @@ android {
     }
 
     signingConfigs {
+        // 配置了 key.properties 且密钥文件存在时，用正式签名；
+        // 否则自动退回 debug 签名，保证没有密钥的环境也能构建出可安装的包。
         release {
-            keyAlias = keystoreProperties['keyAlias']
-            keyPassword = keystoreProperties['keyPassword']
-            storeFile = keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
-            storePassword = keystoreProperties['storePassword']
+            def hasKeystore = keystorePropertiesFile.exists()
+                && keystoreProperties['storeFile'] != null
+                && file(keystoreProperties['storeFile']).exists()
 
-            if (storeFile == null) {
-                throw new GradleException("storeFile is null. Check key.properties file.")
+            if (hasKeystore) {
+                keyAlias = keystoreProperties['keyAlias']
+                keyPassword = keystoreProperties['keyPassword']
+                storeFile = file(keystoreProperties['storeFile'])
+                storePassword = keystoreProperties['storePassword']
+            } else {
+                logger.lifecycle("未找到签名密钥，改用 debug 签名构建 release 包")
+                storeFile = file("${System.properties['user.home']}/.android/debug.keystore")
+                storePassword = 'android'
+                keyAlias = 'androiddebugkey'
+                keyPassword = 'android'
             }
         }
     }
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig signingConfigs.release
         }
 

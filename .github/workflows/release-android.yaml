@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  # 支持在 Actions 页面手动点按钮构建，打完包直接下载
+  workflow_dispatch:
+
+# 创建 Release 需要写权限（默认 token 是只读的）
+permissions:
+  contents: write
 
 jobs:
   main:
@@ -19,13 +25,6 @@ jobs:
           distribution: zulu
           java-version: 17
 
-      - name: 将screct变量添加签名文件
-        run: |
-          echo ${{ secrets.KEYSTORE_BASE64 }}  | base64 --decode > ./android/app/bobomusic-keystore.jks
-          echo -e "${{ secrets.KEY_PROPERTIES }}" > ./android/key.properties
-          ls -lh ./android/app/bobomusic-keystore.jks
-          md5sum ./android/app/bobomusic-keystore.jks
-
       - name: 安装 Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -33,11 +32,56 @@ jobs:
           channel: stable
           cache: true
 
+      - name: 安装依赖
+        run: flutter pub get
+
+      - name: 运行静态检查
+        run: flutter analyze
+
+      - name: 运行单元测试
+        run: flutter test
+
+      # 有签名密钥就用正式签名；没有就生成一个 debug 密钥，
+      # build.gradle 里做了自动降级，保证任何环境都能出可安装的包
+      - name: 准备签名文件
+        run: |
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "使用正式签名"
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ./android/app/bobomusic-keystore.jks
+            printf '%s\n' "${{ secrets.KEY_PROPERTIES }}" > ./android/key.properties
+            ls -lh ./android/app/bobomusic-keystore.jks
+          else
+            echo "未配置签名密钥，使用 debug 签名"
+            mkdir -p "$HOME/.android"
+            keytool -genkeypair -v -keystore "$HOME/.android/debug.keystore" -storetype PKCS12 -keyalg RSA -keysize 2048 -validity 10000 -alias androiddebugkey -storepass android -keypass android -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
       - name: 构建 APK
-        run: flutter build apk
+        run: flutter build apk --release
+
+      - name: 整理产物
+        run: |
+          mkdir -p out
+          # 优先只要 universal 包（手机上直接装，兼容所有 CPU）
+          if [ -f build/app/outputs/flutter-apk/app-release.apk ]; then
+            cp build/app/outputs/flutter-apk/app-release.apk out/满满音乐-通用版.apk
+          elif [ -f build/app/outputs/flutter-apk/app-universal-release.apk ]; then
+            cp build/app/outputs/flutter-apk/app-universal-release.apk out/满满音乐-通用版.apk
+          fi
+          # 其余分架构包一并保留
+          find build/app/outputs/flutter-apk -name "*-release.apk" -exec cp {} out/ \;
+          ls -lh out/
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: manman-music-apk
+          path: out/*.apk
+          retention-days: 30
 
       - name: 推送到 release
-        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
         with:
-          files: ./build/app/outputs/flutter-apk/*
-          token: ${{ secrets.RELEASE_TOKEN  }}
+          files: out/*.apk
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
