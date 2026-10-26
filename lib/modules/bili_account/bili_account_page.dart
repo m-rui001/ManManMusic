@@ -213,3 +213,31 @@ class _BiliAccountPageState extends State<BiliAccountPage> {
     );
   }
 }
+
+/// 退出登录确认
+Future<void> confirmBiliLogout(BuildContext context) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text("退出登录", style: TextStyle(fontSize: 14)),
+      content: const Text(
+        "退出后音质会回到最低档，收藏夹导入也会不可用。本机保存的登录凭证会被清除。",
+        style: TextStyle(fontSize: 12, height: 1.5),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: const Text("取消"),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: const Text("退出"),
+        ),
+      ],
+    ),
+  );
+
+  if (ok == true) {
+    await BiliAuth.instance.logout();
+  }
+}

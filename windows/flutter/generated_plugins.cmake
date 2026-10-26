@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   app_links
+  flutter_inappwebview_windows
   media_kit_libs_windows_audio
   permission_handler_windows
   screen_retriever

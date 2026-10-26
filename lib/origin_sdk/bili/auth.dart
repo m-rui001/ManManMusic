@@ -9,6 +9,14 @@ const String biliUserAgent =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 const String biliReferer = "https://www.bilibili.com/";
 
+/// 内嵌 WebView 登录用的移动端 UA
+///
+/// 用移动端 UA 的好处：登录页会展示为手机版单列布局，
+/// 不需要缩放就能直接点，体验比桌面版好很多。
+const String biliMobileUserAgent =
+    "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/120.0.0.0 Mobile Safari/537.36";
+
 const String _kCookie = "bili_login_cookie";
 const String _kMid = "bili_login_mid";
 const String _kUname = "bili_login_uname";

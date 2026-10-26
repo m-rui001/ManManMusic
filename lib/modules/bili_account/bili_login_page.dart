@@ -1,14 +1,19 @@
 import "dart:async";
 
 import "package:bobomusic/origin_sdk/bili/auth.dart";
-import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
+import "package:flutter_inappwebview/flutter_inappwebview.dart";
 import "package:qr_flutter/qr_flutter.dart";
 
-/// 哔哩哔哩扫码登录
+/// 哔哩哔哩登录
 ///
-/// 说明：只走官方 web 端扫码接口，不在客户端保存密码，
-/// 也不会做任何批量/自动化请求，尽量避免账号被风控。
+/// 主路径是**内嵌官方网页登录**（手机号 / 验证码 / 密码），
+/// 因为绝大多数人手上只有手机，没有第二块屏幕去扫自己的二维码。
+///
+/// 扫码作为备选保留（有第二台设备时更快）。
+///
+/// 安全说明：页面就是哔哩哔哩官方登录页，账号密码只输给官方，
+/// App 不接触密码，只在登录成功后从官方回调里取 Cookie 存到本机。
 class BiliLoginPage extends StatefulWidget {
   const BiliLoginPage({super.key});
 
@@ -17,6 +22,246 @@ class BiliLoginPage extends StatefulWidget {
 }
 
 class _BiliLoginPageState extends State<BiliLoginPage> {
+  /// 0 = 网页登录，1 = 扫码登录
+  int _mode = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final primaryColor = Theme.of(context).primaryColor;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("哔哩哔哩账号", style: TextStyle(fontSize: 17)),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(44),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+            child: Row(
+              children: [
+                _modeButton("手机登录", 0, primaryColor),
+                const SizedBox(width: 8),
+                _modeButton("扫码登录", 1, primaryColor),
+              ],
+            ),
+          ),
+        ),
+      ),
+      body: SafeArea(
+        child: _mode == 0
+            ? _WebLoginView(onSuccess: _onLoginSuccess)
+            : _QrLoginView(onSuccess: _onLoginSuccess),
+      ),
+    );
+  }
+
+  Widget _modeButton(String label, int mode, Color primaryColor) {
+    final selected = _mode == mode;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _mode = mode),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? primaryColor : Colors.white,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+                color: selected ? Colors.white : Colors.grey[700],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _onLoginSuccess() {
+    if (!mounted) return;
+    Navigator.of(context).pop(true);
+  }
+}
+
+/// 内嵌官方网页登录
+class _WebLoginView extends StatefulWidget {
+  final VoidCallback onSuccess;
+
+  const _WebLoginView({required this.onSuccess});
+
+  @override
+  State<_WebLoginView> createState() => _WebLoginViewState();
+}
+
+class _WebLoginViewState extends State<_WebLoginView> {
+  InAppWebViewController? _controller;
+  double _progress = 0;
+  bool _done = false;
+  bool _saving = false;
+
+  /// 登录成功后 B 站会跳到这些域名，回调 URL 的 query 里带 Cookie
+  static const List<String> _callbackHosts = [
+    "www.bilibili.com",
+    "bilibili.com",
+    "m.bilibili.com",
+    "passport.bilibili.com",
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final primaryColor = Theme.of(context).primaryColor;
+
+    return Stack(
+      children: [
+        Column(
+          children: [
+            if (_progress < 1)
+              LinearProgressIndicator(
+                value: _progress,
+                minHeight: 2,
+                backgroundColor: Colors.transparent,
+                color: primaryColor,
+              ),
+            Expanded(
+              child: InAppWebView(
+                initialUrlRequest: URLRequest(
+                  url: WebUri(
+                    "https://passport.bilibili.com/login",
+                  ),
+                ),
+                initialSettings: InAppWebViewSettings(
+                  userAgent: biliMobileUserAgent,
+                  javaScriptEnabled: true,
+                  domStorageEnabled: true,
+                  thirdPartyCookiesEnabled: true,
+                  sharedCookiesEnabled: true,
+                  mediaPlaybackRequiresUserGesture: false,
+                  supportZoom: false,
+                  useHybridComposition: true,
+                ),
+                onWebViewCreated: (controller) {
+                  _controller = controller;
+                },
+                onProgressChanged: (controller, progress) {
+                  if (mounted) setState(() => _progress = progress / 100);
+                },
+                // 每次页面跳转都检查是否已经登录成功
+                onLoadStop: (controller, url) async {
+                  if (_done || _saving || url == null) return;
+                  await _tryHarvestCookies(controller, url.toString());
+                },
+                onUpdateVisitedHistory: (controller, url, isReload) async {
+                  if (_done || _saving || url == null) return;
+                  await _tryHarvestCookies(controller, url.toString());
+                },
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+              color: const Color.fromARGB(255, 250, 250, 250),
+              child: Row(
+                children: [
+                  Icon(Icons.lock_outline, size: 13, color: Colors.grey[500]),
+                  const SizedBox(width: 6),
+                  const Expanded(
+                    child: Text(
+                      "这是哔哩哔哩官方登录页，密码只交给 B 站，App 不保存密码",
+                      style: TextStyle(fontSize: 10, color: Colors.grey),
+                    ),
+                  ),
+                  if (_saving)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        if (_progress < 1 && _controller == null)
+          const Center(child: CircularProgressIndicator()),
+      ],
+    );
+  }
+
+  /// 尝试从 WebView 里取 Cookie 判断是否登录成功
+  Future<void> _tryHarvestCookies(
+    InAppWebViewController controller,
+    String url,
+  ) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+
+    // 还没离开登录页就继续等
+    final onCallbackHost = _callbackHosts.contains(uri.host);
+    if (!onCallbackHost) return;
+
+    // 回调 URL 的 query 里直接带 Cookie（B 站登录成功后的跳转格式）
+    final fromQuery = <String, String>{};
+    uri.queryParameters.forEach((k, v) {
+      if (_cookieKeys.contains(k) && v.isNotEmpty) fromQuery[k] = v;
+    });
+
+    Map<String, String> cookies = fromQuery;
+
+    // query 里没有就从 WebView 的 CookieManager 里取（更通用）
+    if (cookies["SESSDATA"] == null) {
+      final all = await CookieManager.instance().getCookies(
+        url: WebUri("https://www.bilibili.com"),
+      );
+      final map = <String, String>{};
+      for (final c in all) {
+        if (_cookieKeys.contains(c.name) && (c.value ?? "").isNotEmpty) {
+          map[c.name] = c.value!;
+        }
+      }
+      if (map["SESSDATA"] != null) cookies = map;
+    }
+
+    if (cookies["SESSDATA"] == null) return;
+
+    _saving = true;
+    if (mounted) setState(() {});
+
+    final ok = await BiliAuth.instance.applyLogin(cookies);
+
+    if (!mounted) return;
+    _saving = false;
+
+    if (ok) {
+      _done = true;
+      widget.onSuccess();
+    } else {
+      setState(() {});
+    }
+  }
+
+  /// 登录相关的 Cookie 字段
+  static const Set<String> _cookieKeys = {
+    "SESSDATA",
+    "bili_jct",
+    "DedeUserID",
+    "DedeUserID__ckMd5",
+    "sid",
+  };
+}
+
+/// 扫码登录（备选，需要另一台设备）
+class _QrLoginView extends StatefulWidget {
+  final VoidCallback onSuccess;
+
+  const _QrLoginView({required this.onSuccess});
+
+  @override
+  State<_QrLoginView> createState() => _QrLoginViewState();
+}
+
+class _QrLoginViewState extends State<_QrLoginView> {
   final BiliAuth _auth = BiliAuth.instance;
 
   BiliQrCode? _qr;
@@ -44,6 +289,7 @@ class _BiliLoginPageState extends State<BiliLoginPage> {
       _loading = true;
       _error = null;
       _status = BiliQrStatus.waiting;
+      _done = false;
     });
 
     try {
@@ -95,7 +341,7 @@ class _BiliLoginPageState extends State<BiliLoginPage> {
           final ok = await _auth.applyLogin(cookies);
           if (!mounted) return;
           if (ok) {
-            Navigator.of(context).pop(true);
+            widget.onSuccess();
           } else {
             setState(() {
               _status = BiliQrStatus.failed;
@@ -118,98 +364,79 @@ class _BiliLoginPageState extends State<BiliLoginPage> {
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).primaryColor;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("哔哩哔哩账号", style: TextStyle(fontSize: 18)),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                Text(
+                  _status.title,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: primaryColor,
+                  ),
                 ),
-                child: Column(
-                  children: [
-                    Text(
-                      _status.title,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: primaryColor,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _status.tip,
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
-                    ),
-                    const SizedBox(height: 18),
-                    _buildQrArea(primaryColor),
-                    const SizedBox(height: 16),
-                    if (_status == BiliQrStatus.expired ||
-                        _status == BiliQrStatus.failed)
-                      ElevatedButton(
-                        onPressed: _refreshQr,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: primaryColor,
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text("刷新二维码"),
-                      ),
-                  ],
+                const SizedBox(height: 4),
+                Text(
+                  _status.tip,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
                 ),
-              ),
-              const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: const BoxDecoration(
-                  color: Color(0xFFFFF7E6),
-                  borderRadius: BorderRadius.all(Radius.circular(10)),
-                ),
-                child: const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.shield_outlined,
-                          size: 16,
-                          color: Color(0xFFB8860B),
-                        ),
-                        SizedBox(width: 6),
-                        Text(
-                          "账号安全说明",
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFFB8860B),
-                          ),
-                        ),
-                      ],
+                const SizedBox(height: 18),
+                _buildQrArea(primaryColor),
+                const SizedBox(height: 16),
+                if (_status == BiliQrStatus.expired ||
+                    _status == BiliQrStatus.failed)
+                  ElevatedButton(
+                    onPressed: _refreshQr,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      foregroundColor: Colors.white,
                     ),
-                    SizedBox(height: 8),
-                    Text(
-                      "· 只使用哔哩哔哩官方网页版扫码登录，登录信息仅保存在本机\n"
-                      "· 不会发送任何自动化、批量或异常的请求\n"
-                      "· 只读取你自己的收藏夹，不做任何修改操作\n"
-                      "· 随时可在设置里退出登录，清除本地凭证",
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        height: 1.8,
-                        color: Color(0xFF8B6D1F),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+                    child: const Text("刷新二维码"),
+                  ),
+              ],
+            ),
           ),
-        ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color.fromARGB(255, 255, 247, 230),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.lightbulb_outline,
+                  size: 15,
+                  color: Color(0xFFB8860B),
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    "扫码要用另一台设备。只有一个手机的话，"
+                    "请用上面的「手机登录」，直接输手机号和验证码更快。",
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFFB8860B),
+                      height: 1.6,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -217,43 +444,27 @@ class _BiliLoginPageState extends State<BiliLoginPage> {
   Widget _buildQrArea(Color primaryColor) {
     if (_loading) {
       return const SizedBox(
+        width: 200,
         height: 200,
-        child: Center(
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        ),
+        child: Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_error != null) {
       return SizedBox(
+        width: 200,
         height: 200,
         child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline, color: Colors.grey, size: 36),
-              const SizedBox(height: 10),
-              Text(
-                _error!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 11, color: Colors.grey),
-              ),
-              const SizedBox(height: 10),
-              TextButton(onPressed: _refreshQr, child: const Text("重试")),
-            ],
+          child: Text(
+            _error!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
           ),
         ),
       );
     }
 
-    final qr = _qr;
-    if (qr == null) {
-      return const SizedBox(height: 200);
-    }
+    if (_qr == null) return const SizedBox(width: 200, height: 200);
 
     return Stack(
       alignment: Alignment.center,
@@ -262,84 +473,60 @@ class _BiliLoginPageState extends State<BiliLoginPage> {
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
             border: Border.all(color: const Color(0xFFEEEEEE)),
           ),
           child: QrImageView(
-            data: qr.url,
+            data: _qr!.url,
             version: QrVersions.auto,
-            size: 180,
-            gapless: true,
+            size: 190,
             backgroundColor: Colors.white,
           ),
         ),
         if (_status == BiliQrStatus.expired ||
-            _status == BiliQrStatus.scanned)
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.92),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _status == BiliQrStatus.scanned
-                          ? Icons.phone_iphone
-                          : Icons.refresh,
-                      size: 30,
-                      color: primaryColor,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _status == BiliQrStatus.scanned ? "请在手机上确认" : "二维码已失效",
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    if (_status == BiliQrStatus.expired) ...[
-                      const SizedBox(height: 8),
-                      TextButton(
-                        onPressed: _refreshQr,
-                        child: const Text("点击刷新"),
-                      ),
-                    ],
-                  ],
+            _status == BiliQrStatus.failed)
+          Container(
+            width: 190,
+            height: 190,
+            color: Colors.white.withValues(alpha: 0.92),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.refresh, size: 30, color: Colors.grey[400]),
+                const SizedBox(height: 8),
+                Text(
+                  _status == BiliQrStatus.expired ? "二维码已过期" : "登录失败",
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
-              ),
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: _refreshQr,
+                  child: Text(
+                    "点击刷新",
+                    style: TextStyle(fontSize: 12, color: primaryColor),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (_status == BiliQrStatus.scanned)
+          Container(
+            width: 190,
+            height: 190,
+            color: Colors.white.withValues(alpha: 0.92),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.check_circle, size: 30, color: primaryColor),
+                const SizedBox(height: 8),
+                const Text(
+                  "已扫码，请在手机上确认",
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
             ),
           ),
       ],
     );
-  }
-}
-
-/// 退出登录确认
-Future<void> confirmBiliLogout(BuildContext context) async {
-  final auth = BiliAuth.instance;
-  final ok = await showDialog<bool>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text("退出哔哩哔哩账号"),
-      content: const Text(
-        "退出后会清除本机保存的登录凭证，收藏夹导入功能将不可用。",
-        style: TextStyle(fontSize: 12),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(false),
-          child: const Text("取消"),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(true),
-          child: const Text("退出", style: TextStyle(color: Colors.redAccent)),
-        ),
-      ],
-    ),
-  );
-
-  if (ok == true) {
-    await auth.logout();
-    BotToast.showText(text: "已退出登录");
   }
 }
