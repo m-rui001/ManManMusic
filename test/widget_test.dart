@@ -1,6 +1,7 @@
 import "package:bobomusic/constants/app_info.dart";
 import "package:bobomusic/modules/bili_account/fav_sync.dart";
 import "package:bobomusic/modules/history/play_history.dart";
+import "package:bobomusic/modules/party/party_roster.dart";
 import "package:bobomusic/modules/share/share_payload.dart";
 import "package:bobomusic/origin_sdk/bili/utils.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
@@ -134,6 +135,29 @@ void main() {
       expect(c.favId, 1);
       expect(c.tableName, "a");
       expect(c.mediaCount, 9);
+    });
+  });
+
+  group("一起听名单", () {
+    test("RosterMember 往返一致", () {
+      const m = RosterMember(mid: 12345, uname: "小明", face: "https://x/a.jpg");
+      final restored = RosterMember.fromJson(m.toJson());
+
+      expect(restored.mid, 12345);
+      expect(restored.uname, "小明");
+      expect(restored.face, "https://x/a.jpg");
+    });
+
+    test("房间号由 UID 派生", () {
+      const m = RosterMember(mid: 12345, uname: "小明", face: "");
+      expect(m.roomId, "bili_12345");
+    });
+
+    test("缺字段时回退到安全默认值", () {
+      final restored = RosterMember.fromJson(<String, dynamic>{});
+      expect(restored.mid, 0);
+      expect(restored.uname, "");
+      expect(restored.face, "");
     });
   });
 

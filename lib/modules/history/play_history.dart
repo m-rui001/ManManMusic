@@ -81,6 +81,15 @@ class PlayHistory {
     await _persist();
   }
 
+  /// 按条件批量删除
+  Future<void> removeWhere(bool Function(HistoryEntry entry) test) async {
+    final before = _entries.length;
+    _entries.removeWhere(test);
+    if (_entries.length == before) return;
+    _changes.add(null);
+    await _persist();
+  }
+
   Future<void> clear() async {
     _entries = [];
     _changes.add(null);

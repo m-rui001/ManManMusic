@@ -156,6 +156,11 @@ class MyAppState extends State<MyApp> {
       Provider.of<PlayerModel>(context, listen: false),
     );
 
+    // 打开 App 自动上线一起听（设置里可关）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      PartySession.instance.autoOnlineIfEnabled();
+    });
+
     _initDeepLinks();
     IncomingShare.listen((text) => _onSharedText(text));
 

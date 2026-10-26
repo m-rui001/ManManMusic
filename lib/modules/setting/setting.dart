@@ -5,6 +5,8 @@ import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/icons/icons_svg.dart";
 import "package:bobomusic/modules/setting/components/setting_card.dart";
 import "package:bobomusic/modules/bili_account/bili_account_page.dart";
+import "package:bobomusic/modules/party/party_pick_page.dart";
+import "package:bobomusic/modules/party/party_roster.dart";
 import "package:bobomusic/modules/setting/pages/theme_color_setting.dart";
 import "package:bobomusic/utils/get_cache_color.dart";
 import "package:bobomusic/utils/update_version.dart";
@@ -24,6 +26,24 @@ class SettingView extends StatefulWidget {
 class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
+
+  bool _autoOnline = true;
+  int _rosterCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshRoster();
+    PartyRoster.isAutoOnline().then((v) {
+      if (mounted) setState(() => _autoOnline = v);
+    });
+  }
+
+  Future<void> _refreshRoster() async {
+    await PartyRoster.instance.init();
+    if (!mounted) return;
+    setState(() => _rosterCount = PartyRoster.instance.length);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -106,6 +126,49 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                           ),
                         );
                         if (context.mounted) setState(() {});
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                SettingCard(
+                  settingItems: [
+                    SettingItem(
+                      leadingIcon: Icons.headphones_outlined,
+                      title: "打开 App 自动上线一起听",
+                      // 默认开启，关掉后只能手动上线
+                      trailing: Switch(
+                        value: _autoOnline,
+                        activeColor: primaryColor,
+                        onChanged: (v) async {
+                          await PartyRoster.setAutoOnline(v);
+                          if (mounted) setState(() => _autoOnline = v);
+                        },
+                      ),
+                    ),
+                    SettingItem(
+                      leadingIcon: Icons.group_outlined,
+                      title: "一起听名单",
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            "$_rosterCount 人",
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey,
+                            ),
+                          ),
+                          Icon(Icons.chevron_right, color: primaryColor),
+                        ],
+                      ),
+                      onTap: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const PartyPickPage(),
+                          ),
+                        );
+                        _refreshRoster();
                       },
                     ),
                   ],

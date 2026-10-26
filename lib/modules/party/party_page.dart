@@ -1,6 +1,7 @@
 import "dart:async";
 
 import "package:bobomusic/event_bus/event_bus.dart";
+import "package:bobomusic/modules/party/party_roster.dart";
 import "package:bobomusic/modules/party/party_service.dart";
 import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
@@ -46,6 +47,34 @@ class PartySession {
     _refreshSub = eventBus.on<RefreshPlayerCard>().listen((_) {
       if (isHost) _broadcastNow();
     });
+  }
+
+  /// 上线：用自己房间号开房并开始广播
+  ///
+  /// 已经在房间里就什么都不做。
+  Future<bool> goOnline() async {
+    if (_party.role != PartyRole.none) return true;
+
+    final id = await selfPartyRoomId();
+    final ok = await _party.createRoom(name: selfPartyName(), id: id);
+    if (ok) startBroadcasting();
+    return ok;
+  }
+
+  /// 打开 App 时自动上线
+  ///
+  /// 该行为**默认开启**，可在设置里关掉。
+  Future<void> autoOnlineIfEnabled() async {
+    if (!await PartyRoster.isAutoOnline()) return;
+    await goOnline();
+  }
+
+  /// 下线
+  Future<void> goOffline() async {
+    _broadcastTimer?.cancel();
+    _broadcastTimer = null;
+    remoteMusic = null;
+    await _party.leaveRoom();
   }
 
   /// 加入房间后开始周期广播（仅房主）

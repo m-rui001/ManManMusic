@@ -1,17 +1,13 @@
 import "dart:async";
 
-import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/bili_account/bili_account_page.dart";
 import "package:bobomusic/modules/bili_account/bili_login_gate.dart";
-import "package:bobomusic/modules/history/play_history.dart";
+import "package:bobomusic/modules/history/history_tab.dart";
 import "package:bobomusic/modules/music_order/music_order.dart";
 import "package:bobomusic/modules/music_plaza/search/search.dart";
-import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/origin_sdk/bili/auth.dart";
-import "package:bobomusic/utils/clear_html_tags.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
-import "package:provider/provider.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
 /// 首页
@@ -150,7 +146,7 @@ class MusicPlazaViewState extends State<MusicPlazaView>
                 controller: _page,
                 onPageChanged: (i) => _tab.animateTo(i),
                 children: const [
-                  _HistoryTab(),
+                  HistoryTab(),
                   _OrdersTab(),
                 ],
               ),
@@ -354,199 +350,6 @@ class _AccountCardState extends State<_AccountCard> {
 }
 
 /// 历史播放
-class _HistoryTab extends StatefulWidget {
-  const _HistoryTab();
-
-  @override
-  State<_HistoryTab> createState() => _HistoryTabState();
-}
-
-class _HistoryTabState extends State<_HistoryTab> {
-  StreamSubscription? _sub;
-  StreamSubscription? _playerSub;
-
-  @override
-  void initState() {
-    super.initState();
-    PlayHistory.instance.init().then((_) {
-      if (mounted) setState(() {});
-    });
-    _sub = PlayHistory.instance.changes.listen((_) {
-      if (mounted) setState(() {});
-    });
-    // 播放器换歌时高亮跟着变
-    _playerSub = eventBus.on<RefreshPlayerCard>().listen((_) {
-      if (mounted) setState(() {});
-    });
-  }
-
-  @override
-  void dispose() {
-    _sub?.cancel();
-    _playerSub?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final entries = PlayHistory.instance.entries;
-    final primaryColor = Theme.of(context).primaryColor;
-    final player = Provider.of<PlayerModel>(context);
-
-    if (entries.isEmpty) {
-      return ListView(
-        padding: const EdgeInsets.fromLTRB(20, 40, 20, 30),
-        children: [
-          Icon(Icons.history, size: 40, color: Colors.grey[350]),
-          const SizedBox(height: 12),
-          const Center(
-            child: Text(
-              "还没有播放记录",
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Center(
-            child: Text(
-              "去搜索框找首歌听听吧",
-              style: TextStyle(fontSize: 10, color: Colors.grey),
-            ),
-          ),
-        ],
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 30),
-      itemCount: entries.length + 1,
-      itemBuilder: (c, i) {
-        if (i == entries.length) {
-          return Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Center(
-              child: TextButton(
-                onPressed: () async {
-                  final ok = await showDialog<bool>(
-                    context: context,
-                    builder: (ctx) => AlertDialog(
-                      content: const Text(
-                        "清空所有播放记录？",
-                        style: TextStyle(fontSize: 13),
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.of(ctx).pop(false),
-                          child: const Text("取消"),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.of(ctx).pop(true),
-                          child: const Text("清空"),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (ok == true) await PlayHistory.instance.clear();
-                },
-                child: const Text(
-                  "清空播放记录",
-                  style: TextStyle(fontSize: 11, color: Colors.grey),
-                ),
-              ),
-            ),
-          );
-        }
-
-        final e = entries[i];
-        final isCurrent = player.current?.id == e.music.id;
-
-        return GestureDetector(
-          onTap: () => player.play(music: e.music),
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                _cover(e.music.cover, primaryColor),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        clearHtmlTags(e.music.name),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight:
-                              isCurrent ? FontWeight.bold : FontWeight.normal,
-                          color: isCurrent ? primaryColor : Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        e.music.author.isEmpty
-                            ? "未知 UP 主"
-                            : clearHtmlTags(e.music.author),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 10, color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ),
-                if (isCurrent)
-                  Icon(Icons.graphic_eq, size: 15, color: primaryColor)
-                else
-                  Text(
-                    _relativeTime(e.playedAt),
-                    style: const TextStyle(fontSize: 10, color: Colors.grey),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  String _relativeTime(DateTime t) {
-    final diff = DateTime.now().difference(t);
-    if (diff.inMinutes < 1) return "刚刚";
-    if (diff.inHours < 1) return "${diff.inMinutes} 分钟前";
-    if (diff.inDays < 1) return "${diff.inHours} 小时前";
-    if (diff.inDays < 30) return "${diff.inDays} 天前";
-    return "${t.month}-${t.day}";
-  }
-}
-
-Widget _cover(String url, Color primaryColor) {
-  return ClipRRect(
-    borderRadius: BorderRadius.circular(8),
-    child: SizedBox(
-      width: 44,
-      height: 44,
-      child: url.isEmpty
-          ? Container(
-              color: const Color.fromARGB(255, 240, 240, 240),
-              child: Icon(Icons.music_note, size: 17, color: primaryColor),
-            )
-          : Image.network(
-              url,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                color: const Color.fromARGB(255, 240, 240, 240),
-                child: Icon(Icons.music_note, size: 17, color: primaryColor),
-              ),
-            ),
-    ),
-  );
-}
-
 /// 我的歌单
 class _OrdersTab extends StatefulWidget {
   const _OrdersTab();
