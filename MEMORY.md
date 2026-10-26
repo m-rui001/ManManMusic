@@ -7,10 +7,20 @@
   export PATH="/d/flutter/bin:$PATH"
   export PUB_HOSTED_URL=https://pub.flutter-io.cn FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn
   ```
-- 验证手段（本机无 Android SDK / 无 VS C++ 工作负载，Android / Windows 无法编译）：
+- 验证手段：
   - `flutter analyze`（必须 No issues found）
-  - `flutter test`
-  - `flutter build web --release`
+  - `flutter test`（24 tests）
+- **Android APK 走 GitHub Actions 构建**（本地已删除 devkit/gradle 缓存，不再本地出包）：
+  - 仓库：`m-rui001/bobomusic`（**fork**，原仓库 Redstone-1/bobomusic 只有只读权限，推不上去）
+  - 工作流：`.github/workflows/release-android.yaml`，`workflow_dispatch` 手动触发或 push `v*` tag
+  - 触发：`gh workflow run release-android.yaml --repo m-rui001/bobomusic --ref master`
+  - 下载产物（**gh run download 会超时，必须用 curl**）：
+    ```bash
+    gh api repos/m-rui001/bobomusic/actions/artifacts --jq '.artifacts[] | select(.workflow_run.id==<RUN_ID>) | .id'
+    TOKEN=$(gh auth token)
+    curl -sL -H "Authorization: Bearer $TOKEN" -o dist/a.zip       "https://api.github.com/repos/m-rui001/bobomusic/actions/artifacts/<ARTIFACT_ID>/zip"
+    ```
+  - 产物落地 `dist/`（已 gitignore）：`满满音乐-通用版.apk`（37M，装这个）+ 分架构包
 - RTK 注意：跑 `flutter test` 前需关闭 testOutputAggregation 与 truncation，否则输出被吞。
 
 ## 代码结构要点
@@ -46,16 +56,48 @@
 - 分享改为冷启动自动读剪贴板：`share_handler.dart` 的 `autoCheckClipboard(context)`，
   在 `main.dart` initState 里 postFrameCallback + 1.5s 延迟调用；同一内容 30s 内不重复处理。
 
+## 信息架构（已定稿，勿随意改）
+- 底部只三个：**首页 / 一起听 / 设置**（`lib/modules/tabbar/app_navigation.dart`）
+- 首页 `lib/modules/music_plaza/music_plaza.dart`：
+  - AppBar 搜索栏 + 右上角收起/展开
+  - `_AccountCard`：未登录显示「登录解锁高音质」，已登录显示 B 站头像 + 昵称
+  - `_TabHeader` 双分栏：**历史播放（默认）/ 我的歌单**，TabController + PageView 双向联动，可左右滑动
+  - `_HistoryTab` 用 `PlayHistory`；`_OrdersTab` 用 `MusicOrderView(embedded: true)`
+- 歌单页 `MusicOrderView` 新增 `embedded` 参数：true 时不渲染自己的 Scaffold/AppBar
+- 历史播放 `lib/modules/history/play_history.dart`：SharedPreferences 持久化，最多 100 条，
+  同 `id+playId` 去重提前，`changes` 广播流；`BBPlayer.onPlayRecord` 在 `_play()` 真正播放时回调
+- 一起听 `lib/modules/party/party_tab.dart`（`PartyTabView`）：
+  - 进页面自动 `createRoom(name, id: 个人房间号)` + `session.startBroadcasting()`
+  - 个人房间号：登录后 `bili_<mid>`，未登录用 SharedPreferences `manman_party_self_id` 随机 id
+  - 好友列表 `BiliAuth.fetchFriends()`（`x/relation/followings`，**注意是「我关注的」不是互关**）
+  - 探测 `PartyService.probeRoom(roomId)`：`GET {relayBase}/{topic}/json?poll=1&since=60s` 一次性拉取，
+    解析 NDJSON 取最新 `ty=="state"`；`PartyProbe.isFresh` 90 秒内有效；**不做定时轮询**
+- 登录引导 `lib/modules/bili_account/bili_login_gate.dart`：`maybePromptOnStartup`（首次进首页弹一次，
+  SharedPreferences `bili_login_asked`/`bili_login_skipped`）、`showPrompSheet`、`openLoginPage`、`ensureLoggedIn`
+
 ## 常用命令
 ```bash
 # 图标重新生成
 python tools/gen_icons.py
-# 联调一起听（双进程）
-dart run test/party_relay_test.dart host <room>
-dart run test/party_relay_test.dart guest <room>
+# 检查
+export PATH="/d/flutter/bin:$PATH"
+export PUB_HOSTED_URL=https://pub.flutter-io.cn FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn
+flutter analyze && flutter test
+# 出包（CI）
+git push fork master
+gh workflow run release-android.yaml --repo m-rui001/bobomusic --ref master
 ```
 
 ## 当前状态
-- `flutter analyze` No issues / 24 tests passed / web 构建通过
+- `flutter analyze` No issues / 24 tests passed
+- APK 由 GitHub Actions 构建成功，产物已下载到 `dist/`
 - 文档：`docs/新增功能说明.md`
-- 待办（需用户本地环境）：构建 Android APK 实测扫码登录、深链、系统分享
+- 待办（需真机）：扫码登录、收藏导入、深链/系统分享唤起、剪贴板自动识别、两机一起听同步
+
+## 坑（踩过，别再踩）
+- `flutter analyze` 在 CI 上会因**依赖版本漂移**报 info 级 deprecated → 工作流已用
+  `--no-fatal-infos --no-fatal-warnings`，且 `pub get` 带 pub 镜像环境变量与 lock 对齐
+- `share_plus 12.0.2` 的 kotlin-stdlib 元数据是 2.2.0 → Kotlin 必须 ≥ 2.2.0（1.9.20 会编译失败）
+- `androidx.core:core 1.16.0` 要求 AGP ≥ 8.6.0 → AGP 8.6.0 + Gradle 8.9
+- **heredoc 写 Dart 文件会在特定位置截断**（`inRoom` 处反复被切）→ 一律用 write 工具整文件写
+- `/tmp` 在 Git Bash 下与 Python 的路径解析不一致 → Python 用 `C:/Users/hp/AppData/Local/Temp/...`
