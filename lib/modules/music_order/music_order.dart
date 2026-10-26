@@ -5,6 +5,7 @@ import "dart:async";
 import "package:bobomusic/components/custom_dialog/custom_dialog.dart";
 import "package:bobomusic/components/delete_orders/delete_orders.dart";
 import "package:bobomusic/db/db.dart";
+import "package:bobomusic/modules/bili_account/fav_sync.dart";
 import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/music_order/components/edit_order.dart";
 import "package:bobomusic/modules/music_order/pages/music_list_common.dart";
@@ -305,6 +306,132 @@ class UserMusicOrderView extends State<MusicOrderView> with AutomaticKeepAliveCl
     );
   }
 
+  /// 长按歌单：清空歌曲 或 删除整个歌单
+  Future<void> _showOrderActions(String tabName, IconData icon) async {
+    final primaryColor = Theme.of(context).primaryColor;
+    final isBuiltin = tabName == TableName.musicILike;
+
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        padding: EdgeInsets.only(
+          bottom: 16 + MediaQuery.of(ctx).viewPadding.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Row(
+                children: [
+                  Icon(icon, size: 16, color: primaryColor),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      tabName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.playlist_remove, size: 20),
+              title: const Text("清空歌曲", style: TextStyle(fontSize: 13)),
+              subtitle: const Text(
+                "保留歌单，只删掉里面的歌",
+                style: TextStyle(fontSize: 10),
+              ),
+              onTap: () => Navigator.of(ctx).pop("clear"),
+            ),
+            if (!isBuiltin)
+              ListTile(
+                dense: true,
+                leading: const Icon(
+                  Icons.delete_forever,
+                  size: 20,
+                  color: Colors.redAccent,
+                ),
+                title: const Text(
+                  "删除整个歌单",
+                  style: TextStyle(fontSize: 13, color: Colors.redAccent),
+                ),
+                subtitle: const Text(
+                  "歌单和里面的歌一起删掉",
+                  style: TextStyle(fontSize: 10),
+                ),
+                onTap: () => Navigator.of(ctx).pop("delete"),
+              ),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted || action == null) return;
+
+    if (action == "clear") {
+      eventBus.fire(ShowDeleteListDialog(tabName: tabName));
+      return;
+    }
+
+    if (action == "delete") {
+      await _deleteWholeOrder(tabName);
+    }
+  }
+
+  /// 删除整个歌单（含收藏夹绑定关系）
+  Future<void> _deleteWholeOrder(String tabName) async {
+    final hasBinding = await FavSyncService.findByTableName(tabName);
+
+    if (!mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("删除歌单", style: TextStyle(fontSize: 14)),
+        content: Text(
+          hasBinding != null
+              ? "「$tabName」是从 B 站收藏夹导入的，删除后会解除关联，"
+                  "B 站上的收藏夹不受影响。"
+              : "确定删除歌单「$tabName」？里面的歌会一起删掉。",
+          style: const TextStyle(fontSize: 12, height: 1.6),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text("取消"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text("删除"),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    EasyLoading.show(maskType: EasyLoadingMaskType.black);
+    try {
+      await FavSyncService.deleteOrder(tabName);
+      await _loadData();
+      eventBus.fire(RefreshTabList());
+    } catch (e) {
+      BotToast.showText(text: "删除失败：$e");
+    }
+    EasyLoading.dismiss();
+  }
+
   /// 歌单卡片
   Widget _buildOrderCard({required String tabName, required IconData icon}) {
     final primaryColor = Theme.of(context).primaryColor;
@@ -318,7 +445,7 @@ class UserMusicOrderView extends State<MusicOrderView> with AutomaticKeepAliveCl
         child: InkWell(
           onTap: () => _openOrder(tabName),
           // 长按删除该歌单所有歌曲
-          onLongPress: () => eventBus.fire(ShowDeleteListDialog(tabName: tabName)),
+          onLongPress: () => _showOrderActions(tabName, icon),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             child: Row(

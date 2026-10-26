@@ -1,4 +1,5 @@
 import "package:bobomusic/constants/app_info.dart";
+import "package:bobomusic/modules/bili_account/fav_sync.dart";
 import "package:bobomusic/modules/history/play_history.dart";
 import "package:bobomusic/modules/share/share_payload.dart";
 import "package:bobomusic/origin_sdk/bili/utils.dart";
@@ -89,6 +90,66 @@ void main() {
       expect(restored.origin, OriginType.bili);
       expect(restored.orderName, "我喜欢");
       expect(restored.playId, "play-1");
+    });
+  });
+
+  group("收藏夹绑定关系", () {
+    test("FavBinding 往返一致", () {
+      final b = FavBinding(
+        favId: 123456,
+        tableName: "收藏夹_我的最爱",
+        title: "我的最爱",
+        mediaCount: 42,
+        syncedAt: DateTime.fromMillisecondsSinceEpoch(1700000000000),
+      );
+
+      final restored = FavBinding.fromJson(b.toJson());
+
+      expect(restored.favId, 123456);
+      expect(restored.tableName, "收藏夹_我的最爱");
+      expect(restored.title, "我的最爱");
+      expect(restored.mediaCount, 42);
+      expect(restored.syncedAt.millisecondsSinceEpoch, 1700000000000);
+    });
+
+    test("缺少字段时回退到安全默认值", () {
+      final restored = FavBinding.fromJson(<String, dynamic>{});
+
+      expect(restored.favId, 0);
+      expect(restored.tableName, "");
+      expect(restored.mediaCount, 0);
+    });
+
+    test("copyWith 只覆盖指定字段", () {
+      final b = FavBinding(
+        favId: 1,
+        tableName: "a",
+        title: "t",
+        mediaCount: 1,
+        syncedAt: DateTime.fromMillisecondsSinceEpoch(0),
+      );
+
+      final c = b.copyWith(mediaCount: 9);
+
+      expect(c.favId, 1);
+      expect(c.tableName, "a");
+      expect(c.mediaCount, 9);
+    });
+  });
+
+  group("导入歌单的表名清洗", () {
+    test("非法字符被替换为下划线", () {
+      expect(FavSyncService.safeTableName("收藏夹_a/b:c*d"), "收藏夹_a_b_c_d");
+      expect(FavSyncService.safeTableName("收藏夹_正常名字"), "收藏夹_正常名字");
+    });
+
+    test("超长标题被截断到 40 字", () {
+      final long = "收藏夹_" + "很长的标题" * 20;
+      expect(FavSyncService.safeTableName(long).length, 40);
+    });
+
+    test("中文与空格保留，首尾空格去掉", () {
+      expect(FavSyncService.safeTableName("  我的收藏  "), "我的收藏");
     });
   });
 

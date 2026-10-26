@@ -328,6 +328,70 @@ class BiliClient implements OriginService {
     }
   }
 
+  /// 用 aid / bvid 查 cid（取第一个分 P）
+  ///
+  /// 做过缓存，同一视频只查一次。
+  Future<String?> _fetchCid({required String aid, required String bvid}) async {
+    final cacheKey = "cid_${bvid.isNotEmpty ? bvid : aid}";
+    final cached = _cidCache[cacheKey];
+    if (cached != null) return cached;
+
+    // 同一视频并发请求时复用同一个 Future
+    final pending = _cidPending[cacheKey];
+    if (pending != null) return pending;
+
+    final future = _doFetchCid(aid: aid, bvid: bvid);
+    _cidPending[cacheKey] = future;
+    try {
+      final cid = await future;
+      if (cid != null && cid.isNotEmpty) _cidCache[cacheKey] = cid;
+      return cid;
+    } finally {
+      _cidPending.remove(cacheKey);
+    }
+  }
+
+  Future<String?> _doFetchCid({required String aid, required String bvid}) async {
+    try {
+      final resp = await dio.get(
+        "https://api.bilibili.com/x/web-interface/view",
+        queryParameters: {
+          if (bvid.isNotEmpty) "bvid": bvid else "aid": aid,
+        },
+        options: Options(
+          headers: {
+            if (BiliAuth.instance.isLogin)
+              "Cookie": BiliAuth.instance.cookieHeader,
+          },
+        ),
+      );
+      final body = resp.data is String ? jsonDecode(resp.data) : resp.data;
+      if (body is! Map) return null;
+
+      final data = body["data"];
+      if (data is! Map) return null;
+
+      // 优先用当前分 P，否则第一个分 P
+      final pages = data["pages"];
+      if (pages is List && pages.isNotEmpty) {
+        final first = pages.first;
+        if (first is Map) return "${first["cid"] ?? ""}";
+      }
+
+      final direct = data["cid"];
+      if (direct != null) return "$direct";
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// cid 缓存：key = bvid 或 aid
+  final Map<String, String> _cidCache = {};
+
+  /// 正在查询中的 cid，避免并发重复请求
+  final Map<String, Future<String?>> _cidPending = {};
+
   // 获取音乐播放地址
   //
   // 已登录（且为大会员）时请求 fnval=4048，可拿到 Hi-Res / 杜比 / 无损音轨；
@@ -335,9 +399,17 @@ class BiliClient implements OriginService {
   @override
   Future<MusicUrl> getMusicUrl(String id) async {
     BiliId biliid = BiliId.unicode(id);
+
+    // 收藏夹导入的条目只有 aid/bvid，没有 cid；
+    // 这里惰性补一次，避免「source error」播不了。
     if (biliid.cid == null || biliid.cid == "") {
-      throw Exception("歌曲 ID 不正确 缺少 CID");
+      final cid = await _fetchCid(aid: biliid.aid, bvid: biliid.bvid);
+      if (cid == null || cid.isEmpty) {
+        throw Exception("获取视频信息失败，可能已下架或仅限会员");
+      }
+      biliid = BiliId(aid: biliid.aid, bvid: biliid.bvid, cid: cid);
     }
+
     await init();
     const apiPath = "https://api.bilibili.com/x/player/wbi/playurl";
     // const url = "https://api.bilibili.com/x/player/playurl";
