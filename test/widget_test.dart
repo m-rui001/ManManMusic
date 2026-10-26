@@ -1,7 +1,9 @@
 import "package:bobomusic/constants/app_info.dart";
+import "package:bobomusic/db/db.dart";
 import "package:bobomusic/modules/bili_account/fav_sync.dart";
 import "package:bobomusic/modules/history/play_history.dart";
 import "package:bobomusic/modules/party/party_roster.dart";
+import "package:bobomusic/modules/party/party_service.dart";
 import "package:bobomusic/modules/share/share_payload.dart";
 import "package:bobomusic/origin_sdk/bili/utils.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
@@ -94,11 +96,10 @@ void main() {
     });
   });
 
-  group("收藏夹绑定关系", () {
+  group("收藏夹同步记录", () {
     test("FavBinding 往返一致", () {
       final b = FavBinding(
         favId: 123456,
-        tableName: "收藏夹_我的最爱",
         title: "我的最爱",
         mediaCount: 42,
         syncedAt: DateTime.fromMillisecondsSinceEpoch(1700000000000),
@@ -107,7 +108,6 @@ void main() {
       final restored = FavBinding.fromJson(b.toJson());
 
       expect(restored.favId, 123456);
-      expect(restored.tableName, "收藏夹_我的最爱");
       expect(restored.title, "我的最爱");
       expect(restored.mediaCount, 42);
       expect(restored.syncedAt.millisecondsSinceEpoch, 1700000000000);
@@ -117,14 +117,13 @@ void main() {
       final restored = FavBinding.fromJson(<String, dynamic>{});
 
       expect(restored.favId, 0);
-      expect(restored.tableName, "");
+      expect(restored.title, "");
       expect(restored.mediaCount, 0);
     });
 
     test("copyWith 只覆盖指定字段", () {
       final b = FavBinding(
         favId: 1,
-        tableName: "a",
         title: "t",
         mediaCount: 1,
         syncedAt: DateTime.fromMillisecondsSinceEpoch(0),
@@ -133,7 +132,7 @@ void main() {
       final c = b.copyWith(mediaCount: 9);
 
       expect(c.favId, 1);
-      expect(c.tableName, "a");
+      expect(c.title, "t");
       expect(c.mediaCount, 9);
     });
   });
@@ -158,22 +157,74 @@ void main() {
       expect(restored.mid, 0);
       expect(restored.uname, "");
       expect(restored.face, "");
+      expect(restored.canControl, isFalse);
+    });
+
+    test("共管标记能存下来", () {
+      const m = RosterMember(mid: 1, uname: "小明", face: "", canControl: true);
+      expect(RosterMember.fromJson(m.toJson()).canControl, isTrue);
+      expect(m.copyWith(canControl: false).canControl, isFalse);
     });
   });
 
-  group("导入歌单的表名清洗", () {
-    test("非法字符被替换为下划线", () {
-      expect(FavSyncService.safeTableName("收藏夹_a/b:c*d"), "收藏夹_a_b_c_d");
-      expect(FavSyncService.safeTableName("收藏夹_正常名字"), "收藏夹_正常名字");
+  group("一起听协议", () {
+    test("状态消息带 uid 与共管名单", () {
+      const state = PartyState(
+        type: PartyMessageType.state,
+        roomId: "bili_123",
+        from: "c1",
+        uid: 123,
+        fromName: "房主",
+        musicId: "1_BV1_2",
+        name: "歌名",
+        position: 1000,
+        playing: true,
+        at: 1700000000000,
+        controlUids: [123, 456],
+      );
+
+      final restored = PartyState.fromJson(state.toJson());
+
+      expect(restored.type, PartyMessageType.state);
+      expect(restored.uid, 123);
+      expect(restored.controlUids, [123, 456]);
+      expect(restored.position, 1000);
+      expect(restored.playing, isTrue);
+      expect(restored.toMusicItem()!.id, "1_BV1_2");
     });
 
-    test("超长标题被截断到 40 字", () {
-      final long = "收藏夹_${"很长的标题" * 20}";
-      expect(FavSyncService.safeTableName(long).length, 40);
+    test("拒绝消息带目标 uid", () {
+      const deny = PartyState(
+        type: PartyMessageType.deny,
+        roomId: "bili_123",
+        from: "host",
+        uid: 123,
+        at: 1,
+        toUid: 789,
+      );
+
+      final restored = PartyState.fromJson(deny.toJson());
+      expect(restored.type, PartyMessageType.deny);
+      expect(restored.toUid, 789);
     });
 
-    test("中文与空格保留，首尾空格去掉", () {
-      expect(FavSyncService.safeTableName("  我的收藏  "), "我的收藏");
+    test("房间号能解析出房主 UID", () {
+      expect(PartyService.hostUidFromRoom("bili_123456"), 123456);
+      expect(PartyService.hostUidFromRoom("u12345"), 0);
+      expect(PartyService.hostUidFromRoom(""), 0);
+    });
+  });
+
+  group("歌单表结构", () {
+    test("建表语句带 IF NOT EXISTS，重复导入不会再撞名", () {
+      final sql = orderTableSql(TableName.myMusic);
+      expect(sql.contains("CREATE TABLE IF NOT EXISTS"), isTrue);
+      expect(sql.contains(TableName.myMusic), isTrue);
+    });
+
+    test("满满音乐是唯一的主歌单", () {
+      expect(TableName.myMusic, "满满音乐");
+      expect(TableName.myMusic == TableName.musicLocal, isFalse);
     });
   });
 

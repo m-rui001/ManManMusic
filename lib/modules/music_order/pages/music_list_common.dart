@@ -14,11 +14,27 @@ import "package:flutter/material.dart";
 import "package:flutter_easyloading/flutter_easyloading.dart";
 import "package:provider/provider.dart";
 
-final DBOrder db = DBOrder(version: 2);
+final DBOrder db = DBOrder();
 
+/// 歌单里的歌曲列表
+///
+/// 同一份组件既能在首页「我的歌单」里内嵌使用（[embedded] = true，
+/// 不套自己的 Scaffold），也能单独作为一页打开。
 class MusicListCommon extends StatefulWidget {
   final String tabName;
-  const MusicListCommon({super.key, required this.tabName});
+
+  /// 内嵌使用时不再套 Scaffold
+  final bool embedded;
+
+  /// 列表顶部的自定义头部（跟着列表一起滚），参数是当前歌曲数
+  final Widget Function(int count)? headerBuilder;
+
+  const MusicListCommon({
+    super.key,
+    required this.tabName,
+    this.embedded = false,
+    this.headerBuilder,
+  });
 
   @override
   State<MusicListCommon> createState() => MusicListCommonState();
@@ -34,16 +50,11 @@ class MusicListCommonState extends State<MusicListCommon> {
     _loadData();
 
     _subscriptions.add(eventBus.on<RefreshMusicList>().listen((event) {
-      if (mounted) {
-        _loadData();
-        RefreshMusicList(tabName: "");
-      }
+      if (mounted) _loadData();
     }));
 
     _subscriptions.add(eventBus.on<ClearMusicList>().listen((event) {
-      if (mounted) {
-        _clearData();
-      }
+      if (mounted) _clearData();
     }));
   }
 
@@ -56,22 +67,15 @@ class MusicListCommonState extends State<MusicListCommon> {
   }
 
   Future<void> _loadData({bool? forceLoading = false}) async {
-    musicList.clear();
     final musics = await getUpdatedMusicList(tabName: widget.tabName);
 
-    if (mounted && musics.isNotEmpty) {
-      setState(() {
-        musicList = musics;
-      });
-    } else if (mounted) {
-      setState(() {
-        musicList = [];
-      });
-    }
+    if (!mounted) return;
+    setState(() {
+      musicList = musics;
+    });
   }
 
   Future<void> _clearData() async {
-    musicList.clear();
     EasyLoading.show(maskType: EasyLoadingMaskType.black);
 
     try {
@@ -89,31 +93,51 @@ class MusicListCommonState extends State<MusicListCommon> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: musicList.isEmpty ?
-        SizedBox(
-          height: MediaQuery.of(context).size.height - 300,
-          child: const Center(child: Text("没有歌曲，去广场逛一逛吧 ~"))
-        ) :
-        ListView.builder(
-          padding: const EdgeInsets.only(bottom: 20),
-          itemCount: musicList.length,
-          itemBuilder: (context, index) {
-            if (musicList.isEmpty) return null;
-            final item = musicList[index];
-            return MusicListTile(
-              item,
-              onMore: () {
-                showItemSheet(context, item);
-              },
+    final headerCount = widget.headerBuilder == null ? 0 : 1;
+    final hasHeader = headerCount == 1;
+
+    final content = RefreshIndicator(
+      onRefresh: _loadData,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.only(bottom: hasHeader ? 30 : 20),
+        itemCount: musicList.length + headerCount + (musicList.isEmpty ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (hasHeader && index == 0) {
+            return widget.headerBuilder!(musicList.length);
+          }
+
+          final dataIndex = index - headerCount;
+          if (musicList.isEmpty) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 60),
+              child: Center(
+                child: Text(
+                  "还没有歌曲\n点红心、或者从 B 站收藏夹导入都会出现在这里",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 11, color: Colors.grey, height: 1.8),
+                ),
+              ),
             );
           }
-        ),
+
+          final item = musicList[dataIndex];
+          return MusicListTile(
+            item,
+            onMore: () => showItemSheet(context, item),
+          );
+        },
+      ),
     );
+
+    if (widget.embedded) return content;
+
+    return Scaffold(body: content);
   }
 
   void showItemSheet(BuildContext context, MusicItem musicItem) {
     final player = Provider.of<PlayerModel>(context, listen: false);
+
     openBottomSheet(context, [
       SheetItem(
         title: Text(
@@ -129,12 +153,6 @@ class MusicListCommonState extends State<MusicListCommon> {
         title: const Text("播放"),
         onPressed: () {
           player.play(music: musicItem);
-        },
-      ),
-      SheetItem(
-        title: const Text("添加到歌单"),
-        onPressed: () {
-          collectToMusicOrder(context: context, musicList: [musicItem], onConfirm: _loadData);
         },
       ),
       SheetItem(
@@ -165,33 +183,34 @@ class MusicListCommonState extends State<MusicListCommon> {
 
                       _loadData();
                     },
-                  )
+                  ),
                 );
               },
-            )
+            ),
           );
         },
       ),
       SheetItem(
-        title: const Text("删除"),
+        title: const Text("从满满音乐移除"),
         onPressed: () async {
           EasyLoading.show(maskType: EasyLoadingMaskType.black);
-          await db.delete(widget.tabName, musicItem.id);
+          await db.deleteByMid(widget.tabName, musicItem.id);
           EasyLoading.dismiss();
 
           _loadData();
+          eventBus.fire(RefreshTabList());
         },
       ),
       if (musicItem.localPath.isEmpty)
-      SheetItem(
-        title: const Text("下载"),
-        onPressed: () {
-          checkMusicLocalRepeat(context, musicItem, () {
-            final downloadModel = Provider.of<DownloadModel>(context, listen: false);
-            downloadModel.download([musicItem]);
-          });
-        },
-      ),
+        SheetItem(
+          title: const Text("下载"),
+          onPressed: () {
+            checkMusicLocalRepeat(context, musicItem, () {
+              final downloadModel = Provider.of<DownloadModel>(context, listen: false);
+              downloadModel.download([musicItem]);
+            });
+          },
+        ),
     ]);
   }
 }

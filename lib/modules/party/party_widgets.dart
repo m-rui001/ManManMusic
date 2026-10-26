@@ -11,6 +11,9 @@ class PartySelfCard extends StatelessWidget {
   final bool connected;
   final String roomId;
   final bool isLogin;
+
+  /// 是不是在别人的房间里当听众
+  final bool isGuest;
   final VoidCallback onToggleOnline;
   final VoidCallback? onEditName;
 
@@ -23,6 +26,7 @@ class PartySelfCard extends StatelessWidget {
     required this.roomId,
     required this.isLogin,
     required this.onToggleOnline,
+    this.isGuest = false,
     this.onEditName,
   });
 
@@ -91,7 +95,9 @@ class PartySelfCard extends StatelessWidget {
                         const SizedBox(width: 5),
                         Text(
                           inRoom
-                              ? (connected ? "正在分享你的收听" : "连接中…")
+                              ? (connected
+                                  ? (isGuest ? "正在跟房主一起听" : "正在分享你的收听")
+                                  : "连接中…")
                               : "已下线",
                           style: const TextStyle(
                             fontSize: 10,
@@ -114,9 +120,9 @@ class PartySelfCard extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           minimumSize: const Size(0, 30),
                         ),
-                        child: const Text(
-                          "下线",
-                          style: TextStyle(fontSize: 11),
+                        child: Text(
+                          isGuest ? "退出" : "下线",
+                          style: const TextStyle(fontSize: 11),
                         ),
                       )
                     : FilledButton(
@@ -157,7 +163,9 @@ class PartySelfCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  isLogin ? "好友按 UID 就能找到你" : "登录后好友才能找到你",
+                  isGuest
+                      ? "在别人的房间里"
+                      : (isLogin ? "名单里的人才能进" : "登录后才能开房"),
                   style: const TextStyle(fontSize: 9, color: Colors.grey),
                 ),
               ],
@@ -175,6 +183,7 @@ class PartyRosterTile extends StatelessWidget {
   final PartyProbe? probe;
   final VoidCallback onTap;
   final VoidCallback onRemove;
+  final VoidCallback? onToggleControl;
 
   const PartyRosterTile({
     super.key,
@@ -182,6 +191,7 @@ class PartyRosterTile extends StatelessWidget {
     required this.probe,
     required this.onTap,
     required this.onRemove,
+    this.onToggleControl,
   });
 
   @override
@@ -254,9 +264,10 @@ class PartyRosterTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    listening
-                        ? "正在听《${clearHtmlTags(probe!.musicName)}》"
-                        : "没在听歌",
+                    (listening
+                            ? "正在听《${clearHtmlTags(probe!.musicName)}》"
+                            : "没在听歌") +
+                        (member.canControl ? " · 可一起换歌" : ""),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -267,7 +278,20 @@ class PartyRosterTile extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 4),
+            IconButton(
+              tooltip: member.canControl ? "取消共管" : "设为共管",
+              onPressed: onToggleControl,
+              icon: Icon(
+                member.canControl
+                    ? Icons.favorite
+                    : Icons.favorite_border_rounded,
+                size: 17,
+                color: member.canControl ? Colors.redAccent : Colors.grey[350],
+              ),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+            ),
             if (listening)
               Container(
                 padding:

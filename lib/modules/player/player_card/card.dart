@@ -5,7 +5,8 @@ import "dart:ui";
 
 import "package:bobomusic/components/ripple_icon/ripple_icon.dart";
 import "package:bobomusic/icons/icons_svg.dart";
-import "package:bobomusic/modules/music_order/components/top_bar.dart";
+import "package:bobomusic/modules/bili_account/fav_sync.dart";
+import "package:bobomusic/modules/party/party_page.dart";
 import "package:bobomusic/constants/covers.dart";
 import "package:bobomusic/db/db.dart";
 import "package:bobomusic/event_bus/event_bus.dart";
@@ -33,7 +34,7 @@ import "package:url_launcher/url_launcher.dart";
 import "package:uuid/uuid.dart";
 
 const uuid = Uuid();
-final DBOrder db = DBOrder(version: 2);
+final DBOrder db = DBOrder();
 
 class PlayerCard extends StatefulWidget {
   const PlayerCard({super.key});
@@ -70,22 +71,12 @@ class PlayerCardState extends State<PlayerCard> {
   }
 
   Future<void> _initState() async {
-    try {
-      final current = Provider.of<PlayerModel>(context, listen: false).current;
-      final List<Map<String, dynamic>> dbMusics = await db.queryByParam(TableName.musicILike, current?.id ?? current!.name);
+    final current = Provider.of<PlayerModel>(context, listen: false).current;
+    if (current == null) return;
 
-      if (dbMusics.isNotEmpty) {
-        setState(() {
-          isLike = true;
-        });
-      } else {
-        setState(() {
-          isLike = false;
-        });
-      }
-    } catch (error) {
-      print("$error");
-    }
+    final liked = await FavSyncService.isInMyMusic(current.id);
+    if (!mounted) return;
+    setState(() => isLike = liked);
   }
 
   Future<void> _initCoverAndLyric() async {
@@ -365,34 +356,25 @@ class PlayerCardState extends State<PlayerCard> {
                 : Icon(Icons.favorite_border_rounded, color: primaryColor, size: 28);
             },
             onTap: (bool isLiked) async {
+              final music = player.current;
+              if (music == null) return isLike;
+
               try {
                 if (!isLike) {
-                  await db.insert(
-                    TableName.musicILike,
-                    musicItem2Row(
-                      music: player.current!.copyWith(
-                        orderName: TableName.musicILike,
-                        playId: uuid.v4()
-                      )
-                    ),
-                  );
+                  await FavSyncService.addMusic(music);
+                  if (!mounted) return isLike;
 
-                  setState(() {
-                    isLike = true;
-                  });
-
-                  BotToast.showText(text: "已喜欢");
+                  setState(() => isLike = true);
+                  BotToast.showText(text: "已加进满满音乐");
                 } else {
-                  await db.delete(TableName.musicILike, player.current!.name);
+                  await FavSyncService.removeMusic(music.id);
+                  if (!mounted) return isLike;
 
-                  setState(() {
-                    isLike = false;
-                  });
-
-                  BotToast.showText(text: "取消喜欢");
+                  setState(() => isLike = false);
+                  BotToast.showText(text: "已从满满音乐移除");
                 }
 
-                eventBus.fire(RefreshMusicList(tabName: FrozenTab.iLike));
+                eventBus.fire(RefreshMusicList(tabName: TableName.myMusic));
               } catch (error) {
                 print(error);
               }
@@ -535,6 +517,7 @@ class PlayerCardState extends State<PlayerCard> {
                 children: [
                   // 顶部导航栏
                   _buildTopBar(primaryColor),
+                  const PartyLockBanner(),
 
                   Expanded(
                     child: isLandscape
@@ -643,6 +626,57 @@ class PlayerCardState extends State<PlayerCard> {
   }
 }
 
+/// 一起听：只能听时的提示条
+///
+/// 想自己换歌 / 拖进度，必须先退出房间——规则写在这里，别让人到处找。
+class PartyLockBanner extends StatelessWidget {
+  const PartyLockBanner({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final session = PartySession.instance;
+
+    return StreamBuilder<void>(
+      stream: session.changes,
+      builder: (context, _) {
+        if (!session.isLocked) return const SizedBox.shrink();
+
+        return Container(
+          margin: const EdgeInsets.fromLTRB(20, 0, 20, 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.lock_outline, size: 13, color: Colors.white70),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text(
+                  "房主正在控制播放，只能跟着听",
+                  style: TextStyle(fontSize: 10, color: Colors.white70),
+                ),
+              ),
+              GestureDetector(
+                onTap: () => PartySession.instance.leave(),
+                child: const Text(
+                  "退出一起听",
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 // ignore: must_be_immutable
 class PlayerProgress extends StatefulWidget {
   Color? color;
@@ -700,6 +734,7 @@ class _PlayerProgressState extends State<PlayerProgress> {
 
     return Consumer<PlayerModel>(builder: (context, player, child) {
       int total = (player.duration?.inSeconds ?? 0);
+      final locked = PartySession.instance.isLocked;
 
       return Column(
         children: [
@@ -710,17 +745,23 @@ class _PlayerProgressState extends State<PlayerProgress> {
             ),
             child: Slider(
               value: _value,
-              onChanged: (v) {
-                setState(() {
-                  _value = v;
-                });
-              },
-              onChangeStart: (value) {
-                setState(() {
-                  _isChanged = true;
-                });
-              },
-              onChangeEnd: (value) {
+              onChanged: locked
+                  ? null
+                  : (v) {
+                      setState(() {
+                        _value = v;
+                      });
+                    },
+              onChangeStart: locked
+                  ? null
+                  : (value) {
+                      setState(() {
+                        _isChanged = true;
+                      });
+                    },
+              onChangeEnd: locked
+                  ? null
+                  : (value) {
                 final player = Provider.of<PlayerModel>(context, listen: false);
                 int v = (value * total).toInt();
                 player.seek(Duration(seconds: v));

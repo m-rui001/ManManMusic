@@ -30,7 +30,7 @@ Future<int?> getMusicPosition() async {
   return pos;
 }
 
-final db = DBOrder(version: 2);
+final db = DBOrder();
 
 class LyricsScroller extends StatefulWidget {
   const LyricsScroller({super.key});

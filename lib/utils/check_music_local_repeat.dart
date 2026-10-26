@@ -6,7 +6,7 @@ import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:flutter/material.dart";
 
 Future checkMusicLocalRepeat(BuildContext context, MusicItem target, VoidCallback callback) async {
-  final db = DBOrder(version: 2);
+  final db = DBOrder();
   final dbMusics = await db.queryAll(TableName.musicLocal);
   MusicItem? repeatMusic;
 

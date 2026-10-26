@@ -7,6 +7,7 @@ import "package:bobomusic/modules/setting/components/setting_card.dart";
 import "package:bobomusic/modules/bili_account/bili_account_page.dart";
 import "package:bobomusic/modules/party/party_pick_page.dart";
 import "package:bobomusic/modules/party/party_roster.dart";
+import "package:bobomusic/modules/party/party_tone.dart";
 import "package:bobomusic/modules/setting/pages/theme_color_setting.dart";
 import "package:bobomusic/utils/get_cache_color.dart";
 import "package:bobomusic/utils/update_version.dart";
@@ -14,7 +15,7 @@ import "package:flutter/material.dart";
 import "package:flutter_svg/svg.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
-final db = DBOrder(version: 2);
+final db = DBOrder();
 
 class SettingView extends StatefulWidget {
   const SettingView({super.key});
@@ -143,6 +144,18 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                         onChanged: (v) async {
                           await PartyRoster.setAutoOnline(v);
                           if (mounted) setState(() => _autoOnline = v);
+                        },
+                      ),
+                    ),
+                    SettingItem(
+                      leadingIcon: Icons.notifications_active_outlined,
+                      title: "有人进出时播放提示音",
+                      trailing: Switch(
+                        value: PartyTone.instance.enabled,
+                        activeColor: primaryColor,
+                        onChanged: (v) async {
+                          await PartyTone.instance.setEnabled(v);
+                          if (mounted) setState(() {});
                         },
                       ),
                     ),

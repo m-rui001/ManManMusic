@@ -16,6 +16,7 @@ import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
 import "package:bobomusic/modules/home/home.dart";
 import "package:bobomusic/modules/party/party_page.dart";
+import "package:bobomusic/modules/party/party_tone.dart";
 import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/modules/player/service.dart";
 import "package:bobomusic/modules/share/share_handler.dart";
@@ -32,7 +33,7 @@ final botToastBuilder = BotToastInit();
 // 主题
 Color primaryColor = Colors.black;
 // 数据库
-final DBOrder db = DBOrder(version: 2);
+final DBOrder db = DBOrder();
 
 ThemeData theme = ThemeData(
   useMaterial3: true,
@@ -92,6 +93,9 @@ void main() async {
 
   // 历史播放（纯本地）
   await PlayHistory.instance.init();
+
+  // 一起听提示音设置
+  await PartyTone.instance.initFromStorage();
 
   primaryColor = await getCacheColor();
 

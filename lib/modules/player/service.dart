@@ -2,6 +2,7 @@ import "dart:async";
 
 import "package:audio_service/audio_service.dart";
 import "package:bobomusic/event_bus/event_bus.dart";
+import "package:bobomusic/modules/party/party_service.dart";
 import "package:bobomusic/modules/player/instance.dart";
 import "package:just_audio/just_audio.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
@@ -59,8 +60,14 @@ class AudioPlayerHandler extends BaseAudioHandler {
     return super.customAction(name, extras);
   }
 
+  /// 一起听里「只能听」的时候，本机控制一律拦掉
+  ///
+  /// 拦截点放在 audio handler 这一层，通知栏、锁屏、页面按钮就全都管住了。
+  bool get _blocked => !PartyService.instance.allowLocalControl;
+
   @override
   Future<void> play({MusicItem? music}) async {
+    if (_blocked) return;
     if (music != null) {
       await player.play(music: music); // 处理传入新音乐的情况
     } else {
@@ -72,21 +79,27 @@ class AudioPlayerHandler extends BaseAudioHandler {
 
   @override
   Future<void> pause() async {
+    if (_blocked) return;
     await player.audio.pause(); // 直接调用播放器暂停
     _updatePosition();
   }
 
   @override
-  Future<void> seek(Duration position) => player.audio.seek(position);
+  Future<void> seek(Duration position) async {
+    if (_blocked) return;
+    await player.audio.seek(position);
+  }
 
   @override
   Future<void> skipToPrevious() async {
+    if (_blocked) return;
     await player.prev();
     _updateMediaItem();
   }
 
   @override
   Future<void> skipToNext() async {
+    if (_blocked) return;
     await player.next();
     _updateMediaItem();
   }

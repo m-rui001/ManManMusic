@@ -3,7 +3,9 @@ import "dart:async";
 import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/party/party_roster.dart";
 import "package:bobomusic/modules/party/party_service.dart";
+import "package:bobomusic/modules/party/party_tone.dart";
 import "package:bobomusic/modules/player/model.dart";
+import "package:bobomusic/origin_sdk/bili/auth.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
@@ -20,14 +22,27 @@ class PartySession {
   PlayerModel? _player;
   Timer? _broadcastTimer;
   StreamSubscription<PartyState>? _stateSub;
+  StreamSubscription<PartyNotice>? _noticeSub;
   StreamSubscription? _refreshSub;
 
-  bool get isHost => _party.role == PartyRole.host;
-  bool get inRoom => _party.role != PartyRole.none;
+  final _changes = StreamController<void>.broadcast();
+
+  /// 房间 / 权限变化（页面据此刷新）
+  Stream<void> get changes => _changes.stream;
+
+  bool get isHost => _party.isHost;
+  bool get isGuest => _party.isGuest;
+  bool get inRoom => _party.inRoom;
   bool get connected => _party.connected;
   String get roomId => _party.roomId;
   Map<String, String> get members => _party.members;
-  Stream<Map<String, String>> get memberStream => _party.memberStream;
+  Stream<Map<String, String>> get memberStream => _party.membersStream;
+
+  /// 只能听、不能自己操作
+  bool get isLocked => _party.isLocked;
+
+  /// 我能控制播放（房主 / 共管）
+  bool get canControl => _party.allowLocalControl;
 
   /// 最近一次收到的远端歌曲
   MusicItem? remoteMusic;
@@ -36,28 +51,44 @@ class PartySession {
     _player = player;
 
     _stateSub?.cancel();
-    _stateSub = _party.states.listen(_onRemoteState);
+    _stateSub = _party.states.listen((state) {
+      _onRemoteState(state);
+    });
+
+    _noticeSub?.cancel();
+    _noticeSub = _party.notices.listen(_onNotice);
 
     _party.onSyncRequested = () {
-      if (isHost) _broadcastNow();
+      if (_canBroadcast) _broadcastNow();
     };
 
-    // 本机切歌立刻广播，避免等下一次 tick
+    // 本机切歌 / 暂停立刻广播，避免等下一次 tick
     _refreshSub?.cancel();
     _refreshSub = eventBus.on<RefreshPlayerCard>().listen((_) {
-      if (isHost) _broadcastNow();
+      if (_canBroadcast) _broadcastNow();
     });
   }
 
+  bool get _canBroadcast => inRoom && _party.allowLocalControl;
+
   /// 上线：用自己房间号开房并开始广播
   ///
-  /// 已经在房间里就什么都不做。
+  /// 只有一起听名单里的人能进来；名单里点红心的人可以和我一起控制播放。
   Future<bool> goOnline() async {
-    if (_party.role != PartyRole.none) return true;
+    if (_party.inRoom) return true;
 
+    await PartyRoster.instance.init();
     final id = await selfPartyRoomId();
-    final ok = await _party.createRoom(name: selfPartyName(), id: id);
+
+    final ok = await _party.createRoom(
+      name: selfPartyName(),
+      id: id,
+      allowed: PartyRoster.instance.uids,
+      controllers: PartyRoster.instance.controllerUids,
+    );
+
     if (ok) startBroadcasting();
+    _notify();
     return ok;
   }
 
@@ -66,32 +97,64 @@ class PartySession {
   /// 该行为**默认开启**，可在设置里关掉。
   Future<void> autoOnlineIfEnabled() async {
     if (!await PartyRoster.isAutoOnline()) return;
+    // 没登录就没有 UID，别人也认不出你，上线没意义
+    if (!BiliAuth.instance.isLogin) return;
     await goOnline();
   }
 
-  /// 下线
-  Future<void> goOffline() async {
-    _broadcastTimer?.cancel();
-    _broadcastTimer = null;
-    remoteMusic = null;
-    await _party.leaveRoom();
+  /// 名单变了：同步给服务层，被移出名单的人会被请出房间
+  void refreshPermissions() {
+    if (!isHost) return;
+    _party.updatePermissions(
+      allowed: PartyRoster.instance.uids,
+      controllers: PartyRoster.instance.controllerUids,
+    );
+    _notify();
   }
 
-  /// 加入房间后开始周期广播（仅房主）
+  /// 加入别人的房间
+  Future<bool> join(String roomId) async {
+    _stopBroadcast();
+    final ok = await _party.joinRoom(id: roomId, name: selfPartyName());
+    _notify();
+    return ok;
+  }
+
+  /// 下线 / 退出房间
+  Future<void> goOffline() async {
+    _stopBroadcast();
+    remoteMusic = null;
+    await _party.leaveRoom();
+    _notify();
+  }
+
+  Future<void> leave() => goOffline();
+
+  /// 开始周期广播（只有房主需要定时广播，共管改歌时按事件广播）
   void startBroadcasting() {
     _broadcastTimer?.cancel();
-    if (!isHost) return;
+    if (!isHost) {
+      _broadcastNow();
+      return;
+    }
     _broadcastTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       _broadcastNow();
     });
     _broadcastNow();
   }
 
+  void _stopBroadcast() {
+    _broadcastTimer?.cancel();
+    _broadcastTimer = null;
+  }
+
   void _broadcastNow() {
     final player = _player;
     final music = player?.current;
     if (player == null || music == null) return;
-    if (!isHost || !_party.connected) return;
+    if (!inRoom || !_party.connected) return;
+    if (!_party.allowLocalControl) return;
+
     _party.broadcast(
       music: music,
       position: player.currentPosition,
@@ -99,19 +162,20 @@ class PartySession {
     );
   }
 
-  void _onRemoteState(PartyState state) {
-    // 房主不跟随任何人
-    if (isHost) return;
+  Future<void> _apply(Future<void> Function() action) async {
+    _party.applyingRemote = true;
+    try {
+      await action();
+    } finally {
+      _party.applyingRemote = false;
+    }
+  }
+
+  Future<void> _onRemoteState(PartyState state) async {
+    if (!inRoom) return;
 
     final player = _player;
     if (player == null) return;
-
-    if (state.type == PartyMessageType.join) {
-      BotToast.showText(text: "${state.fromName} 加入了一起听");
-      return;
-    }
-
-    if (state.type == PartyMessageType.ping) return;
 
     final music = state.toMusicItem();
     if (music == null) return;
@@ -119,9 +183,9 @@ class PartySession {
     final current = player.current;
     final sameMusic = current != null && current.id == music.id;
 
-    // 补偿网络延迟
+    // 补偿网络延迟（最多补偿 5 秒，防止对方手机时间不准）
     final elapsed = state.at > 0
-        ? DateTime.now().millisecondsSinceEpoch - state.at
+        ? (DateTime.now().millisecondsSinceEpoch - state.at).clamp(0, 5000)
         : 0;
     var target = Duration(milliseconds: state.position + elapsed);
     final total = Duration(seconds: music.duration);
@@ -129,331 +193,78 @@ class PartySession {
 
     if (!sameMusic) {
       remoteMusic = music;
-      player.play(music: music).then((_) {
-        Future.delayed(const Duration(milliseconds: 700), () {
-          player.seek(target);
-          if (!state.playing) player.pause();
-        });
+      await _apply(() async {
+        await player.play(music: music);
+        await Future.delayed(const Duration(milliseconds: 600));
+        await player.seek(target);
+        if (!state.playing) await player.pause();
       });
-      BotToast.showText(text: "已同步：${music.name}");
+      if (!isLocked) {
+        BotToast.showText(text: "已同步：${music.name}");
+      }
       return;
     }
 
     // 同一首歌：偏差超过 1.5 秒才纠正，避免抖动
     final drift = (player.currentPosition - target).abs();
     if (drift.inMilliseconds > 1500) {
-      player.seek(target);
+      await _apply(() async {
+        await player.seek(target);
+      });
     }
 
     if (state.playing && !player.isPlaying) {
-      player.play();
+      await _apply(() async {
+        await player.play();
+      });
     } else if (!state.playing && player.isPlaying) {
-      player.pause();
+      await _apply(() async {
+        await player.pause();
+      });
     }
   }
 
-  Future<void> leave() async {
-    _broadcastTimer?.cancel();
-    _broadcastTimer = null;
-    remoteMusic = null;
-    await _party.leaveRoom();
+  void _onNotice(PartyNotice notice) {
+    switch (notice.kind) {
+      case PartyNoticeKind.joined:
+        BotToast.showText(text: "${_displayName(notice.name)} 加入了一起听");
+        PartyTone.instance.playJoin();
+        break;
+      case PartyNoticeKind.left:
+        BotToast.showText(text: "${_displayName(notice.name)} 离开了一起听");
+        PartyTone.instance.playLeave();
+        break;
+      case PartyNoticeKind.denied:
+        BotToast.showText(
+          text: "房主没把你加进一起听名单，进不去这个房间",
+          duration: const Duration(seconds: 4),
+        );
+        PartyTone.instance.playLeave();
+        break;
+      case PartyNoticeKind.hostLeft:
+        BotToast.showText(
+          text: "房主下线了，一起听结束",
+          duration: const Duration(seconds: 4),
+        );
+        PartyTone.instance.playLeave();
+        break;
+    }
+
+    _notify();
   }
-}
 
-/// 一起听面板（设置页入口）
-class PartyPage extends StatefulWidget {
-  const PartyPage({super.key});
+  String _displayName(String name) => name.trim().isEmpty ? "好友" : name;
 
-  @override
-  State<PartyPage> createState() => _PartyPageState();
-}
-
-class _PartyPageState extends State<PartyPage> {
-  final _roomCtrl = TextEditingController();
-  final PartySession session = PartySession.instance;
-  StreamSubscription<Map<String, String>>? _sub;
-  bool busy = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _sub = session.memberStream.listen((_) {
-      if (mounted) setState(() {});
-    });
+  void _notify() {
+    if (!_changes.isClosed) _changes.add(null);
   }
 
-  @override
   void dispose() {
-    _sub?.cancel();
-    _roomCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _createRoom() async {
-    setState(() => busy = true);
-    final ok = await PartyService.instance.createRoom(name: "房主");
-    if (ok) session.startBroadcasting();
-    if (!mounted) return;
-    setState(() => busy = false);
-    BotToast.showText(
-      text: ok ? "房间已创建：${session.roomId}" : "创建失败，请检查网络",
-    );
-  }
-
-  Future<void> _joinRoom() async {
-    final id = _roomCtrl.text.trim();
-    if (id.length < 4) {
-      BotToast.showText(text: "请输入正确的房间号");
-      return;
-    }
-
-    setState(() => busy = true);
-    final ok = await PartyService.instance.joinRoom(id: id, name: "听众");
-    if (!mounted) return;
-    setState(() => busy = false);
-    BotToast.showText(text: ok ? "已加入房间 $id" : "加入失败，请检查网络");
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor;
-    final player = Provider.of<PlayerModel>(context);
-
-    return Scaffold(
-      appBar: AppBar(title: const Text("一起听", style: TextStyle(fontSize: 18))),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.headphones, size: 18, color: primaryColor),
-                        const SizedBox(width: 8),
-                        const Text(
-                          "和朋友听同一首歌",
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      "不需要注册、也不需要自建服务器：创建房间后把 6 位房间号发给好友，"
-                      "对方输入房间号即可同步播放。房主切歌、暂停、拖动进度，好友会自动跟随。",
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey,
-                        height: 1.6,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              if (!session.inRoom)
-                ..._buildJoinArea(primaryColor)
-              else
-                ..._buildRoomArea(primaryColor, player),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  List<Widget> _buildJoinArea(Color primaryColor) {
-    return [
-      ElevatedButton.icon(
-        onPressed: busy ? null : _createRoom,
-        icon: const Icon(Icons.add, size: 18),
-        label: const Text("创建房间（我做房主）"),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: primaryColor,
-          foregroundColor: Colors.white,
-          minimumSize: const Size.fromHeight(44),
-        ),
-      ),
-      const SizedBox(height: 20),
-      Row(
-        children: [
-          const Expanded(child: Divider()),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Text(
-              "或者",
-              style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-            ),
-          ),
-          const Expanded(child: Divider()),
-        ],
-      ),
-      const SizedBox(height: 20),
-      TextField(
-        controller: _roomCtrl,
-        keyboardType: TextInputType.number,
-        decoration: InputDecoration(
-          hintText: "输入好友的房间号",
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide.none,
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 12,
-          ),
-        ),
-      ),
-      const SizedBox(height: 12),
-      OutlinedButton.icon(
-        onPressed: busy ? null : _joinRoom,
-        icon: const Icon(Icons.login, size: 18),
-        label: const Text("加入房间"),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: primaryColor,
-          minimumSize: const Size.fromHeight(44),
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _buildRoomArea(Color primaryColor, PlayerModel player) {
-    return [
-      Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  session.connected
-                      ? Icons.cloud_done_outlined
-                      : Icons.cloud_off_outlined,
-                  size: 18,
-                  color: session.connected ? primaryColor : Colors.orange,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  session.isHost ? "房主" : "听众",
-                  style: const TextStyle(fontSize: 13),
-                ),
-                const Spacer(),
-                Text(
-                  session.connected ? "已连接" : "连接中…",
-                  style: const TextStyle(fontSize: 10, color: Colors.grey),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            SelectableText(
-              session.roomId,
-              style: TextStyle(
-                fontSize: 32,
-                letterSpacing: 8,
-                fontWeight: FontWeight.bold,
-                color: primaryColor,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              "把房间号发给好友，对方在「一起听」里输入即可",
-              style: TextStyle(fontSize: 10, color: Colors.grey[600]),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                const Text("在线成员：", style: TextStyle(fontSize: 11)),
-                Text(
-                  "${session.members.length + 1} 人",
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: primaryColor,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                _MemberChip(
-                  name: session.isHost ? "我（房主）" : "我",
-                  color: primaryColor,
-                ),
-                ...session.members.entries.map(
-                  (e) => _MemberChip(
-                    name: e.value.isEmpty ? "好友" : e.value,
-                    color: Colors.grey,
-                  ),
-                ),
-              ],
-            ),
-            if (player.current != null) ...[
-              const SizedBox(height: 14),
-              Text(
-                "当前：${player.current!.name}",
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11, color: Colors.grey),
-              ),
-            ],
-          ],
-        ),
-      ),
-      const SizedBox(height: 16),
-      OutlinedButton.icon(
-        onPressed: () async {
-          await session.leave();
-          if (mounted) setState(() {});
-        },
-        icon: const Icon(Icons.logout, size: 18),
-        label: const Text("退出房间"),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: Colors.redAccent,
-          minimumSize: const Size.fromHeight(44),
-        ),
-      ),
-    ];
-  }
-}
-
-class _MemberChip extends StatelessWidget {
-  final String name;
-  final Color color;
-
-  const _MemberChip({required this.name, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(name, style: TextStyle(fontSize: 10, color: color)),
-    );
+    _stopBroadcast();
+    _stateSub?.cancel();
+    _noticeSub?.cancel();
+    _refreshSub?.cancel();
+    _changes.close();
   }
 }
 
@@ -479,17 +290,12 @@ class _PartyJoinPageState extends State<PartyJoinPage> {
   }
 
   Future<void> _join() async {
-    ok = await PartyService.instance.joinRoom(
-      id: widget.roomId.trim(),
-      name: "听众",
-    );
+    final result = await session.join(widget.roomId.trim());
     if (!mounted) return;
-    setState(() => busy = false);
-    if (ok) {
-      BotToast.showText(text: "已加入房间 ${widget.roomId}");
-    } else {
-      BotToast.showText(text: "加入失败，请检查网络");
-    }
+    setState(() {
+      busy = false;
+      ok = result;
+    });
   }
 
   @override
@@ -529,7 +335,7 @@ class _PartyJoinPageState extends State<PartyJoinPage> {
                       Text(
                         ok
                             ? "房主切歌或拖动进度时，你会自动同步"
-                            : "请检查网络后重试，或让好友重新发送邀请",
+                            : "房间号不对，或者房主没把你加进一起听名单",
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           fontSize: 11,

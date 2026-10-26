@@ -1,5 +1,7 @@
 import "dart:async";
 
+import "package:bobomusic/modules/party/party_control.dart";
+import "package:bobomusic/modules/party/party_page.dart";
 import "package:bobomusic/modules/player/const.dart";
 import "package:bobomusic/utils/color.dart";
 import "package:bot_toast/bot_toast.dart";
@@ -34,6 +36,7 @@ class PlayerView extends StatelessWidget {
           direction: Axis.horizontal,
           children: [
             PlayInfo(),
+            PartyLockBadge(),
             Row(children: [
               PlayButton(),
               NextButton(),
@@ -42,6 +45,45 @@ class PlayerView extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 一起听「只能听」的小标记
+///
+/// 被房主锁住时，迷你播放器上会挂一个锁，点一下说明原因。
+class PartyLockBadge extends StatelessWidget {
+  const PartyLockBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final session = PartySession.instance;
+
+    return StreamBuilder<void>(
+      stream: session.changes,
+      builder: (context, _) {
+        if (!session.isLocked) return const SizedBox.shrink();
+
+        return GestureDetector(
+          onTap: () => PartyControl.blocked(),
+          child: Container(
+            margin: const EdgeInsets.only(right: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.lock_outline, size: 11, color: Colors.grey),
+                SizedBox(width: 3),
+                Text("房主控制", style: TextStyle(fontSize: 9, color: Colors.grey)),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -92,6 +134,7 @@ class PlayButton extends StatelessWidget {
             ? const Icon(Icons.pause_circle_filled)
             : const Icon(Icons.play_circle_filled),
           onPressed: () {
+            if (PartyControl.blocked()) return;
             if (player.isPlaying) {
               player.pause();
             } else {
@@ -130,6 +173,7 @@ class PrevButtonState extends State<PrevButton> {
           color: widget.color ?? primaryColor,
           iconSize: widget.size,
           onPressed: () {
+            if (PartyControl.blocked()) return;
             if (player.current == null) {
               BotToast.showText(text: "没有正在听的歌曲，无法播放下一曲");
               return;
@@ -181,6 +225,7 @@ class NextButtonState extends State<NextButton> {
           color: widget.color ?? primaryColor,
           iconSize: widget.size,
           onPressed: () {
+            if (PartyControl.blocked()) return;
             if (player.current == null) {
               BotToast.showText(text: "没有正在听的歌曲，无法播放下一曲");
               return;

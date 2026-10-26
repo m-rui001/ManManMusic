@@ -16,7 +16,7 @@ import "package:shared_preferences/shared_preferences.dart";
 import "package:uuid/uuid.dart";
 
 const uuid = Uuid();
-var db = DBOrder(version: 2);
+var db = DBOrder();
 
 final _storageKeyCurrent = CacheKey.playerCurrent;
 final _storageKeyPlayerMode = CacheKey.playerMode;

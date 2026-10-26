@@ -2,6 +2,7 @@ import "dart:async";
 
 import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/music_plaza/music_plaza.dart";
+import "package:bobomusic/modules/player/player.dart";
 import "package:bobomusic/modules/party/party_tab.dart";
 import "package:bobomusic/modules/setting/setting.dart";
 import "package:bobomusic/modules/tabbar/app_bottom_bar.dart";
@@ -60,6 +61,13 @@ class AppNavigationState extends State<AppNavigation> {
               SettingView(),
             ],
           ),
+        ),
+        // 迷你播放器放在导航栏正上方：
+        // 以前它是 Scaffold 的 FAB，和三个 tab 叠在同一高度，
+        // 想切 tab 或者收起播放页都得先上滑，很难点。
+        const Padding(
+          padding: EdgeInsets.only(top: 2),
+          child: PlayerView(cancelMargin: true),
         ),
         AppBottomBar(
           currentIndex: _index,

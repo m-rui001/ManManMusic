@@ -15,7 +15,7 @@ import "package:flutter/material.dart";
 import "package:flutter_easyloading/flutter_easyloading.dart";
 import "package:path/path.dart" as path;
 
-final DBOrder db = DBOrder(version: 2);
+final DBOrder db = DBOrder();
 final DBCollection dbCollection = DBCollection();
 
 class Collection extends StatefulWidget {

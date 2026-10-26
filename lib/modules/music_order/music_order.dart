@@ -2,40 +2,28 @@
 
 import "dart:async";
 
-import "package:bobomusic/components/custom_dialog/custom_dialog.dart";
-import "package:bobomusic/components/delete_orders/delete_orders.dart";
 import "package:bobomusic/db/db.dart";
-import "package:bobomusic/modules/bili_account/fav_sync.dart";
 import "package:bobomusic/event_bus/event_bus.dart";
-import "package:bobomusic/modules/music_order/components/edit_order.dart";
+import "package:bobomusic/modules/bili_account/bili_fav_page.dart";
+import "package:bobomusic/modules/bili_account/bili_login_gate.dart";
 import "package:bobomusic/modules/music_order/pages/music_list_common.dart";
-import "package:bobomusic/modules/music_order/pages/search.dart";
 import "package:bobomusic/modules/music_order/utils.dart";
+import "package:bobomusic/modules/player/model.dart";
+import "package:bobomusic/origin_sdk/bili/auth.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
-import "package:bobomusic/components/sheet/bottom_sheet.dart";
-import "package:bobomusic/origin_sdk/origin_types.dart";
-import "package:flutter_easyloading/flutter_easyloading.dart";
+import "package:provider/provider.dart";
 
-final DBOrder db = DBOrder(version: 2);
-
-typedef OnItemHandler = void Function(
-  MusicOrderItem data,
-);
-
-class Menus {
-  static String newOrder = "新建歌单";
-  static String editOrder = "编辑歌单";
-  static String deleteOrders = "删除歌单";
-}
-
+/// 「我的歌单」
+///
+/// 现在全 App 只有一张歌单：满满音乐。
+/// 点红心、导入 B 站收藏夹都进这里，不再有「我喜欢 / 收藏夹 A / 收藏夹 B」的分层，
+/// 所以这一页直接就是歌曲列表，不再需要先选歌单。
 class MusicOrderView extends StatefulWidget {
-  final MusicOrderItem? musicOrder;
-
   /// 嵌在首页分栏里时不需要自己的 AppBar / Scaffold
   final bool embedded;
 
-  const MusicOrderView({super.key, this.musicOrder, this.embedded = false});
+  const MusicOrderView({super.key, this.embedded = false});
 
   @override
   State<MusicOrderView> createState() => UserMusicOrderView();
@@ -45,366 +33,44 @@ class UserMusicOrderView extends State<MusicOrderView> with AutomaticKeepAliveCl
   @override
   bool get wantKeepAlive => true;
 
+  final BiliAuth auth = BiliAuth.instance;
 
-  List<String> customOrderList = [];
-  List<SheetItem> orderSheetList = [];
-  // 每个歌单的歌曲数，key 为歌单名
-  Map<String, int> orderCountMap = {};
-  List<String> tabList = [
-    TableName.musicILike,
-  ];
-  final Map<String, IconData> menuBtnMap = {
-    Menus.newOrder: Icons.create_new_folder_outlined,
-    Menus.editOrder: Icons.edit_note,
-    Menus.deleteOrders: Icons.delete_forever,
-  };
-  final List<StreamSubscription?> _subscriptions = [];
+  bool _syncing = false;
 
-  @override
-  void initState() {
-    super.initState();
-
-    // 「本地」分栏已移除，长按删除歌单走 ShowDeleteListDialog
-    _subscriptions.add(eventBus.on<ShowDeleteListDialog>().listen((event) {
-      deleteList(event.tabName);
-    }));
-    _subscriptions.add(eventBus.on<RefreshTabList>().listen((event) {
-      _loadData();
-    }));
-
-    _loadData();
-  }
-
-  @override
-  void dispose() {
-    for (var sub in _subscriptions) {
-      sub?.cancel();
-    }
-    super.dispose();
-  }
-
-  Future<void> refreshTabList() async {
-    final orderList = await getCustomOrderList();
-
-    setState(() {
-      tabList = [
-        TableName.musicILike,
-        ...orderList,
-      ];
-    });
-  }
-
-  Future<void> _loadData() async {
-    final orderList = await getCustomOrderList();
-
-    // 统计各歌单歌曲数
-    final Map<String, int> countMap = {};
-    for (final name in [TableName.musicILike, ...orderList]) {
-      countMap[name] = await _countSongs(name);
-    }
-
+  Future<void> _playAll() async {
+    final list = await getUpdatedMusicList(tabName: TableName.myMusic);
     if (!mounted) return;
 
-    setState(() {
-      customOrderList = orderList;
-      orderCountMap = countMap;
-      tabList = [
-        TableName.musicILike,
-        ...orderList,
-      ];
-      orderSheetList = orderList.map((e) {
-        return SheetItem(
-          title: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  e,
-                  style: TextStyle(
-                    color: Theme.of(context).hintColor,
-                    fontWeight: FontWeight.bold,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-              const Icon(Icons.keyboard_arrow_right)
-            ],
-          ),
-          onPressed: () {
-            final NavigatorState navigator = Navigator.of(context, rootNavigator: false);
-            navigator.push(ModalBottomSheetRoute(
-              isScrollControlled: true,
-              builder: (context) {
-                return Padding(
-                  padding: EdgeInsets.only(
-                    bottom: MediaQuery.of(context).viewInsets.bottom,
-                  ),
-                  child: EditMusicOrder(name: e, update: _loadData),
-                );
-              },
-            ));
-          },
-        );
-      }).cast<SheetItem>().toList();
-    });
-  }
-
-  /// 统计某个歌单的歌曲数（失败时返回 0）
-  Future<int> _countSongs(String tabName) async {
-    try {
-      final database = await db.database;
-      // 表名可能含特殊字符，用双引号包裹并转义
-      final table = tabName.replaceAll('"', '""');
-      final rows = await database.rawQuery('SELECT COUNT(*) AS c FROM "$table"');
-      return rows.isEmpty ? 0 : (rows.first["c"] as int? ?? 0);
-    } catch (error) {
-      return 0;
-    }
-  }
-
-  /// 进入歌单内容页
-  void _openOrder(String tabName) {
-    Navigator.of(context, rootNavigator: false)
-      .push(
-        MaterialPageRoute(
-          builder: (BuildContext context) {
-            return Scaffold(
-              appBar: AppBar(
-                centerTitle: true,
-                title: Text(
-                  tabName,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ),
-              body: MusicListCommon(tabName: tabName),
-            );
-          },
-        ),
-      )
-      .then((_) {
-        // 返回时刷新歌曲数
-        if (mounted) _loadData();
-      });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-
-    if (widget.embedded) {
-      return _buildBody();
-    }
-
-    return Scaffold(
-      appBar: AppBar(
-        title: GestureDetector(
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (BuildContext context) {
-                  return const SearchOrderMusicView();
-                },
-              ),
-            );
-          },
-          child: const TextField(
-            enabled: false,
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Color.fromARGB(255, 239, 240, 241),
-              constraints: BoxConstraints(maxHeight: 35),
-              border: UnderlineInputBorder(
-                borderSide: BorderSide.none,
-                borderRadius: BorderRadius.all(Radius.circular(20)),
-              ),
-              hintText: "搜索歌单中的歌曲",
-              hintStyle: TextStyle(fontSize: 12),
-              contentPadding: EdgeInsets.symmetric(vertical: 13.5, horizontal: 16),
-            ),
-          ),
-        ),
-        actions: [
-          PopupMenuButton(
-            icon: const Icon(Icons.menu),
-            itemBuilder: (context) => _buildPopupBtnItems(),
-            offset: const Offset(0, 46),
-            constraints: const BoxConstraints(
-              minWidth: 130,
-              maxWidth: 130,
-            ),
-            onSelected: (e) {
-              if (e == Menus.newOrder) {
-                final NavigatorState navigator = Navigator.of(context, rootNavigator: false);
-                navigator.push(ModalBottomSheetRoute(
-                  isScrollControlled: true,
-                  builder: (context) {
-                    return Padding(
-                      padding: EdgeInsets.only(
-                        bottom: MediaQuery.of(context).viewInsets.bottom,
-                      ),
-                      child: EditMusicOrder(name: "", update: _loadData),
-                    );
-                  },
-                ));
-              }
-              if (e == Menus.editOrder) {
-                if (orderSheetList.isNotEmpty) {
-                  openBottomSheet(context, [
-                    SheetItem(
-                      title: Text(
-                        "可编辑歌单",
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Theme.of(context).primaryColor,
-                          fontWeight: FontWeight.bold,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                    ...orderSheetList,
-                  ]);
-                } else {
-                  BotToast.showText(text: "没有可编辑的歌单", duration: const Duration(seconds: 2));
-                }
-              }
-              if (e == Menus.deleteOrders) {
-                if (customOrderList.isNotEmpty) {
-                   Navigator.of(context, rootNavigator: false).push(ModalBottomSheetRoute(
-                    isScrollControlled: true,
-                    builder: (context) {
-                      return DeleteOrders(onConfirm: _loadData);
-                    },
-                  ));
-                } else {
-                  BotToast.showText(text: "没有可删除的歌单", duration: const Duration(seconds: 2));
-                }
-              }
-            },
-          ),
-          const SizedBox(width: 10)
-        ],
-      ),
-      body: _buildBody(),
-    );
-  }
-
-  /// 歌单纵向列表
-  Widget _buildBody() {
-    return ListView(
-      padding: const EdgeInsets.only(top: 10, left: 14, right: 14, bottom: 20),
-      children: [
-        _buildOrderCard(
-          tabName: TableName.musicILike,
-          icon: Icons.favorite,
-        ),
-        ...customOrderList.map((e) {
-          return _buildOrderCard(
-            tabName: e,
-            icon: Icons.queue_music,
-          );
-        }),
-      ],
-    );
-  }
-
-  /// 长按歌单：清空歌曲 或 删除整个歌单
-  Future<void> _showOrderActions(String tabName, IconData icon) async {
-    final primaryColor = Theme.of(context).primaryColor;
-    final isBuiltin = tabName == TableName.musicILike;
-
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        padding: EdgeInsets.only(
-          bottom: 16 + MediaQuery.of(ctx).viewPadding.bottom,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-              child: Row(
-                children: [
-                  Icon(icon, size: 16, color: primaryColor),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      tabName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            ListTile(
-              dense: true,
-              leading: const Icon(Icons.playlist_remove, size: 20),
-              title: const Text("清空歌曲", style: TextStyle(fontSize: 13)),
-              subtitle: const Text(
-                "保留歌单，只删掉里面的歌",
-                style: TextStyle(fontSize: 10),
-              ),
-              onTap: () => Navigator.of(ctx).pop("clear"),
-            ),
-            if (!isBuiltin)
-              ListTile(
-                dense: true,
-                leading: const Icon(
-                  Icons.delete_forever,
-                  size: 20,
-                  color: Colors.redAccent,
-                ),
-                title: const Text(
-                  "删除整个歌单",
-                  style: TextStyle(fontSize: 13, color: Colors.redAccent),
-                ),
-                subtitle: const Text(
-                  "歌单和里面的歌一起删掉",
-                  style: TextStyle(fontSize: 10),
-                ),
-                onTap: () => Navigator.of(ctx).pop("delete"),
-              ),
-          ],
-        ),
-      ),
-    );
-
-    if (!mounted || action == null) return;
-
-    if (action == "clear") {
-      eventBus.fire(ShowDeleteListDialog(tabName: tabName));
+    if (list.isEmpty) {
+      BotToast.showText(text: "满满音乐还是空的");
       return;
     }
 
-    if (action == "delete") {
-      await _deleteWholeOrder(tabName);
-    }
+    Provider.of<PlayerModel>(context, listen: false).play(music: list.first);
   }
 
-  /// 删除整个歌单（含收藏夹绑定关系）
-  Future<void> _deleteWholeOrder(String tabName) async {
-    final hasBinding = await FavSyncService.findByTableName(tabName);
+  Future<void> _openFavSync() async {
+    if (!auth.isLogin) {
+      final ok = await BiliLoginGate.ensureLoggedIn(context);
+      if (!ok || !mounted) return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const BiliFavPage()),
+    );
 
     if (!mounted) return;
+    eventBus.fire(RefreshMusicList(tabName: TableName.myMusic));
+  }
+
+  Future<void> _clearAll() async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("删除歌单", style: TextStyle(fontSize: 14)),
-        content: Text(
-          hasBinding != null
-              ? "「$tabName」是从 B 站收藏夹导入的，删除后会解除关联，"
-                  "B 站上的收藏夹不受影响。"
-              : "确定删除歌单「$tabName」？里面的歌会一起删掉。",
-          style: const TextStyle(fontSize: 12, height: 1.6),
+        title: const Text("清空满满音乐", style: TextStyle(fontSize: 14)),
+        content: const Text(
+          "会把满满音乐里的歌全部删掉，B 站上的收藏夹不受影响。",
+          style: TextStyle(fontSize: 12, height: 1.6),
         ),
         actions: [
           TextButton(
@@ -413,7 +79,7 @@ class UserMusicOrderView extends State<MusicOrderView> with AutomaticKeepAliveCl
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text("删除"),
+            child: const Text("清空"),
           ),
         ],
       ),
@@ -421,122 +87,148 @@ class UserMusicOrderView extends State<MusicOrderView> with AutomaticKeepAliveCl
 
     if (ok != true) return;
 
-    EasyLoading.show(maskType: EasyLoadingMaskType.black);
-    try {
-      await FavSyncService.deleteOrder(tabName);
-      await _loadData();
-      eventBus.fire(RefreshTabList());
-    } catch (e) {
-      BotToast.showText(text: "删除失败：$e");
-    }
-    EasyLoading.dismiss();
+    setState(() => _syncing = true);
+    await DBOrder().deleteAll(TableName.myMusic);
+    if (!mounted) return;
+    setState(() => _syncing = false);
+
+    eventBus.fire(ClearMusicList());
+    eventBus.fire(RefreshMusicList(tabName: TableName.myMusic));
+    BotToast.showText(text: "已清空");
   }
 
-  /// 歌单卡片
-  Widget _buildOrderCard({required String tabName, required IconData icon}) {
-    final primaryColor = Theme.of(context).primaryColor;
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Material(
-        color: Colors.white,
-        borderRadius: const BorderRadius.all(Radius.circular(14)),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => _openOrder(tabName),
-          // 长按删除该歌单所有歌曲
-          onLongPress: () => _showOrderActions(tabName, icon),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: primaryColor.withValues(alpha: 0.08),
-                    borderRadius: const BorderRadius.all(Radius.circular(12)),
-                  ),
-                  child: Icon(icon, size: 22, color: primaryColor),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        tabName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        "${orderCountMap[tabName] ?? 0} 首歌曲",
-                        style: const TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.chevron_right, size: 20, color: Colors.grey),
-              ],
-            ),
-          ),
-        ),
+    final body = MusicListCommon(
+      tabName: TableName.myMusic,
+      embedded: true,
+      headerBuilder: _buildHeader,
+    );
+
+    if (widget.embedded) return body;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("我的歌单", style: TextStyle(fontSize: 17)),
       ),
+      body: body,
     );
   }
 
-  List<PopupMenuItem<String>> _buildPopupBtnItems() {
-    return menuBtnMap.keys.toList().map((btn) {
-      return PopupMenuItem<String>(
-        value: btn,
-        child: SizedBox(
-          width: 100, // 设置一个合适的宽度
-          child: Row(
-            children: [
-              Icon(menuBtnMap[btn], color: Theme.of(context).primaryColor),
-              const SizedBox(width: 10),
-              Text(btn)
-            ],
+  Widget _buildHeader(int count) {
+    final primaryColor = Theme.of(context).primaryColor;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: primaryColor.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(
+                        Icons.favorite,
+                        size: 24,
+                        color: primaryColor,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            "满满音乐",
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            "$count 首 · 点红心就会进来",
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (count > 0)
+                      IconButton(
+                        tooltip: "清空",
+                        onPressed: _syncing ? null : _clearAll,
+                        icon: Icon(
+                          Icons.delete_outline,
+                          size: 20,
+                          color: Colors.grey[400],
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 38,
+                        child: FilledButton.icon(
+                          onPressed: _playAll,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: primaryColor,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(19),
+                            ),
+                          ),
+                          icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                          label: const Text("播放全部", style: TextStyle(fontSize: 12)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: SizedBox(
+                        height: 38,
+                        child: OutlinedButton.icon(
+                          onPressed: _openFavSync,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: primaryColor,
+                            side: BorderSide(
+                              color: primaryColor.withValues(alpha: 0.3),
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(19),
+                            ),
+                          ),
+                          icon: const Icon(Icons.sync, size: 16),
+                          label: const Text("同步 B 站", style: TextStyle(fontSize: 12)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-      );
-    }).toList();
-  }
-
-  Future<void> deleteList(String tabName) async {
-    final musicList = await db.queryAll(tabName);
-
-    if (context.mounted && musicList.isNotEmpty) {
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return CustomDialog(
-            body: const Text("删除此歌单所有歌曲?"),
-            onConfirm: () async {
-              EasyLoading.show(maskType: EasyLoadingMaskType.black);
-
-              if (context.mounted) {
-                Navigator.of(context).pop();
-              }
-
-              try {
-                await db.deleteAll(tabName);
-                eventBus.fire(ClearMusicList());
-                _loadData();
-              } catch (error) {
-                print(error);
-              }
-              EasyLoading.dismiss();
-            },
-            onCancel: () {
-              Navigator.of(context).pop();
-            },
-          );
-        },
-      );
-    }
+        ],
+      ),
+    );
   }
 }

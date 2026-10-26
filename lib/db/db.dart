@@ -12,13 +12,22 @@ class DBName {
 class TableName {
   /// 本地
   static String musicLocal  = "本地";
-  /// 用户自定义歌单都存在一个表里
-  static String musicILike  = "我喜欢";
+  /// 满满音乐：唯一的主歌单
+  ///
+  /// 点红心、从 B 站收藏夹导入，全都进这一张表。
+  /// 不再区分「我喜欢」和一堆「收藏夹_xxx」。
+  static String myMusic  = "满满音乐";
+  /// 旧版「我喜欢」表名，只在数据库升级时用来迁移
+  static String legacyILike  = "我喜欢";
   /// 待播放列表
   static String musicWaitPlay  = "待播放列表";
-  /// 待播放列表
+  /// 收藏合集
   static String collection  = "收藏合集";
 }
+
+/// 歌单表的建表语句（所有歌单表结构一致）
+String orderTableSql(String tableName) =>
+    "CREATE TABLE IF NOT EXISTS $tableName (id INTEGER PRIMARY KEY AUTOINCREMENT, mid TEXT, name TEXT, cover TEXT, duration INTEGER, author TEXT, origin TEXT, playId TEXT, lyric TEXT, localPath TEXT, prev TEXT, next TEXT, orderName TEXT, isFirst TEXT, isLast TEXT)";
 
 // 基础数据库帮助类
 abstract class BaseDatabaseHelper {
@@ -89,12 +98,17 @@ abstract class BaseDatabaseHelper {
   Future<bool> isTableExists(String tableName) async {
     Database db = await database;
     var result = await db.rawQuery(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='$tableName'",
+      "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+      [tableName],
     );
     return result.isNotEmpty;
   }
 
-  Future<List<Map<String, dynamic>>> queryAll(String tableName, {String? groupBy = "name", bool? needOrder}) async {
+  /// 按 mid 去重后取出全部歌曲
+  ///
+  /// - [groupBy] 默认 mid：同一首歌只留最早插入的那一条
+  /// - [needOrder] 为 false 时按插入顺序（id）返回，适合歌单/待播放这类有先后意义的列表
+  Future<List<Map<String, dynamic>>> queryAll(String tableName, {String? groupBy = "mid", bool? needOrder}) async {
     final isOrder = needOrder ?? true;
     try {
       Database db = await database;
@@ -104,7 +118,7 @@ abstract class BaseDatabaseHelper {
           SELECT MIN(id) FROM $tableName
           GROUP BY $groupBy
         )
-        ${isOrder ? "ORDER BY name ASC" : ""}
+        $isOrder ? "ORDER BY name ASC" : "ORDER BY id ASC"}
       """);
     } catch (e) {
       print("Query error: $e");
@@ -120,7 +134,7 @@ abstract class BaseDatabaseHelper {
         WHERE id IN (
           SELECT MIN(id) FROM $tableName
           WHERE mid =? OR name LIKE? OR playId =?
-          GROUP BY playId
+          GROUP BY mid
         )
         ORDER BY name ASC
       """, [param, "%$param%", param]);
@@ -170,6 +184,17 @@ abstract class BaseDatabaseHelper {
         where: "mid =? OR name=?",
         whereArgs: [param, param],
       );
+    } catch (e) {
+      print("Delete error: $e");
+      rethrow;
+    }
+  }
+
+  /// 按歌曲 mid 精确删除（只删这一首，不会误删同名歌曲）
+  Future<int> deleteByMid(String tableName, String mid) async {
+    try {
+      Database db = await database;
+      return await db.delete(tableName, where: "mid =?", whereArgs: [mid]);
     } catch (e) {
       print("Delete error: $e");
       rethrow;
@@ -227,34 +252,103 @@ abstract class BaseDatabaseHelper {
 
 class DBOrder extends BaseDatabaseHelper {
   DBOrder({
-    int version = 1,
+    int version = 3,
   }) : super._internal(DBName.orderName, version);
 
   @override
   Future<void> _onCreate(Database db, int version) async {
     /// 本地
-    await db.execute(
-      "CREATE TABLE ${TableName.musicLocal} (id INTEGER PRIMARY KEY AUTOINCREMENT, mid TEXT, name TEXT, cover TEXT, duration INTEGER, author TEXT, origin TEXT, playId TEXT, lyric TEXT, localPath TEXT, prev TEXT, next TEXT, orderName TEXT, isFirst TEXT, isLast TEXT)",
-    );
-    /// 我喜欢
-    await db.execute(
-      "CREATE TABLE ${TableName.musicILike} (id INTEGER PRIMARY KEY AUTOINCREMENT, mid TEXT, name TEXT, cover TEXT, duration INTEGER, author INTEGER, origin TEXT, playId TEXT, lyric TEXT, localPath TEXT, prev TEXT, next TEXT, orderName TEXT, isFirst TEXT, isLast TEXT)",
-    );
+    await db.execute(orderTableSql(TableName.musicLocal));
+    /// 满满音乐
+    await db.execute(orderTableSql(TableName.myMusic));
     /// 待播放列表
-    await db.execute(
-      "CREATE TABLE ${TableName.musicWaitPlay} (id INTEGER PRIMARY KEY AUTOINCREMENT, mid TEXT, name TEXT, cover TEXT, duration INTEGER, author INTEGER, origin TEXT, playId TEXT, lyric TEXT, localPath TEXT, prev TEXT, next TEXT, orderName TEXT, isFirst TEXT, isLast TEXT)",
-    );
+    await db.execute(orderTableSql(TableName.musicWaitPlay));
   }
 
   @override
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {}
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 3) {
+      await _migrateToMyMusic(db);
+    }
+  }
+
+  /// v2 → v3：把「我喜欢」和所有「收藏夹_xxx」并成一张「满满音乐」
+  ///
+  /// 老版本每个收藏夹单独建一张表，表名取自标题，重名或标题为空时
+  /// 建表直接抛 "table already exists"，导入也就跟着失败。
+  /// 现在只剩一张表，结构上不可能再撞名。
+  Future<void> _migrateToMyMusic(Database db) async {
+    await db.execute(orderTableSql(TableName.myMusic));
+
+    if (await _tableExists(db, TableName.legacyILike)) {
+      await _mergeTable(db, from: TableName.legacyILike, into: TableName.myMusic);
+      await db.execute('DROP TABLE "${TableName.legacyILike}"');
+    }
+
+    final legacyFavTables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '收藏夹\\_%' ESCAPE '\\'",
+    );
+    for (final row in legacyFavTables) {
+      final name = "${row["name"]}";
+      if (name.isEmpty) continue;
+      await _mergeTable(db, from: name, into: TableName.myMusic);
+      await db.execute('DROP TABLE "$name"');
+    }
+
+    await db.update(TableName.myMusic, {"orderName": TableName.myMusic});
+  }
+
+  Future<bool> _tableExists(Database db, String tableName) async {
+    final rows = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+      [tableName],
+    );
+    return rows.isNotEmpty;
+  }
+
+  /// 把 [from] 里 [into] 没有的歌并进 [into]（按 mid 去重）
+  Future<void> _mergeTable(
+    Database db, {
+    required String from,
+    required String into,
+  }) async {
+    final rows = await db.query(from);
+    if (rows.isEmpty) return;
+
+    final existing = await db.query(into, columns: ["mid"]);
+    final ids = existing.map((e) => "${e["mid"]}").toSet();
+
+    var index = 0;
+    for (final row in rows) {
+      final mid = "${row["mid"] ?? ""}";
+      if (mid.isEmpty || !ids.add(mid)) continue;
+      final playId = "${row["playId"] ?? ""}";
+      await db.insert(into, {
+        "mid": mid,
+        "name": "${row["name"] ?? ""}",
+        "cover": "${row["cover"] ?? ""}",
+        "duration": row["duration"] is int ? row["duration"] : 0,
+        "author": "${row["author"] ?? ""}",
+        "origin": "${row["origin"] ?? OriginType.bili.value}",
+        "playId": playId.isEmpty
+            ? "m${DateTime.now().microsecondsSinceEpoch}$index"
+            : playId,
+        "lyric": "${row["lyric"] ?? ""}",
+        "localPath": "${row["localPath"] ?? ""}",
+        "prev": "",
+        "next": "",
+        "orderName": into,
+        "isFirst": "",
+        "isLast": "",
+      });
+      index += 1;
+    }
+  }
 
   Future<void> createOrderTable(String tableName) async {
     try {
       Database db = await database;
-      await db.execute(
-        "CREATE TABLE $tableName (id INTEGER PRIMARY KEY AUTOINCREMENT, mid TEXT, name TEXT, cover TEXT, duration INTEGER, author TEXT, origin TEXT, playId TEXT, lyric TEXT, localPath TEXT, prev TEXT, next TEXT, orderName TEXT, isFirst TEXT, isLast TEXT)",
-      );
+      await db.execute(orderTableSql(tableName));
     } catch (e) {
       print("Error creating table $tableName: $e");
       rethrow;
@@ -320,7 +414,7 @@ class DBCollection extends BaseDatabaseHelper {
         WHERE id IN (
           SELECT MIN(id) FROM $tableName
           WHERE cid =? OR name LIKE?
-          GROUP BY playId
+          GROUP BY cid
         )
         ORDER BY name ASC
       """, [param, "%$param%"]);
@@ -399,4 +493,3 @@ CollectionItemType row2Collection({required Map<String, dynamic> dbRow}) {
     musicListTableName: dbRow["musicListTableName"] as String
   );
 }
-

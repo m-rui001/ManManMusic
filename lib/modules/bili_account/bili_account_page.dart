@@ -86,11 +86,11 @@ class _BiliAccountPageState extends State<BiliAccountPage> {
                             color: primaryColor,
                           ),
                           title: const Text(
-                            "从收藏夹导入歌单",
+                            "从收藏夹导入",
                             style: TextStyle(fontSize: 13),
                           ),
                           subtitle: const Text(
-                            "把 B 站收藏夹里的视频一键变成满满音乐歌单",
+                            "把 B 站收藏夹里的视频并进「满满音乐」",
                             style: TextStyle(fontSize: 10),
                           ),
                           trailing: const Icon(Icons.chevron_right, size: 18),
@@ -194,8 +194,8 @@ class _BiliAccountPageState extends State<BiliAccountPage> {
         const SizedBox(height: 10),
         const Text(
           "· 播放大会员 / Hi-Res 高音质音频\n"
-          "· 一键把 B 站收藏夹导入成歌单\n"
-          "· 收藏夹内容与网页端保持同步",
+          "· 把 B 站收藏夹一键并进「满满音乐」\n"
+          "· 一起听时按 UID 认出名单里的人",
           style: TextStyle(fontSize: 11, height: 1.9, color: Colors.grey),
         ),
         const SizedBox(height: 16),

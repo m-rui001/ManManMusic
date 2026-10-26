@@ -10,11 +10,31 @@ class RosterMember {
   final String uname;
   final String face;
 
+  /// 点过红心 = 共管
+  ///
+  /// 共管可以在我听歌的时候直接换歌、拖进度；
+  /// 没点红心的只能听，想自己操作必须先退出房间。
+  final bool canControl;
+
   const RosterMember({
     required this.mid,
     required this.uname,
     required this.face,
+    this.canControl = false,
   });
+
+  RosterMember copyWith({
+    String? uname,
+    String? face,
+    bool? canControl,
+  }) {
+    return RosterMember(
+      mid: mid,
+      uname: uname ?? this.uname,
+      face: face ?? this.face,
+      canControl: canControl ?? this.canControl,
+    );
+  }
 
   /// 房间号规则与 PartyTabView 保持一致
   String get roomId => "bili_$mid";
@@ -23,6 +43,7 @@ class RosterMember {
         "mid": mid,
         "uname": uname,
         "face": face,
+        "canControl": canControl,
       };
 
   factory RosterMember.fromJson(Map<String, dynamic> json) {
@@ -30,6 +51,7 @@ class RosterMember {
       mid: (json["mid"] is int) ? json["mid"] : int.tryParse("${json["mid"]}") ?? 0,
       uname: "${json["uname"] ?? ""}",
       face: "${json["face"] ?? ""}",
+      canControl: json["canControl"] == true,
     );
   }
 }
@@ -58,6 +80,21 @@ class PartyRoster {
   int get length => _members.length;
 
   bool contains(int mid) => _members.any((e) => e.mid == mid);
+
+  /// 允许进我房间的人
+  List<int> get uids => _members.map((e) => e.mid).toList();
+
+  /// 其中可以和我一起控制播放的人（点过红心）
+  List<int> get controllerUids =>
+      _members.where((e) => e.canControl).map((e) => e.mid).toList();
+
+  /// 切换某个人的共管权限
+  Future<void> setControl(int mid, bool value) async {
+    final index = _members.indexWhere((e) => e.mid == mid);
+    if (index < 0) return;
+    _members[index] = _members[index].copyWith(canControl: value);
+    await _save();
+  }
 
   Future<void> init() async {
     if (_inited) return;

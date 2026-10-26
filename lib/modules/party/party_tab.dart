@@ -12,13 +12,10 @@ import "package:flutter/material.dart";
 
 /// 「一起听」底部栏页面
 ///
-/// 上线策略：
-/// - 默认打开 App 就自动上线（设置里可以关掉）
-/// - 关掉之后这里会显示「上线」按钮，手动控制
-///
-/// 名单策略：
-/// - 一开始是空的，不把你关注的所有人都塞进来
-/// - 点「选择」从关注列表里挑人，也可以单独移除
+/// 规则（也是这一页要讲清楚的事）：
+/// - 我上线 = 开着我的房间，只有「一起听名单」里的人能进来
+/// - 名单里点过红心的人 = 共管，可以和我一起换歌、拖进度
+/// - 其他人进来只能听，想自己点歌得先退出房间
 class PartyTabView extends StatefulWidget {
   const PartyTabView({super.key});
 
@@ -32,6 +29,7 @@ class PartyTabViewState extends State<PartyTabView> {
   final PartyRoster roster = PartyRoster.instance;
 
   StreamSubscription<Map<String, String>>? _memberSub;
+  StreamSubscription<void>? _changeSub;
 
   Map<int, PartyProbe?> probes = {};
   bool _busy = false;
@@ -40,14 +38,18 @@ class PartyTabViewState extends State<PartyTabView> {
   @override
   void initState() {
     super.initState();
+
     _memberSub = session.memberStream.listen((_) {
+      if (mounted) setState(() {});
+    });
+
+    _changeSub = session.changes.listen((_) {
       if (mounted) setState(() {});
     });
 
     roster.init().then((_) async {
       if (!mounted) return;
       setState(() {});
-      // 上线与否完全由启动逻辑 + 用户手动操作决定，这里只负责探测
       await _probeAll();
     });
   }
@@ -55,6 +57,7 @@ class PartyTabViewState extends State<PartyTabView> {
   @override
   void dispose() {
     _memberSub?.cancel();
+    _changeSub?.cancel();
     super.dispose();
   }
 
@@ -68,6 +71,13 @@ class PartyTabViewState extends State<PartyTabView> {
     if (session.inRoom) {
       await session.goOffline();
     } else {
+      if (!auth.isLogin) {
+        final ok = await BiliLoginGate.ensureLoggedIn(context);
+        if (!ok) {
+          if (mounted) setState(() => _busy = false);
+          return;
+        }
+      }
       await session.goOnline();
     }
     if (!mounted) return;
@@ -105,23 +115,39 @@ class PartyTabViewState extends State<PartyTabView> {
       return;
     }
 
+    if (!auth.isLogin) {
+      final ok = await BiliLoginGate.ensureLoggedIn(context);
+      if (!ok || !mounted) return;
+    }
+
     setState(() => _busy = true);
-    final ok = await PartyService.instance.joinRoom(
-      id: member.roomId,
-      name: _myName,
-    );
+    final ok = await session.join(member.roomId);
     if (!mounted) return;
     setState(() => _busy = false);
 
-    if (ok) {
-      BotToast.showText(text: "已加入 ${member.uname} 的一起听");
-    } else {
-      BotToast.showText(text: "加入失败，请检查网络");
-    }
+    BotToast.showText(
+      text: ok ? "已加入 ${member.uname} 的一起听" : "加入失败，请检查网络",
+    );
+  }
+
+  Future<void> _toggleControl(RosterMember member) async {
+    await roster.setControl(member.mid, !member.canControl);
+    session.refreshPermissions();
+
+    if (!mounted) return;
+    setState(() {});
+
+    BotToast.showText(
+      text: member.canControl
+          ? "已取消 ${member.uname} 的共管权限"
+          : "${member.uname} 现在可以和你一起换歌了",
+    );
   }
 
   Future<void> _removeFromRoster(RosterMember member) async {
     await roster.remove(member.mid);
+    session.refreshPermissions();
+
     if (!mounted) return;
     setState(() => probes.remove(member.mid));
     BotToast.showText(text: "已从名单移除 ${member.uname}");
@@ -141,6 +167,7 @@ class PartyTabViewState extends State<PartyTabView> {
 
     if (changed == true && mounted) {
       setState(() {});
+      session.refreshPermissions();
       await _probeAll();
     }
   }
@@ -184,11 +211,16 @@ class PartyTabViewState extends State<PartyTabView> {
                   connected: session.connected,
                   roomId: session.roomId,
                   isLogin: auth.isLogin,
+                  isGuest: session.isGuest,
                   onToggleOnline: _busy ? () {} : _toggleOnline,
                 ),
                 if (!auth.isLogin) ...[
                   const SizedBox(height: 12),
                   _loginHint(primaryColor),
+                ],
+                if (session.isGuest) ...[
+                  const SizedBox(height: 12),
+                  _guestCard(primaryColor),
                 ],
                 const SizedBox(height: 18),
                 PartySectionTitle(
@@ -210,6 +242,17 @@ class PartyTabViewState extends State<PartyTabView> {
                     ),
                   ),
                 ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 2, bottom: 10),
+                  child: Text(
+                    "名单里的人才能进你的房间；点红心的人可以和你一起换歌、拖进度。",
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      height: 1.6,
+                      color: Colors.grey[500],
+                    ),
+                  ),
+                ),
                 if (members.isEmpty)
                   _emptyRoster(primaryColor)
                 else
@@ -219,6 +262,7 @@ class PartyTabViewState extends State<PartyTabView> {
                       probe: probes[m.mid],
                       onTap: _busy ? () {} : () => _join(m),
                       onRemove: () => _removeFromRoster(m),
+                      onToggleControl: () => _toggleControl(m),
                     ),
                   ),
                 const SizedBox(height: 18),
@@ -249,6 +293,54 @@ class PartyTabViewState extends State<PartyTabView> {
     );
   }
 
+  /// 作为听众在别人房间里的状态卡
+  Widget _guestCard(Color primaryColor) {
+    final locked = session.isLocked;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: locked
+            ? const Color.fromARGB(255, 255, 247, 230)
+            : primaryColor.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            locked ? Icons.lock_outline : Icons.graphic_eq,
+            size: 16,
+            color: locked ? const Color(0xFFB8860B) : primaryColor,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              locked
+                  ? "正在跟房主一起听：只能听，想自己点歌请先退出"
+                  : "你在这个房间有共管权限，可以一起换歌、拖进度",
+              style: TextStyle(
+                fontSize: 10,
+                height: 1.6,
+                color: locked ? const Color(0xFFB8860B) : primaryColor,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () async {
+              await session.leave();
+              if (mounted) setState(() {});
+            },
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 28),
+            ),
+            child: const Text("退出", style: TextStyle(fontSize: 11)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _emptyRoster(Color primaryColor) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -267,7 +359,7 @@ class PartyTabViewState extends State<PartyTabView> {
           const SizedBox(height: 5),
           const Text(
             "从你关注的人里挑几个真正会一起听歌的。"
-            "没加进来的人不会被探测，列表也不会乱。",
+            "没加进来的人进不了你的房间，列表也不会乱。",
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11, color: Colors.grey, height: 1.6),
           ),
@@ -308,7 +400,7 @@ class PartyTabViewState extends State<PartyTabView> {
           const SizedBox(width: 8),
           const Expanded(
             child: Text(
-              "登录后好友才能按 UID 找到你，也才能从关注列表挑人。",
+              "登录后好友才能按 UID 找到你，也才能认出谁在名单里。",
               style: TextStyle(
                 fontSize: 10,
                 color: Color(0xFFB8860B),

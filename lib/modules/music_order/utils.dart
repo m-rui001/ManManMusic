@@ -1,134 +1,81 @@
 import "dart:async";
 
-import "package:bobomusic/components/add_to_order/add_to_order.dart";
 import "package:bobomusic/constants/cache_key.dart";
 import "package:bobomusic/db/db.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
-import "package:bobomusic/utils/check_name_valid.dart";
 import "package:bot_toast/bot_toast.dart";
-import "package:flutter/material.dart";
 import "package:shared_preferences/shared_preferences.dart";
+import "package:uuid/uuid.dart";
 
-Future<List<String>> getCustomOrderList() async {
-  final localStorage = await SharedPreferences.getInstance();
-  final List<String> nameList = localStorage.getStringList(CacheKey.customOrder) ?? [];
-  return nameList.where((e) => e.isNotEmpty).toList();
-}
+const _uuid = Uuid();
 
+/// 所有歌单（App 里只剩两张表：本地 + 满满音乐）
 Future<List<String>> getAllOrderList() async {
-  final customOrderList = await getCustomOrderList();
-  return [TableName.musicLocal, TableName.musicILike, ...customOrderList];
+  return [TableName.musicLocal, TableName.myMusic];
 }
 
-Future<bool> checkOrderName({ required String newName, String? oldName }) async {
-  if (!checkNameValid(newName, oldName)) {
-    return false;
+/// 把歌加进满满音乐
+///
+/// - 已在里面的歌会跳过（按 mid 去重）
+/// - 返回真正新增的数量
+Future<int> addToMyMusic(List<MusicItem> musics) async {
+  final DBOrder db = DBOrder();
+  final rows = await db.queryAll(TableName.myMusic);
+  final existing = rows.map((e) => "${e["mid"]}").toSet();
+
+  int added = 0;
+  for (final music in musics) {
+    if (music.id.isEmpty || !existing.add(music.id)) continue;
+
+    await db.insert(
+      TableName.myMusic,
+      musicItem2Row(
+        music: music.copyWith(
+          orderName: TableName.myMusic,
+          playId: music.playId.isEmpty ? _uuid.v4() : music.playId,
+        ),
+      ),
+    );
+    added += 1;
   }
 
-  final localStorage = await SharedPreferences.getInstance();
-  final List<String> nameList = localStorage.getStringList(CacheKey.customOrder) ?? [];
-
-  if ([TableName.musicILike, TableName.musicLocal, ...nameList].contains(newName)) {
-    BotToast.showText(text: "歌单已经存在", duration: const Duration(seconds: 2));
-    return false;
-  }
-
-  return true;
+  return added;
 }
 
-Future<bool> setCustomOrderItem({ required String newName, String? oldName }) async {
-  final localStorage = await SharedPreferences.getInstance();
-  final List<String> nameList = localStorage.getStringList(CacheKey.customOrder) ?? [];
+/// 收藏进「满满音乐」
+///
+/// 全 App 只有一张歌单，所以不再弹选择框，点一下就加进去。
+collectToMusicOrder({required context, required musicList, onConfirm}) async {
+  final added = await addToMyMusic(List<MusicItem>.from(musicList));
 
-  if (oldName != null) {
-    // 遍历列表，将 oldName 替换为 newName
-    for (int i = 0; i < nameList.length; i++) {
-      if (nameList[i] == oldName) {
-        nameList[i] = newName;
-      }
-    }
+  if (added > 0) {
+    BotToast.showText(text: added == 1 ? "已加入满满音乐" : "已把 $added 首加入满满音乐");
   } else {
-    if (nameList.length == 20) {
-      BotToast.showText(text: "歌单最多创建 20 个", duration: const Duration(seconds: 2));
-      return false;
-    }
-    nameList.add(newName);
+    BotToast.showText(text: "已经在满满音乐里了");
   }
-  // 将更新后的列表存回本地缓存
-  await localStorage.setStringList(CacheKey.customOrder, nameList);
 
-  return true;
-}
-
-delCustomOrderItem({required String name}) async {
-  final localStorage = await SharedPreferences.getInstance();
-  final List<String> nameList = localStorage.getStringList(CacheKey.customOrder) ?? [];
-
-  nameList.remove(name);
-
-  // 将更新后的列表存回本地缓存
-  await localStorage.setStringList(CacheKey.customOrder, nameList);
-}
-
-/// 收藏进歌单
-collectToMusicOrder({required context, required musicList, onConfirm}) {
-  Navigator.of(context, rootNavigator: false).push(ModalBottomSheetRoute(
-    isScrollControlled: true,
-    builder: (context) {
-      return AddToOrder(wantToCollectMusics: musicList, onConfirm: onConfirm);
-    },
-  ));
+  if (onConfirm != null) onConfirm();
 }
 
 Future<List<MusicItem>> findMusicFromNotLocalOrders({required String param}) async {
-  final DBOrder db = DBOrder(version: 2);
-  final list = await getCustomOrderList();
-  List<MusicItem> musics = [];
-
-  for (var order in [TableName.musicILike, ...list]) {
-    final dbMusics = await db.queryByParam(order, param);
-
-    if (dbMusics.isNotEmpty) {
-      for (var dbm in dbMusics) {
-        final musicItem = row2MusicItem(dbRow: dbm);
-
-        if (dbMusics.isNotEmpty) {
-          musics.add(musicItem);
-        }
-      }
-    }
-  }
-
-  return musics;
+  final DBOrder db = DBOrder();
+  final dbMusics = await db.queryByParam(TableName.myMusic, param);
+  return dbMusics.map((e) => row2MusicItem(dbRow: e)).toList();
 }
 
 Future<List<MusicItem>> findMusicFromLocalOrders({required String param}) async {
-  final DBOrder db = DBOrder(version: 2);
-  List<MusicItem> musics = [];
-
+  final DBOrder db = DBOrder();
   final dbMusics = await db.queryByParam(TableName.musicLocal, param);
-
-  if (dbMusics.isNotEmpty) {
-    for (var dbm in dbMusics) {
-      final musicItem = row2MusicItem(dbRow: dbm);
-
-      if (dbMusics.isNotEmpty) {
-        musics.add(musicItem);
-      }
-    }
-  }
-
-  return musics;
+  return dbMusics.map((e) => row2MusicItem(dbRow: e)).toList();
 }
 
+/// 取出某个歌单的歌曲，并顺手把 prev / next 链补齐
 Future<List<MusicItem>> getUpdatedMusicList({required String tabName}) async {
-  final DBOrder db = DBOrder(version: 2);
+  final DBOrder db = DBOrder();
   List<MusicItem> newMusicList = [];
-  final isWaitPlay = tabName == TableName.musicWaitPlay;
-  final needOrder = isWaitPlay || tabName.startsWith("musicList_");
 
   try {
-    final dbMusics = await db.queryAll(tabName, groupBy: isWaitPlay ? "playId" : "name", needOrder: needOrder ? false : true);
+    final dbMusics = await db.queryAll(tabName, needOrder: false);
     final len = dbMusics.length;
 
     if (dbMusics.isNotEmpty) {
@@ -151,11 +98,7 @@ Future<List<MusicItem>> getUpdatedMusicList({required String tabName}) async {
           newMusicList.add(newM);
           await db.update(tabName, musicItem2Row(music: newM));
         } else {
-          final newM = row2MusicItem(
-            dbRow: dbMusics[index],
-          );
-
-          newMusicList.add(newM);
+          newMusicList.add(row2MusicItem(dbRow: dbMusics[index]));
         }
       }
     }
@@ -165,7 +108,6 @@ Future<List<MusicItem>> getUpdatedMusicList({required String tabName}) async {
     return [];
   }
 }
-
 
 Future<int> getCurrentTabIndex() async {
   final localStorage = await SharedPreferences.getInstance();

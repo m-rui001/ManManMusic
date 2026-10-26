@@ -11,7 +11,7 @@ import "package:path/path.dart" as path;
 import "package:uuid/uuid.dart";
 
 const uuid = Uuid();
-final DBOrder db = DBOrder(version: 2);
+final DBOrder db = DBOrder();
 
 class SingerRow extends StatefulWidget {
   const SingerRow({super.key});

@@ -14,7 +14,7 @@ import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:flutter_easyloading/flutter_easyloading.dart";
 import "package:provider/provider.dart";
 
-final DBOrder db = DBOrder(version: 2);
+final DBOrder db = DBOrder();
 
 class Menus {
   static String allAddToWaitPlayList = "全部加入待播放列表";
