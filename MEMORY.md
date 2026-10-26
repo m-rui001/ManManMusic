@@ -41,7 +41,16 @@
   - 一起听中继 = **ntfy.sh**（`GET /topic/json` 订阅、`POST /topic` 发布）。
     实测公共 MQTT broker（hivemq / emqx / mosquitto）在本网络下**跨客户端无法转发消息**，已弃用。
   - 分享 = base64url 载荷内嵌在 `manman://play?d=xxx` 链接里
-- **B 站登录低风险原则**：只用 passport 官方扫码接口 + 只读 web 接口，用户操作才发请求，不做任何写操作。
+- **B 站登录低风险原则**：只用官方登录页（内嵌 WebView）/ 扫码接口 + 只读 web 接口，
+  用户操作才发请求，不做任何写操作。
+  - **登录主路径是内嵌官方网页**（`flutter_inappwebview`），不是扫码：
+    手机上没法扫自己屏幕的二维码，而二维码约 180 秒过期，
+    截屏→切 App→相册选图走完必然超时。扫码仅作备选。
+  - Cookie 从回调 URL 的 query 或 WebView 的 `CookieManager` 取，交给 `BiliAuth.applyLogin`。
+- **收藏夹条目必须惰性补 cid**：`fav/resource/list` 不返回 cid，而 `getMusicUrl` 缺 cid 会抛错
+  （表现为 source error）。已在 `BiliClient.getMusicUrl` 里按 `x/web-interface/view` 补查并缓存。
+- **一起听名单默认空**：不把关注列表全量塞入。原因：关注列表多是 UP 主，
+  真一起听歌的只有少数人，全量探测又慢又乱且无法移除。
 - 高音质：登录后 `fnval=4048`，失败静默回退 `fnval=16`。
 - Android 深链 + 系统分享：`MainActivity` 继承 `AudioServiceActivity`（保后台播放），
   通过 `MethodChannel("manman/share")` 把 `ACTION_SEND`/`ACTION_VIEW` 的文本交给 Dart。
@@ -74,6 +83,16 @@
     解析 NDJSON 取最新 `ty=="state"`；`PartyProbe.isFresh` 90 秒内有效；**不做定时轮询**
 - 登录引导 `lib/modules/bili_account/bili_login_gate.dart`：`maybePromptOnStartup`（首次进首页弹一次，
   SharedPreferences `bili_login_asked`/`bili_login_skipped`）、`showPrompSheet`、`openLoginPage`、`ensureLoggedIn`
+- 历史播放 UI `lib/modules/history/history_tab.dart`：长按进多选，全选/批量删/单条删；
+  `PlayHistory.removeWhere(test)` 支持按条件删除
+- 一起听拆成三个文件：`party_tab.dart`（PartyTabView 主页）、`party_widgets.dart`
+  （PartySelfCard / PartyRosterTile / PartyMemberChips / PartySectionTitle）、
+  `party_pick_page.dart`（从关注列表勾选人）、`party_roster.dart`（名单 + 自动上线开关 + `selfPartyRoomId()`）
+- 收藏夹同步 `lib/modules/bili_account/fav_sync.dart`：`FavSyncService`
+  - 绑定关系 key `manman_fav_bindings`（favId → tableName）
+  - `importFolder` 幂等（已导入则增量：补新增、删已移除）
+  - `syncAll` 会删掉 B 站上已不存在的收藏夹歌单
+  - `safeTableName` 公开，供测试使用
 
 ## 常用命令
 ```bash
@@ -89,7 +108,7 @@ gh workflow run release-android.yaml --repo m-rui001/bobomusic --ref master
 ```
 
 ## 当前状态
-- `flutter analyze` No issues / 24 tests passed
+- `flutter analyze` No issues / 35 tests passed
 - APK 由 GitHub Actions 构建成功，产物已下载到 `dist/`
 - 文档：`docs/新增功能说明.md`
 - 待办（需真机）：扫码登录、收藏导入、深链/系统分享唤起、剪贴板自动识别、两机一起听同步
@@ -101,3 +120,9 @@ gh workflow run release-android.yaml --repo m-rui001/bobomusic --ref master
 - `androidx.core:core 1.16.0` 要求 AGP ≥ 8.6.0 → AGP 8.6.0 + Gradle 8.9
 - **heredoc 写 Dart 文件会在特定位置截断**（`inRoom` 处反复被切）→ 一律用 write 工具整文件写
 - `/tmp` 在 Git Bash 下与 Python 的路径解析不一致 → Python 用 `C:/Users/hp/AppData/Local/Temp/...`
+- **CI 每次构建都会重新生成随机 debug keystore**，导致每次覆盖安装都签名冲突。
+  已改为正式签名：`.github/workflows/gen-keystore.yaml` 生成一次，
+  导出后存进 Secrets `KEYSTORE_BASE64` / `KEY_PROPERTIES`（已配置）。
+- `flutter_inappwebview` 要求 AGP ≥ 8.0.1、minSdk 19、compileSdk 34，当前配置（AGP 8.6.0）满足
+- `flutter pub add` 在 Windows 上会提示 "Building with plugins requires symlink support"，
+  这只影响本地 Windows 构建，CI（Linux）不受影响
