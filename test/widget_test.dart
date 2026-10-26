@@ -144,7 +144,7 @@ void main() {
     });
 
     test("超长标题被截断到 40 字", () {
-      final long = "收藏夹_" + "很长的标题" * 20;
+      final long = "收藏夹_${"很长的标题" * 20}";
       expect(FavSyncService.safeTableName(long).length, 40);
     });
 
