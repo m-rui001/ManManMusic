@@ -91,22 +91,31 @@ class MusicPlazaViewState extends State<MusicPlazaView>
             MaterialPageRoute(builder: (_) => const SearchView()),
           ),
           child: Container(
-            padding: const EdgeInsets.only(right: 4),
-            child: const TextField(
-              enabled: false,
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: Color.fromARGB(255, 239, 240, 241),
-                constraints: BoxConstraints(maxHeight: 35),
-                border: UnderlineInputBorder(
-                  borderSide: BorderSide.none,
-                  borderRadius: BorderRadius.all(Radius.circular(20)),
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.07),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
                 ),
-                hintText: "搜索歌曲、UP主",
-                hintStyle: TextStyle(fontSize: 12),
-                contentPadding:
-                    EdgeInsets.symmetric(vertical: 13.5, horizontal: 16),
-              ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.search_rounded, size: 20, color: primaryColor),
+                const SizedBox(width: 9),
+                Text(
+                  "搜索歌曲、UP主",
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    color: Colors.grey[500],
+                  ),
+                ),
+              ],
             ),
           ),
         ),

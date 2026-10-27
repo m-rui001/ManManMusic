@@ -9,8 +9,10 @@ import "package:bobomusic/modules/party/party_pick_page.dart";
 import "package:bobomusic/modules/party/party_page.dart";
 import "package:bobomusic/modules/party/party_roster.dart";
 import "package:bobomusic/modules/party/party_tone.dart";
+import "package:bobomusic/modules/party/party_watcher.dart";
 import "package:bobomusic/modules/setting/pages/theme_color_setting.dart";
 import "package:bobomusic/utils/get_cache_color.dart";
+import "package:bot_toast/bot_toast.dart";
 import "package:bobomusic/utils/update_version.dart";
 import "package:flutter/material.dart";
 import "package:flutter_svg/svg.dart";
@@ -157,6 +159,25 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                         onChanged: (v) async {
                           await PartyTone.instance.setEnabled(v);
                           if (mounted) setState(() {});
+                        },
+                      ),
+                    ),
+                    SettingItem(
+                      leadingIcon: Icons.online_prediction_outlined,
+                      title: "好友开了一起听时提醒我",
+                      // 只在前台低频探测，切后台就停，不做后台服务
+                      trailing: Switch(
+                        value: PartyWatcher.instance.enabled,
+                        activeColor: primaryColor,
+                        onChanged: (v) async {
+                          await PartyWatcher.instance.setEnabled(v);
+                          if (mounted) setState(() {});
+                          if (v) {
+                            BotToast.showText(
+                              text: "名单里的好友开始听歌时会提醒你（仅 App 前台）",
+                              duration: const Duration(seconds: 3),
+                            );
+                          }
                         },
                       ),
                     ),

@@ -193,7 +193,9 @@ class PartyService {
   static const int hostTimeoutMs = 45000;
 
   /// 成员多久没心跳就认为掉线了
-  static const int memberTimeoutMs = 40000;
+  ///
+  /// 心跳 10 秒一次，容忍丢两次；太长会在房主那边留下"幽灵成员"。
+  static const int memberTimeoutMs = 25000;
 
   PartyRole role = PartyRole.none;
   String roomId = "";
@@ -513,6 +515,7 @@ class PartyService {
       case PartyMessageType.bye:
         final wasHost = hostUid > 0 && state.uid == hostUid;
         _removeMember(state.from);
+        _removeMemberByUid(state.uid);
         if (wasHost) {
           _emitNotice(PartyNotice(kind: PartyNoticeKind.hostLeft, name: state.fromName));
           Future.microtask(() => leaveRoom(silent: true));
@@ -530,8 +533,13 @@ class PartyService {
             _publish(PartyMessageType.deny, toUid: state.uid);
             return;
           }
-          _touchMember(state.from, state.uid, state.fromName);
-          _emitNotice(PartyNotice(kind: PartyNoticeKind.joined, name: state.fromName));
+          final isNew = _touchMember(state.from, state.uid, state.fromName);
+          // 断线重连会再发一次 join，别重复弹「加入了一起听」
+          if (isNew) {
+            _emitNotice(
+              PartyNotice(kind: PartyNoticeKind.joined, name: state.fromName),
+            );
+          }
           // 必须回一条，哪怕房主现在没在放歌：
           // 新成员要靠这条消息拿到 controlUids（红心共管）。
           _broadcastNow(force: true);
@@ -589,15 +597,53 @@ class PartyService {
       ..addAll(uids);
   }
 
-  void _touchMember(String clientId, int uid, String name) {
-    if (clientId.isEmpty) return;
+  /// 记录一个成员
+  ///
+  /// 同一个 UID 换了连接（断线重连、切网、重进房间）时，
+  /// 旧 clientId 的记录要顶掉，否则房主会看到好几个同名的人。
+  /// 返回 true 表示这是一个之前没出现过的人。
+  bool _touchMember(String clientId, int uid, String name) {
+    if (clientId.isEmpty) return false;
 
-    final isNew = !members.containsKey(clientId);
+    var isNew = !members.containsKey(clientId);
+    var changed = false;
+
+    if (uid > 0) {
+      final stale = _memberUids.entries
+          .where((e) => e.value == uid && e.key != clientId)
+          .map((e) => e.key)
+          .toList();
+      for (final old in stale) {
+        members.remove(old);
+        _memberUids.remove(old);
+        _memberSeen.remove(old);
+        isNew = false;
+        changed = true;
+      }
+    }
+
+    if (!members.containsKey(clientId)) changed = true;
     members[clientId] = name.isEmpty ? "好友" : name;
     if (uid > 0) _memberUids[clientId] = uid;
     _memberSeen[clientId] = DateTime.now().millisecondsSinceEpoch;
 
-    if (isNew) _emitMembers();
+    if (changed) _emitMembers();
+    return isNew;
+  }
+
+  /// 按 UID 移除（bye 里的 clientId 对不上时兜底）
+  void _removeMemberByUid(int uid) {
+    if (uid <= 0) return;
+    final hits = _memberUids.entries
+        .where((e) => e.value == uid)
+        .map((e) => e.key)
+        .toList();
+    for (final id in hits) {
+      members.remove(id);
+      _memberUids.remove(id);
+      _memberSeen.remove(id);
+    }
+    if (hits.isNotEmpty) _emitMembers();
   }
 
   void _removeMember(String clientId) {

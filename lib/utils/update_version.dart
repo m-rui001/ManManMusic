@@ -2,6 +2,7 @@ import "package:bobomusic/constants/app_info.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:dio/dio.dart";
 import "package:flutter/material.dart";
+import "package:flutter/services.dart";
 import "package:flutter_easyloading/flutter_easyloading.dart";
 import "package:package_info_plus/package_info_plus.dart";
 import "package:url_launcher/url_launcher.dart";
@@ -22,7 +23,37 @@ Future<void> updateAppVersion(BuildContext context, {bool? showToast = true}) as
     EasyLoading.dismiss();
 
     if (info == null) {
-      if (showToast!) BotToast.showText(text: "网络请求失败，检查网络后重试");
+      if (showToast! && context.mounted) {
+        // 国内直连 api.github.com 有时会超时，给个能手动去看的出口
+        await showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text("检查更新失败", style: TextStyle(fontSize: 14)),
+            content: const Text(
+              "可能是网络连不上 GitHub。稍后再试一次，或者直接打开 Release 页面看看有没有新版本。",
+              style: TextStyle(fontSize: 12, height: 1.6),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text("知道了"),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  launchUrl(
+                    Uri.parse(
+                      "https://github.com/$appRepoOwner/$appRepoName/releases",
+                    ),
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+                child: const Text("打开页面"),
+              ),
+            ],
+          ),
+        );
+      }
       return;
     }
 
@@ -120,15 +151,25 @@ class _UpdateDialog extends StatelessWidget {
                   ),
                   onPressed: () async {
                     Navigator.of(context).pop();
-                    final url = info.apkUrl.isNotEmpty ? info.apkUrl : info.pageUrl;
-                    if (url.isEmpty) {
+                    final raw = info.apkUrl.isNotEmpty ? info.apkUrl : info.pageUrl;
+                    if (raw.isEmpty) {
                       BotToast.showText(text: "这个版本没有可下载的安装包");
                       return;
                     }
-                    await launchUrl(
+
+                    // 国内直连 GitHub 的下载域名经常超时，先探一条能通的线路
+                    EasyLoading.show(status: "正在选择下载线路…");
+                    final url = await pickFastDownloadUrl(raw);
+                    EasyLoading.dismiss();
+
+                    final ok = await launchUrl(
                       Uri.parse(url),
                       mode: LaunchMode.externalApplication,
                     );
+                    if (!ok) {
+                      await Clipboard.setData(ClipboardData(text: url));
+                      BotToast.showText(text: "打不开浏览器，链接已复制，可以手动粘贴");
+                    }
                   },
                   child: Text(
                     info.apkUrl.isNotEmpty ? "下载安装包" : "打开下载页",
@@ -164,6 +205,53 @@ class ReleaseInfo {
     required this.pageUrl,
     required this.hasUpdate,
   });
+}
+
+/// 国内直连 GitHub 的下载域名（objects.githubusercontent.com）经常超时，
+/// 这里准备几个公共加速前缀，按顺序探一条能通的。
+///
+/// 空字符串代表直连，永远排第一：能直连就别绕第三方。
+const List<String> _ghMirrors = [
+  "",
+  "https://ghproxy.net/",
+  "https://gh-proxy.com/",
+  "https://ghfast.top/",
+];
+
+/// 返回一个当前网络能连上的下载地址
+Future<String> pickFastDownloadUrl(String rawUrl) async {
+  if (rawUrl.isEmpty) return rawUrl;
+
+  for (final mirror in _ghMirrors) {
+    final url = mirror.isEmpty ? rawUrl : "$mirror$rawUrl";
+    if (await _reachable(url)) return url;
+  }
+
+  // 全都探不通就还是给原始地址，至少用户能自己想办法
+  return rawUrl;
+}
+
+/// 只拿到响应头就断开，不真把安装包拉下来
+Future<bool> _reachable(String url) async {
+  final token = CancelToken();
+  final dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 5),
+      receiveTimeout: const Duration(seconds: 8),
+      validateStatus: (_) => true,
+      followRedirects: true,
+      responseType: ResponseType.stream,
+    ),
+  );
+
+  try {
+    final resp = await dio.get<ResponseBody>(url, cancelToken: token);
+    final code = resp.statusCode ?? 0;
+    token.cancel("probe done");
+    return code == 200 || code == 206;
+  } catch (_) {
+    return false;
+  }
 }
 
 class ReleaseChecker {
