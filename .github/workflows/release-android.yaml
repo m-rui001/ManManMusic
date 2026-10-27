@@ -73,8 +73,8 @@ jobs:
           elif [ -f build/app/outputs/flutter-apk/app-universal-release.apk ]; then
             cp build/app/outputs/flutter-apk/app-universal-release.apk out/满满音乐-通用版.apk
           fi
-          # 其余分架构包一并保留
-          find build/app/outputs/flutter-apk -name "*-release.apk" -exec cp {} out/ \;
+          # 只留通用包：分架构包对普通用户没用，
+          # 全塞进 artifact 会让体积从 50MB 涨到 150MB，下载要多等十几分钟
           ls -lh out/
 
       - name: 上传构建产物
