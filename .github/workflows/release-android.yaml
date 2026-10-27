@@ -46,9 +46,6 @@ jobs:
       - name: 运行单元测试
         run: flutter test
 
-      - name: 运行单元测试
-        run: flutter test
-
       # 有签名密钥就用正式签名；没有就生成一个 debug 密钥，
       # build.gradle 里做了自动降级，保证任何环境都能出可安装的包
       - name: 准备签名文件

@@ -69,6 +69,34 @@ flutter test
 打 Android 包走 GitHub Actions（`.github/workflows/release-android.yaml`），
 手动触发或推 `v*` tag，产物里挑 `满满音乐-通用版.apk` 安装即可。
 
+### 签名
+
+正式签名放在仓库的 Actions Secrets 里，没有配置时工作流会自动退回 debug 签名（照样能装，只是不能覆盖升级旧版本）：
+
+| Secret | 内容 |
+| --- | --- |
+| `KEYSTORE_BASE64` | `base64 -w 0 your.jks` 的输出 |
+| `KEY_PROPERTIES` | `key.properties` 全文，其中 `storeFile` 写 keystore 的文件名 |
+
+`key.properties` 长这样：
+
+```properties
+storePassword=****
+keyPassword=****
+keyAlias=your-alias
+storeFile=your-keystore.jks
+```
+
+自己生成一份密钥：
+
+```bash
+keytool -genkeypair -v -keystore your-keystore.jks -storetype JKS \
+  -keyalg RSA -keysize 2048 -validity 36500 -alias your-alias
+base64 -w 0 your-keystore.jks   # 粘进 KEYSTORE_BASE64
+```
+
+> 换了密钥，老用户就没法覆盖安装了，得先卸载（本地歌单会丢）。**同一份密钥请长期保存**。
+
 ## 代码结构
 
 ```
