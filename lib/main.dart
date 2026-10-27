@@ -144,6 +144,19 @@ class MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
+
+    // 以前用 immersiveSticky 把系统导航栏藏起来，结果底部三个 tab
+    // 正好压在返回键 / 圆圈 / 方框上，退出还得先上滑。
+    // 改成 edgeToEdge：系统栏常驻，SafeArea 会自动让出高度。
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarDividerColor: Colors.transparent,
+      ),
+    );
+
     Provider.of<PlayerModel>(context, listen: false).init(
       playerHandler: widget.playerHandler,
       playerService: widget.playerService,
@@ -247,9 +260,6 @@ class MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    // 隐藏 Android 底部导航条
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-
     return MaterialApp(
       theme: _currentTheme,
       home: const HomeView(),

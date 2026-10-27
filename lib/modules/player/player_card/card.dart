@@ -513,7 +513,11 @@ class PlayerCardState extends State<PlayerCard> {
                 color: Colors.white.withOpacity(0.2),
               ),
               padding: EdgeInsets.only(bottom: isLandscape ? 30 : 0),
-              child: Column(
+              // edgeToEdge 之后系统状态栏是常驻的，内容要让开
+              child: SafeArea(
+                top: true,
+                bottom: true,
+                child: Column(
                 children: [
                   // 顶部导航栏
                   _buildTopBar(primaryColor),
@@ -617,6 +621,7 @@ class PlayerCardState extends State<PlayerCard> {
                         ),
                   ),
                 ],
+              ),
               ),
             ),
           ],
