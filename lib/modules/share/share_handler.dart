@@ -238,6 +238,8 @@ Future<void> autoCheckClipboard(BuildContext context) async {
 
   _lastAutoClipboard = text;
   _lastAutoClipboardTime = now;
+  // 冷启动已经处理过这条，回前台别再提示
+  ClipboardShareWatcher.markHandled(text);
 
   if (!context.mounted) return;
 
@@ -312,3 +314,48 @@ Future<void> handleSharePayload(
 
   BotToast.showText(text: "正在播放：${music.name}");
 }
+
+/// 回到前台时检查剪贴板
+///
+/// 冷启动是「直接处理」，从后台回来只「提示一下」——
+/// 用户可能只是切出去复制了别的东西，不该突然开始播放。
+/// 同一条内容只返回一次，避免每次回前台都弹。
+class ClipboardShareWatcher {
+  static String _last = "";
+  static DateTime? _lastAt;
+
+  /// 返回一条「新的、能识别的」分享文本；没有就返回 null
+  static Future<String?> pollNewShare() async {
+    final now = DateTime.now();
+    // 连续切前后台时防抖，别反复读剪贴板
+    if (_lastAt != null && now.difference(_lastAt!).inMilliseconds < 800) {
+      return null;
+    }
+    _lastAt = now;
+
+    String text = "";
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      text = (data?.text ?? "").trim();
+    } catch (_) {
+      return null;
+    }
+
+    if (text.isEmpty) return null;
+    if (text == _last) return null;
+
+    _last = text;
+
+    if (parseManmanShareText(text) == null && extractBiliUrl(text) == null) {
+      return null;
+    }
+    return text;
+  }
+
+  /// 已经处理过的内容标记一下，回前台别再提示同一条
+  static void markHandled(String text) {
+    _last = text.trim();
+    _lastAt = DateTime.now();
+  }
+}
+

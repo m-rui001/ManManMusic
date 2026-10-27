@@ -141,13 +141,19 @@ class MyApp extends StatefulWidget {
   MyAppState createState() => MyAppState();
 }
 
-class MyAppState extends State<MyApp> {
+class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   late ThemeData _currentTheme;
   StreamSubscription? _themeColorSubscription;
+
+  /// 回前台时提示剪贴板链接要用，不能拿 MaterialApp 外面的 context
+  final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
+  final GlobalKey<ScaffoldMessengerState> _messengerKey =
+      GlobalKey<ScaffoldMessengerState>();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     // 以前用 immersiveSticky 把系统导航栏藏起来，结果底部三个 tab
     // 正好压在返回键 / 圆圈 / 方框上，退出还得先上滑。
@@ -256,7 +262,57 @@ class MyAppState extends State<MyApp> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    _checkClipboardOnResume();
+  }
+
+  /// 从后台回到前台：剪贴板里有新的分享链接就提示一下，不自动播放
+  ///
+  /// 冷启动才直接处理（那是用户主动复制的），
+  /// 回前台只给一个 SnackBar，点「打开」才真的处理。
+  Future<void> _checkClipboardOnResume() async {
+    final text = await ClipboardShareWatcher.pollNewShare();
+    if (text == null || !mounted) return;
+
+    // 等页面转场稳定再弹，别一回来就糊一脸
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+
+    final messenger = _messengerKey.currentState;
+    if (messenger == null) return;
+
+    final isParty = parseManmanShareText(text) != null;
+
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          isParty ? "剪贴板里有一个一起听邀请" : "剪贴板里有 B 站链接",
+          style: const TextStyle(fontSize: 12),
+        ),
+        duration: const Duration(seconds: 8),
+        behavior: SnackBarBehavior.floating,
+        action: SnackBarAction(
+          label: "打开",
+          onPressed: () {
+            final ctx = _navKey.currentContext;
+            if (ctx == null) return;
+            final payload = parseManmanShareText(text);
+            if (payload != null) {
+              handleSharePayload(ctx, payload);
+            } else {
+              openBiliShareText(ctx, text);
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _themeColorSubscription?.cancel();
     _linkSub?.cancel();
     super.dispose();
@@ -268,6 +324,8 @@ class MyAppState extends State<MyApp> {
       theme: _currentTheme,
       home: const HomeView(),
       debugShowCheckedModeBanner: false,
+      navigatorKey: _navKey,
+      scaffoldMessengerKey: _messengerKey,
       navigatorObservers: [BotToastNavigatorObserver()],
       builder: (context, child) {
         child = EasyLoading.init()(context, child);
