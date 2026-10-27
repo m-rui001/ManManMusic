@@ -100,12 +100,11 @@ class PartyWatcher with WidgetsBindingObserver {
     _busy = true;
     final online = <int>{};
     try {
-      await Future.wait(
-        members.map((m) async {
-          final probe = await PartyService.instance.probeRoom(m.roomId);
-          if (probe != null && probe.isFresh) online.add(m.mid);
-        }),
-      );
+      // 排队探测，别一次打太多请求把 ntfy 的额度占满
+      await PartyService.forEachLimited(members, (m) async {
+        final probe = await PartyService.instance.probeRoom(m.roomId);
+        if (probe != null && probe.isFresh) online.add(m.mid);
+      }, limit: 2, gap: const Duration(milliseconds: 400));
     } catch (_) {
       // 网络抖动就跳过这一轮，不重试、不堆积
     } finally {

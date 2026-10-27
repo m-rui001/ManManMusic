@@ -14,7 +14,11 @@ class PartySelfCard extends StatelessWidget {
 
   /// 是不是在别人的房间里当听众
   final bool isGuest;
+
+  /// 连不上时的原因，空字符串表示没异常
+  final String connectionHint;
   final VoidCallback onToggleOnline;
+  final VoidCallback? onRetry;
   final VoidCallback? onEditName;
 
   const PartySelfCard({
@@ -27,6 +31,8 @@ class PartySelfCard extends StatelessWidget {
     required this.isLogin,
     required this.onToggleOnline,
     this.isGuest = false,
+    this.connectionHint = "",
+    this.onRetry,
     this.onEditName,
   });
 
@@ -93,15 +99,20 @@ class PartySelfCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 5),
-                        Text(
-                          inRoom
-                              ? (connected
-                                  ? (isGuest ? "正在跟房主一起听" : "正在分享你的收听")
-                                  : "连接中…")
-                              : "已下线",
-                          style: const TextStyle(
-                            fontSize: 10,
-                            color: Colors.grey,
+                        Flexible(
+                          child: Text(
+                            inRoom
+                                ? (connected
+                                    ? (isGuest ? "正在跟房主一起听" : "正在分享你的收听")
+                                    : (connectionHint.isEmpty ? "连接中…" : connectionHint))
+                                : "已下线",
+                            maxLines: 2,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: inRoom && !connected && connectionHint.isNotEmpty
+                                  ? const Color(0xFFB8860B)
+                                  : Colors.grey,
+                            ),
                           ),
                         ),
                       ],
@@ -171,6 +182,24 @@ class PartySelfCard extends StatelessWidget {
               ],
             ),
           ),
+          if (inRoom && !connected && onRetry != null) ...[
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton.icon(
+                  onPressed: onRetry,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 26),
+                    foregroundColor: primaryColor,
+                  ),
+                  icon: const Icon(Icons.refresh, size: 13),
+                  label: const Text("重连", style: TextStyle(fontSize: 10)),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

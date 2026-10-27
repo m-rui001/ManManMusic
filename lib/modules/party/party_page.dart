@@ -66,6 +66,13 @@ class PartySession {
       _broadcastNow(force: force);
     };
 
+    // 连上 / 掉线都要让「一起听」页立刻重画，
+    // 不然界面会停在「连接中…」，其实早就连上了
+    _party.onConnectionChanged = (online) {
+      if (online) _broadcastNow(force: true);
+      _notify();
+    };
+
     // 本机切歌 / 暂停立刻广播，避免等下一次 tick
     _refreshSub?.cancel();
     _refreshSub = eventBus.on<RefreshPlayerCard>().listen((_) {
@@ -135,17 +142,30 @@ class PartySession {
   Future<void> leave() => goOffline();
 
   /// 开始周期广播（只有房主需要定时广播，共管改歌时按事件广播）
+  ///
+  /// 20 秒一条就够：听众用消息里的时间戳自己补延迟，
+  /// 3 秒一条会把 ntfy.sh 的免费额度（每 5 秒回 1 次）打空。
   void startBroadcasting() {
     _broadcastTimer?.cancel();
     if (!isHost) {
       _broadcastNow();
       return;
     }
-    _broadcastTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+    _broadcastTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       _broadcastNow();
     });
     _broadcastNow();
   }
+
+  /// 连不上时手动重连
+  Future<bool> retryConnection() async {
+    final ok = await _party.retryNow();
+    _notify();
+    return ok;
+  }
+
+  /// 连不上的原因（空字符串表示没有异常）
+  String get connectionHint => _party.connectionHint;
 
   void _stopBroadcast() {
     _broadcastTimer?.cancel();

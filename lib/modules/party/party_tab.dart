@@ -94,12 +94,11 @@ class PartyTabViewState extends State<PartyTabView> {
     setState(() => _probing = true);
 
     final result = <int, PartyProbe?>{};
-    await Future.wait(
-      roster.members.map((m) async {
-        final probe = await PartyService.instance.probeRoom(m.roomId);
-        result[m.mid] = (probe != null && probe.isFresh) ? probe : null;
-      }),
-    );
+    // 排队探测：一把全发出去会把 ntfy 的请求额度打空，接着建房就 429
+    await PartyService.forEachLimited(roster.members, (m) async {
+      final probe = await PartyService.instance.probeRoom(m.roomId);
+      result[m.mid] = (probe != null && probe.isFresh) ? probe : null;
+    });
 
     if (!mounted) return;
     setState(() {
@@ -188,6 +187,10 @@ class PartyTabViewState extends State<PartyTabView> {
             onPressed: _probing
                 ? null
                 : () async {
+                    // 房间掉线时刷新 = 立刻重连，别让用户干等退避
+                    if (session.inRoom && !session.connected) {
+                      await session.retryConnection();
+                    }
                     await _probeAll();
                   },
           ),
@@ -212,6 +215,11 @@ class PartyTabViewState extends State<PartyTabView> {
                   roomId: session.roomId,
                   isLogin: auth.isLogin,
                   isGuest: session.isGuest,
+                  connectionHint: session.connectionHint,
+                  onRetry: () async {
+                    await session.retryConnection();
+                    if (mounted) setState(() {});
+                  },
                   onToggleOnline: _busy ? () {} : _toggleOnline,
                 ),
                 if (!auth.isLogin) ...[

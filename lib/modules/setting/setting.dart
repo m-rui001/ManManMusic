@@ -12,7 +12,6 @@ import "package:bobomusic/modules/party/party_tone.dart";
 import "package:bobomusic/modules/party/party_watcher.dart";
 import "package:bobomusic/modules/setting/pages/guide_page.dart";
 import "package:bobomusic/modules/setting/pages/theme_color_setting.dart";
-import "package:bobomusic/origin_sdk/bili/auth.dart";
 import "package:bobomusic/utils/get_cache_color.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:bobomusic/utils/update_version.dart";
@@ -244,16 +243,6 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                         );
                       },
                     ),
-                    if (BiliAuth.instance.isLogin)
-                      SettingItem(
-                        leadingIcon: Icons.logout,
-                        title: "退出哔哩哔哩账号",
-                        trailing: Icon(Icons.chevron_right, color: primaryColor),
-                        onTap: () async {
-                          await confirmBiliLogout(context);
-                          if (mounted) setState(() {});
-                        },
-                      ),
                   ],
                 ),
                 const SizedBox(height: 20),

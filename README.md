@@ -26,6 +26,19 @@
 
 整个 App **没有自建服务器**，只用了 B 站官方 web 接口和免费的 ntfy.sh 做中继。
 
+## 截图
+
+<div align="center">
+
+<img src="./screenshot/shot-history.jpg" width="190" alt="首页 · 历史播放" />
+<img src="./screenshot/shot-mymusic.jpg" width="190" alt="首页 · 我的歌单" />
+<img src="./screenshot/shot-party.jpg" width="190" alt="一起听" />
+<img src="./screenshot/shot-settings.jpg" width="190" alt="设置" />
+
+<sub>历史播放 · 我的歌单 · 一起听 · 设置</sub>
+
+</div>
+
 ## 功能
 
 | | |
@@ -55,8 +68,10 @@
 - 红心是**永久的**：在名单里点一次，以后他一进房间就能控制，不用每次重新设置
 - 有人进来 / 离开时，双方都会收到提示并听到一声很轻的提示音（可以关），不会打断音乐
 - 房主下线会广播一条 `bye`，房间立刻结束，不会留一堆「幽灵成员」
-- 听众掉线 25 秒没有心跳会被移出成员列表；房主 45 秒没有动静，听众会自动退出
+- 听众掉线 50 秒没有心跳会被移出成员列表；房主 65 秒没有动静，听众会自动退出
 - 断线重连、换网络重进房间，房主那边只会保留一条记录，不会出现好几个同名的人
+- 同步是低频的：状态 20 秒一条、心跳 20 秒一次。ntfy.sh 免费额度是「60 次突发 + 每 5 秒回 1 次」，
+  以前 3 秒一条会把额度打空，之后消息全被 429 丢掉，看着连着其实早就不同步了
 
 ## 构建
 
@@ -70,7 +85,7 @@ flutter test
 ```
 
 打 Android 包走 GitHub Actions（`.github/workflows/release-android.yaml`），
-手动触发或推 `v*` tag，产物里挑 `满满音乐-通用版.apk` 安装即可。
+手动触发或推 `v*` tag，产物里挑 `ManManMusic-universal.apk` 安装即可。
 
 ### 签名
 

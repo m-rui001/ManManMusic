@@ -190,12 +190,14 @@ class PartyService {
   PartyService._();
 
   /// 房主多久没动静就认为下线了
-  static const int hostTimeoutMs = 45000;
+  ///
+  /// 房主每 20 秒发一次心跳，容忍丢三次。
+  static const int hostTimeoutMs = 65000;
 
   /// 成员多久没心跳就认为掉线了
   ///
-  /// 心跳 10 秒一次，容忍丢两次；太长会在房主那边留下"幽灵成员"。
-  static const int memberTimeoutMs = 25000;
+  /// 心跳 20 秒一次，容忍丢两次；太长会在房主那边留下"幽灵成员"。
+  static const int memberTimeoutMs = 50000;
 
   PartyRole role = PartyRole.none;
   String roomId = "";
@@ -204,6 +206,25 @@ class PartyService {
   int myUid = 0;
   int hostUid = 0;
   bool connected = false;
+
+  /// 连不上时给用户看的原因，别让人干等着「连接中…」
+  String connectionHint = "";
+
+  /// 连续失败次数
+  int _connectAttempts = 0;
+
+  /// 正在连接（防止 onClosed 和重连定时器同时再连一条）
+  bool _connecting = false;
+
+  /// 连接代数：只有最新一条订阅流的关闭才算掉线，
+  /// 主动断开时旧流迟到的 onDone / onError 不能触发重连
+  int _connGen = 0;
+
+  /// 正在探测中继是否可达
+  bool _diagnosing = false;
+
+  /// 被中继限流后暂停发布到这个时间点（毫秒）
+  int _publishPausedUntil = 0;
 
   /// 在线成员（clientId -> 名字）
   final Map<String, String> members = {};
@@ -345,6 +366,7 @@ class PartyService {
       controlUids.add(myUid);
     }
 
+    _resetConnectionState();
     return _connect();
   }
 
@@ -404,6 +426,7 @@ class PartyService {
     allowedUids.clear();
     _lastHostSeen = DateTime.now().millisecondsSinceEpoch;
 
+    _resetConnectionState();
     final ok = await _connect();
     if (!ok) return false;
 
@@ -415,42 +438,62 @@ class PartyService {
   }
 
   Future<bool> _connect() async {
-    await _disconnect();
-
-    final token = CancelToken();
-    _cancelToken = token;
-    _buf = "";
-
+    if (_connecting) return false;
+    _connecting = true;
     try {
-      final resp = await _dio.get<ResponseBody>(
-        "$relayBase/$topic/json",
-        cancelToken: token,
-        options: Options(
-          headers: {"Accept": "application/json"},
-          responseType: ResponseType.stream,
-        ),
-      );
+      await _disconnect();
 
-      // 被中继限流了：退到最长间隔再试，越急越连不上
-      if (resp.statusCode == 429) {
-        _reconnectAttempt = 3;
+      final token = CancelToken();
+      _cancelToken = token;
+      _buf = "";
+
+      final Response<ResponseBody> resp;
+      try {
+        resp = await _dio
+            .get<ResponseBody>(
+              "$relayBase/$topic/json",
+              cancelToken: token,
+              options: Options(
+                headers: {"Accept": "application/json"},
+                responseType: ResponseType.stream,
+              ),
+            )
+            // 网络差的时候 TLS 握手 / 等响应头能挂很久，
+            // 界面就永远停在「连接中」。这里强制给一个期限。
+            .timeout(const Duration(seconds: 15));
+      } on TimeoutException {
+        token.cancel("connect timeout");
+        _fail("连接超时，网络好像不通");
         _scheduleReconnect();
         return false;
       }
 
+      // 被中继限流了：退到最长间隔再试，越急越连不上
+      if (resp.statusCode == 429) {
+        final wait = _retryAfter(resp) ?? 20;
+        _fail("中继限流，$wait 秒后自动重连");
+        _reconnectAttempt = 3;
+        _scheduleReconnect(seconds: wait);
+        return false;
+      }
+
       if (resp.statusCode != 200 || resp.data == null) {
+        _fail("中继返回 ${resp.statusCode}，正在重试");
         _scheduleReconnect();
         return false;
       }
 
       _reconnectAttempt = 0;
+      _connectAttempts = 0;
+      connectionHint = "";
       connected = true;
       onConnectionChanged?.call(true);
 
+      final gen = ++_connGen;
       _sub = resp.data!.stream.listen(
         _onBytes,
-        onDone: _onClosed,
-        onError: (_) => _onClosed(),
+        onDone: () => _onClosed(gen),
+        onError: (_) => _onClosed(gen),
         cancelOnError: false,
       );
 
@@ -459,9 +502,76 @@ class PartyService {
       if (isGuest) _publish(PartyMessageType.join);
       return true;
     } catch (_) {
+      _fail("连接出错，正在重试");
       _scheduleReconnect();
       return false;
+    } finally {
+      _connecting = false;
     }
+  }
+
+  /// 手动重连：清掉退避立刻再连一次
+  Future<bool> retryNow() async {
+    if (!inRoom) return false;
+    if (_connecting) return connected;
+    _reconnectTimer?.cancel();
+    _reconnectAttempt = 0;
+    _connectAttempts = 0;
+    _publishPausedUntil = 0;
+    connectionHint = "";
+    onConnectionChanged?.call(false);
+    return _connect();
+  }
+
+  void _fail(String hint) {
+    connectionHint = hint;
+    _connectAttempts += 1;
+    connected = false;
+    onConnectionChanged?.call(false);
+    // 连着几次都不行，确认一下中继是不是压根连不上（限流还是断网）
+    if (_connectAttempts >= 3) _diagnoseRelay();
+  }
+
+  Future<void> _diagnoseRelay() async {
+    if (_diagnosing) return;
+    _diagnosing = true;
+    try {
+      final resp = await Dio(
+        BaseOptions(
+          connectTimeout: const Duration(seconds: 5),
+          receiveTimeout: const Duration(seconds: 5),
+          validateStatus: (_) => true,
+        ),
+      ).get<String>("$relayBase/v1/health");
+
+      if (role == PartyRole.none) return;
+      if (resp.statusCode == 200) {
+        if (!connectionHint.contains("限流")) connectionHint = "中继正常，正在重连";
+      } else {
+        connectionHint = "连不上 ntfy.sh（HTTP ${resp.statusCode}），可能要挂代理";
+      }
+    } catch (_) {
+      if (role == PartyRole.none) return;
+      connectionHint = "连不上 ntfy.sh，检查网络或代理";
+    } finally {
+      _diagnosing = false;
+      if (role != PartyRole.none) onConnectionChanged?.call(false);
+    }
+  }
+
+  void _resetConnectionState() {
+    connectionHint = "";
+    _connectAttempts = 0;
+    _reconnectAttempt = 0;
+    _publishPausedUntil = 0;
+  }
+
+  int? _retryAfter(Response<dynamic> resp) {
+    final raw = resp.headers.value("retry-after");
+    if (raw == null) return null;
+    final secs = int.tryParse(raw.trim());
+    if (secs == null) return null;
+    return secs.clamp(5, 120).toInt();
   }
 
   /// 处理 SSE 数据流
@@ -673,23 +783,35 @@ class PartyService {
     if (!_noticeController.isClosed) _noticeController.add(notice);
   }
 
-  void _onClosed() {
+  void _onClosed(int gen) {
+    if (gen != _connGen) return;
     final wasConnected = connected;
     connected = false;
     if (wasConnected) onConnectionChanged?.call(false);
     _pingTimer?.cancel();
     _pruneTimer?.cancel();
-    if (role != PartyRole.none) _scheduleReconnect();
+    if (role != PartyRole.none) {
+      if (connectionHint.isEmpty) connectionHint = "连接断开，正在重连";
+      _scheduleReconnect();
+    }
   }
 
   Future<void> _disconnect() async {
+    // 作废旧连接：之后旧流再报 onDone / onError 都不算掉线
+    _connGen++;
     _pingTimer?.cancel();
     _pruneTimer?.cancel();
     _reconnectTimer?.cancel();
-    await _sub?.cancel();
-    _sub = null;
+    // 先取消 token 再取消订阅：订阅流 cancel 有时候会卡着等 socket，
+    // 顺序反了会让 _connect 永远停在第一步，表现就是一直「连接中」
     _cancelToken?.cancel();
     _cancelToken = null;
+    try {
+      await _sub?.cancel().timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // 卡住就放弃这一条，反正 token 已经取消了
+    }
+    _sub = null;
     _buf = "";
     connected = false;
   }
@@ -697,16 +819,21 @@ class PartyService {
   /// 连续重连次数，用来做退避
   int _reconnectAttempt = 0;
 
-  void _scheduleReconnect() {
+  void _scheduleReconnect({int? seconds}) {
     _reconnectTimer?.cancel();
     if (role == PartyRole.none) return;
 
-    _reconnectAttempt += 1;
-    // 4s → 8s → 16s → 20s：网络差的时候别一直捶中继（会被限流）
-    final shift = (_reconnectAttempt - 1).clamp(0, 3);
-    final seconds = (4 * (1 << shift)).clamp(4, 20);
+    int delay;
+    if (seconds != null) {
+      delay = seconds;
+    } else {
+      _reconnectAttempt += 1;
+      // 4s → 8s → 16s → 20s：网络差的时候别一直捶中继（会被限流）
+      final shift = (_reconnectAttempt - 1).clamp(0, 3);
+      delay = (4 * (1 << shift)).clamp(4, 20);
+    }
 
-    _reconnectTimer = Timer(Duration(seconds: seconds), () async {
+    _reconnectTimer = Timer(Duration(seconds: delay), () async {
       if (role == PartyRole.none) return;
       await _connect();
     });
@@ -714,7 +841,10 @@ class PartyService {
 
   void _startTimers() {
     _pingTimer?.cancel();
-    _pingTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+    // 20 秒一次：ntfy.sh 免费额度是「60 次突发 + 每 5 秒回 1 次」，
+    // 3 秒广播 + 10 秒心跳 = 26 次/分钟，四五分钟就把额度打空，
+    // 之后所有消息都被 429 丢掉，房间看着还连着其实已经不同步了。
+    _pingTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       _publish(PartyMessageType.ping);
     });
 
@@ -764,6 +894,10 @@ class PartyService {
   }) async {
     if (!connected || roomId.isEmpty) return;
 
+    // 刚被限流过：别继续往额度里灌，等它自己回血
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now < _publishPausedUntil) return;
+
     final state = PartyState(
       type: type,
       roomId: roomId,
@@ -784,7 +918,7 @@ class PartyService {
     );
 
     try {
-      await _pubDio.post<String>(
+      final resp = await _pubDio.post<String>(
         "$relayBase/$topic",
         data: jsonEncode(state.toJson()),
         options: Options(
@@ -792,9 +926,40 @@ class PartyService {
           headers: {"User-Agent": "manman-music/party"},
         ),
       );
+      if (resp.statusCode == 429) {
+        final wait = _retryAfter(resp) ?? 30;
+        _publishPausedUntil = DateTime.now().millisecondsSinceEpoch + wait * 1000;
+      }
     } catch (_) {
       // 单条失败无需处理，下一次心跳会自动补上
     }
+  }
+
+  /// 并发受限地跑一批任务
+  ///
+  /// ntfy.sh 公共中继按 IP 限流（60 次突发，之后每 5 秒回 1 次），
+  /// 探测名单时一把全发出去会把额度瞬间打空，之后建房、发消息都会被 429。
+  static Future<void> forEachLimited<T>(
+    List<T> items,
+    Future<void> Function(T item) task, {
+    int limit = 3,
+    Duration gap = const Duration(milliseconds: 200),
+  }) async {
+    if (items.isEmpty) return;
+    var next = 0;
+    Future<void> worker() async {
+      while (next < items.length) {
+        final item = items[next++];
+        await task(item);
+        if (gap > Duration.zero) await Future.delayed(gap);
+      }
+    }
+
+    final workers = <Future<void>>[];
+    for (var i = 0; i < limit && i < items.length; i++) {
+      workers.add(worker());
+    }
+    await Future.wait(workers);
   }
 
   /// 清理超时没心跳的成员
@@ -833,6 +998,7 @@ class PartyService {
     controlUids.clear();
     allowedUids.clear();
     _lastHostSeen = 0;
+    _resetConnectionState();
 
     if (!_membersController.isClosed) _membersController.add({});
 
