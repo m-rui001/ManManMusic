@@ -68,10 +68,11 @@ jobs:
         run: |
           mkdir -p out
           # 优先只要 universal 包（手机上直接装，兼容所有 CPU）
+          # 用英文名：中文名在 release 上传时会被吃掉，变成 "-.apk"
           if [ -f build/app/outputs/flutter-apk/app-release.apk ]; then
-            cp build/app/outputs/flutter-apk/app-release.apk out/满满音乐-通用版.apk
+            cp build/app/outputs/flutter-apk/app-release.apk out/ManManMusic-universal.apk
           elif [ -f build/app/outputs/flutter-apk/app-universal-release.apk ]; then
-            cp build/app/outputs/flutter-apk/app-universal-release.apk out/满满音乐-通用版.apk
+            cp build/app/outputs/flutter-apk/app-universal-release.apk out/ManManMusic-universal.apk
           fi
           # 只留通用包：分架构包对普通用户没用，
           # 全塞进 artifact 会让体积从 50MB 涨到 150MB，下载要多等十几分钟
