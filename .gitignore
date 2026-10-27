@@ -46,3 +46,6 @@ dist/
 .pi/
 .tmp_preview/
 .signkey/
+
+# 本地下载的安装包（release 产物，不进仓库）
+*.apk
