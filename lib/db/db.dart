@@ -91,6 +91,24 @@ abstract class BaseDatabaseHelper {
     }
   }
 
+  /// 批量更新（按 mid 定位，一次事务）
+  Future<void> updateAll(String tableName, List<Map<String, dynamic>> rows) async {
+    if (rows.isEmpty) return;
+    final db = await database;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final row in rows) {
+        batch.update(
+          tableName,
+          row,
+          where: "mid = ?",
+          whereArgs: [row["mid"]],
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
   /// 批量写入（一次事务，几百首也不会卡）
   Future<void> insertAll(String tableName, List<Map<String, dynamic>> rows) async {
     if (rows.isEmpty) return;

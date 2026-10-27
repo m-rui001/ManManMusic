@@ -73,6 +73,8 @@ Future<List<MusicItem>> findMusicFromLocalOrders({required String param}) async 
 Future<List<MusicItem>> getUpdatedMusicList({required String tabName}) async {
   final DBOrder db = DBOrder();
   List<MusicItem> newMusicList = [];
+  // 需要回写 prev / next 的行先攒着，最后一次性事务更新
+  final pending = <Map<String, dynamic>>[];
 
   try {
     final dbMusics = await db.queryAll(tabName, needOrder: false);
@@ -96,11 +98,15 @@ Future<List<MusicItem>> getUpdatedMusicList({required String tabName}) async {
           );
 
           newMusicList.add(newM);
-          await db.update(tabName, musicItem2Row(music: newM));
+          pending.add(musicItem2Row(music: newM));
         } else {
           newMusicList.add(row2MusicItem(dbRow: dbMusics[index]));
         }
       }
+    }
+
+    if (pending.isNotEmpty) {
+      await db.updateAll(tabName, pending);
     }
 
     return newMusicList;
