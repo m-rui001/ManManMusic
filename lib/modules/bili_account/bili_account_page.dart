@@ -1,4 +1,3 @@
-import "package:bobomusic/modules/bili_account/bili_fav_page.dart";
 import "package:bobomusic/modules/bili_account/bili_login_page.dart";
 import "package:bobomusic/origin_sdk/bili/auth.dart";
 import "package:flutter/material.dart";
@@ -74,36 +73,6 @@ class _BiliAccountPageState extends State<BiliAccountPage> {
                     ),
                     const SizedBox(height: 14),
                     if (_auth.isLogin) ...[
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: ListTile(
-                          leading: Icon(
-                            Icons.playlist_add_check,
-                            size: 20,
-                            color: primaryColor,
-                          ),
-                          title: const Text(
-                            "从收藏夹导入",
-                            style: TextStyle(fontSize: 13),
-                          ),
-                          subtitle: const Text(
-                            "把 B 站收藏夹里的视频并进「满满音乐」",
-                            style: TextStyle(fontSize: 10),
-                          ),
-                          trailing: const Icon(Icons.chevron_right, size: 18),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const BiliFavPage(),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(height: 14),
                       OutlinedButton.icon(
                         onPressed: () async {
                           await confirmBiliLogout(context);
@@ -194,7 +163,6 @@ class _BiliAccountPageState extends State<BiliAccountPage> {
         const SizedBox(height: 10),
         const Text(
           "· 播放大会员 / Hi-Res 高音质音频\n"
-          "· 把 B 站收藏夹一键并进「满满音乐」\n"
           "· 一起听时按 UID 认出名单里的人",
           style: TextStyle(fontSize: 11, height: 1.9, color: Colors.grey),
         ),

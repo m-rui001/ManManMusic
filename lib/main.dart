@@ -17,6 +17,7 @@ import "package:flutter/material.dart";
 import "package:bobomusic/modules/home/home.dart";
 import "package:bobomusic/modules/party/party_page.dart";
 import "package:bobomusic/modules/party/party_tone.dart";
+import "package:bobomusic/modules/party/party_background.dart";
 import "package:bobomusic/modules/party/party_watcher.dart";
 import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/modules/player/service.dart";
@@ -98,7 +99,8 @@ void main() async {
   // 一起听提示音设置
   await PartyTone.instance.initFromStorage();
 
-  // 好友上线提醒（默认关，只在 App 前台时低频轮询）
+  // 好友上线提醒：前台自己轮询，后台交给 WorkManager
+  await PartyBackground.init();
   await PartyWatcher.instance.init();
 
   primaryColor = await getCacheColor();

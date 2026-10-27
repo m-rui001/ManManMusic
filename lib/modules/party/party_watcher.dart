@@ -1,5 +1,6 @@
 import "dart:async";
 
+import "package:bobomusic/modules/party/party_background.dart";
 import "package:bobomusic/modules/party/party_roster.dart";
 import "package:bobomusic/modules/party/party_service.dart";
 import "package:bobomusic/modules/party/party_tone.dart";
@@ -40,7 +41,10 @@ class PartyWatcher with WidgetsBindingObserver {
     final storage = await SharedPreferences.getInstance();
     enabled = storage.getBool(_kEnabled) ?? false;
     WidgetsBinding.instance.addObserver(this);
-    if (enabled) _start();
+    if (enabled) {
+      _start();
+      await PartyBackground.enable();
+    }
   }
 
   Future<void> setEnabled(bool value) async {
@@ -50,8 +54,11 @@ class PartyWatcher with WidgetsBindingObserver {
 
     if (value) {
       _start();
+      // 后台交给系统按 15 分钟一次的节奏唤醒，省电优先
+      await PartyBackground.enable();
     } else {
       _stop();
+      await PartyBackground.disable();
       _hasBaseline = false;
       _lastOnline = {};
     }

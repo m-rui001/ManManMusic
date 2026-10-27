@@ -289,7 +289,9 @@ class PartyService {
   final Dio _dio = Dio(
     BaseOptions(
       connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 30),
+      // 不设 receiveTimeout：订阅流本来就可能几十秒没消息，
+      // 一旦超时断开就会陷入「连接中 → 断 → 重连」的死循环
+      receiveTimeout: null,
       headers: {"User-Agent": "manman-music/party"},
       validateStatus: (_) => true,
       responseType: ResponseType.stream,
@@ -429,11 +431,19 @@ class PartyService {
         ),
       );
 
+      // 被中继限流了：退到最长间隔再试，越急越连不上
+      if (resp.statusCode == 429) {
+        _reconnectAttempt = 3;
+        _scheduleReconnect();
+        return false;
+      }
+
       if (resp.statusCode != 200 || resp.data == null) {
         _scheduleReconnect();
         return false;
       }
 
+      _reconnectAttempt = 0;
       connected = true;
       onConnectionChanged?.call(true);
 
@@ -684,10 +694,19 @@ class PartyService {
     connected = false;
   }
 
+  /// 连续重连次数，用来做退避
+  int _reconnectAttempt = 0;
+
   void _scheduleReconnect() {
     _reconnectTimer?.cancel();
     if (role == PartyRole.none) return;
-    _reconnectTimer = Timer(const Duration(seconds: 4), () async {
+
+    _reconnectAttempt += 1;
+    // 4s → 8s → 16s → 20s：网络差的时候别一直捶中继（会被限流）
+    final shift = (_reconnectAttempt - 1).clamp(0, 3);
+    final seconds = (4 * (1 << shift)).clamp(4, 20);
+
+    _reconnectTimer = Timer(Duration(seconds: seconds), () async {
       if (role == PartyRole.none) return;
       await _connect();
     });

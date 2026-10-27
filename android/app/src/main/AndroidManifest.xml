@@ -94,4 +94,6 @@
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 好友上线提醒：重启后继续跑 WorkManager 周期任务 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 </manifest>

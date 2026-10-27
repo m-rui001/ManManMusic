@@ -10,7 +10,9 @@ import "package:bobomusic/modules/party/party_page.dart";
 import "package:bobomusic/modules/party/party_roster.dart";
 import "package:bobomusic/modules/party/party_tone.dart";
 import "package:bobomusic/modules/party/party_watcher.dart";
+import "package:bobomusic/modules/setting/pages/guide_page.dart";
 import "package:bobomusic/modules/setting/pages/theme_color_setting.dart";
+import "package:bobomusic/origin_sdk/bili/auth.dart";
 import "package:bobomusic/utils/get_cache_color.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:bobomusic/utils/update_version.dart";
@@ -174,8 +176,8 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                           if (mounted) setState(() {});
                           if (v) {
                             BotToast.showText(
-                              text: "名单里的好友开始听歌时会提醒你（仅 App 前台）",
-                              duration: const Duration(seconds: 3),
+                              text: "前台一分钟探一次；后台交给系统低频唤醒，最多慢 15 分钟",
+                              duration: const Duration(seconds: 4),
                             );
                           }
                         },
@@ -230,6 +232,28 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                         updateAppVersion(context);
                       }
                     ),
+                    SettingItem(
+                      leadingIcon: Icons.menu_book_outlined,
+                      title: "使用说明",
+                      trailing: Icon(Icons.chevron_right, color: primaryColor),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const GuidePage(),
+                          ),
+                        );
+                      },
+                    ),
+                    if (BiliAuth.instance.isLogin)
+                      SettingItem(
+                        leadingIcon: Icons.logout,
+                        title: "退出哔哩哔哩账号",
+                        trailing: Icon(Icons.chevron_right, color: primaryColor),
+                        onTap: () async {
+                          await confirmBiliLogout(context);
+                          if (mounted) setState(() {});
+                        },
+                      ),
                   ],
                 ),
                 const SizedBox(height: 20),
@@ -242,13 +266,6 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                     ),
                     const SizedBox(width: 6),
                     Text("$appName v$appVersion", style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text("Copyright @ Xiwenge", style: TextStyle(color: Colors.grey, fontSize: 12)),
                   ],
                 ),
               ],
