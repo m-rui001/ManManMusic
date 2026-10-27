@@ -130,7 +130,9 @@ class PartyRoster {
     if (member.mid <= 0) return;
     final index = _members.indexWhere((e) => e.mid == member.mid);
     if (index >= 0) {
-      _members[index] = member;
+      // 已在名单里：只更新昵称头像，别把红心（共管）冲掉
+      _members[index] = _members[index]
+          .copyWith(uname: member.uname, face: member.face);
     } else {
       _members.add(member);
     }
@@ -143,7 +145,8 @@ class PartyRoster {
       if (m.mid <= 0) continue;
       final index = _members.indexWhere((e) => e.mid == m.mid);
       if (index >= 0) {
-        _members[index] = m;
+        _members[index] =
+            _members[index].copyWith(uname: m.uname, face: m.face);
       } else {
         _members.add(m);
       }

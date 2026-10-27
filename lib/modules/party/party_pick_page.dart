@@ -62,9 +62,11 @@ class _PartyPickPageState extends State<PartyPickPage> {
       );
     }
 
-    // 若有人被取消勾选，从名单移除
-    for (final m in _roster.members) {
-      if (!_picked.contains(m.mid)) {
+    // 只处理「本页关注列表里出现过的人」：
+    // 关注列表只拉了一页，名单里其他人不在本页，不能被误删
+    final visible = _all.map((e) => e.mid).toSet();
+    for (final m in _roster.members.toList()) {
+      if (visible.contains(m.mid) && !_picked.contains(m.mid)) {
         await _roster.remove(m.mid);
       }
     }
