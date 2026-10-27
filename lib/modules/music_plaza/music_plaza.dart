@@ -358,10 +358,16 @@ class _OrdersTab extends StatefulWidget {
   State<_OrdersTab> createState() => _OrdersTabState();
 }
 
-class _OrdersTabState extends State<_OrdersTab> {
+class _OrdersTabState extends State<_OrdersTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     // MusicOrderView 已改成纵向列表（见 music_order.dart）
+    // 保留状态：切走再切回来不用重新加载，靠 RefreshMusicList 事件刷新
     return const MusicOrderView(embedded: true);
   }
 }

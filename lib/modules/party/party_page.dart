@@ -36,6 +36,8 @@ class PartySession {
   bool get connected => _party.connected;
   String get roomId => _party.roomId;
   Map<String, String> get members => _party.members;
+  Map<String, int> get memberUids => _party.memberUids;
+  Set<int> get controlUids => _party.controlUids;
   Stream<Map<String, String>> get memberStream => _party.membersStream;
 
   /// 只能听、不能自己操作
@@ -58,8 +60,9 @@ class PartySession {
     _noticeSub?.cancel();
     _noticeSub = _party.notices.listen(_onNotice);
 
-    _party.onSyncRequested = () {
-      if (_canBroadcast) _broadcastNow();
+    _party.onSyncRequested = (force) {
+      if (!inRoom || !_party.allowLocalControl) return;
+      _broadcastNow(force: force);
     };
 
     // 本机切歌 / 暂停立刻广播，避免等下一次 tick
@@ -148,17 +151,22 @@ class PartySession {
     _broadcastTimer = null;
   }
 
-  void _broadcastNow() {
+  void _broadcastNow({bool force = false}) {
+    // 正在应用远端状态时不要回广播，避免两边互相纠正
+    if (_party.applyingRemote) return;
+
     final player = _player;
     final music = player?.current;
-    if (player == null || music == null) return;
+
     if (!inRoom || !_party.connected) return;
     if (!_party.allowLocalControl) return;
+    // force：没在放歌也发一条，让房间里的人拿到最新权限
+    if (music == null && !force) return;
 
     _party.broadcast(
       music: music,
-      position: player.currentPosition,
-      playing: player.isPlaying,
+      position: player?.currentPosition ?? Duration.zero,
+      playing: player?.isPlaying ?? false,
     );
   }
 

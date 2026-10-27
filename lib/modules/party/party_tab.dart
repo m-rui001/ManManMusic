@@ -140,7 +140,7 @@ class PartyTabViewState extends State<PartyTabView> {
     BotToast.showText(
       text: member.canControl
           ? "已取消 ${member.uname} 的共管权限"
-          : "${member.uname} 现在可以和你一起换歌了",
+          : "${member.uname} 以后一进房间就能一起换歌",
     );
   }
 
@@ -245,7 +245,8 @@ class PartyTabViewState extends State<PartyTabView> {
                 Padding(
                   padding: const EdgeInsets.only(left: 2, bottom: 10),
                   child: Text(
-                    "名单里的人才能进你的房间；点红心的人可以和你一起换歌、拖进度。",
+                    "名单里的人才能进你的房间。点红心 = 永久共管："
+                    "他一进房间就能和你一起换歌、拖进度，不用每次重新设置。",
                     style: TextStyle(
                       fontSize: 9.5,
                       height: 1.6,
@@ -283,6 +284,8 @@ class PartyTabViewState extends State<PartyTabView> {
                     myFace: auth.isLogin ? auth.face : "",
                     inRoom: session.inRoom,
                     members: session.members,
+                    memberUids: session.memberUids,
+                    controlUids: session.controlUids,
                   ),
                 ),
               ],

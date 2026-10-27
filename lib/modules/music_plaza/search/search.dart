@@ -201,59 +201,28 @@ class SearchViewState extends State<SearchView> {
     );
   }
 
-  /// 收藏合集
+  /// 把整个合集加进「满满音乐」
+  ///
+  /// v3 起只有一张歌单，不再为每个合集单独建表，
+  /// 也就不会再出现 "table 收藏夹_xxx already exists" 这种错。
   Future<void> collectionList(SearchItem detail) async {
+    final list = detail.musicList ?? [];
+    if (list.isEmpty) {
+      BotToast.showText(text: "这个合集里没有可播放的音频");
+      return;
+    }
+
     EasyLoading.show(maskType: EasyLoadingMaskType.black);
-    final musicListTableName = genMusicListTableName(id: detail.id);
-    final DBCollection dbCollection = DBCollection();
+    final added = await addToMyMusic(list);
+    EasyLoading.dismiss();
 
-    try {
-      final List<Map<String, dynamic>> dbcList = await dbCollection.queryAll(TableName.collection);
-      final index = dbcList.indexWhere((item) => item["musicListTableName"] as String == musicListTableName);
+    BotToast.showText(
+      text: added > 0 ? "已把 $added 首加进满满音乐" : "这些歌已经在满满音乐里了",
+    );
 
-      if(index >= 0) {
-        EasyLoading.dismiss();
-        BotToast.showText(text: "该合集已经收藏了");
-        return;
-      }
-
-      final id = await dbCollection.insert(TableName.collection, collection2Row(
-        collection: CollectionItemType(
-          id: detail.id,
-          cover: detail.cover,
-          name: detail.name,
-          author: detail.author,
-          origin: detail.origin,
-          musicListTableName: musicListTableName,
-        ))
-      );
-
-      if (id > -1) {
-        final DBOrder db = DBOrder();
-
-        if(!await db.isTableExists(musicListTableName)) {
-          await db.createOrderTable(musicListTableName);
-        }
-
-        for (var music in detail.musicList!) {
-          final newM = music.copyWith(playId: uuid.v4(), orderName: musicListTableName);
-          await db.insert(musicListTableName, musicItem2Row(music: newM));
-        }
-
-        EasyLoading.dismiss();
-      }
-
-      eventBus.fire(RefreshCollectionList());
-
-      BotToast.showText(text: "收藏成功");
-    } catch(error) {
-      EasyLoading.dismiss();
-      BotToast.showText(text: "收藏出错辽 ~");
-      await dbCollection.delete(TableName.collection, musicListTableName);
-
-      if (await db.isTableExists(musicListTableName)) {
-        await db.dropTable(musicListTableName);
-      }
+    if (added > 0) {
+      eventBus.fire(RefreshMusicList(tabName: TableName.myMusic));
+      eventBus.fire(RefreshTabList());
     }
   }
 

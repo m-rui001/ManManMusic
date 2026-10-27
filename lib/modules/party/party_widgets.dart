@@ -199,9 +199,9 @@ class PartyRosterTile extends StatelessWidget {
     final primaryColor = Theme.of(context).primaryColor;
     final listening = probe != null;
 
+    // 只有点右边的叉才会移除，长按不再误删
     return GestureDetector(
       onTap: onTap,
-      onLongPress: onRemove,
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(11),
@@ -267,7 +267,7 @@ class PartyRosterTile extends StatelessWidget {
                     (listening
                             ? "正在听《${clearHtmlTags(probe!.musicName)}》"
                             : "没在听歌") +
-                        (member.canControl ? " · 可一起换歌" : ""),
+                        (member.canControl ? " · 共管" : ""),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -280,7 +280,9 @@ class PartyRosterTile extends StatelessWidget {
             ),
             const SizedBox(width: 4),
             IconButton(
-              tooltip: member.canControl ? "取消共管" : "设为共管",
+              tooltip: member.canControl
+                  ? "取消共管（随时可以再点回来）"
+                  : "设为共管：以后他一进房间就能换歌",
               onPressed: onToggleControl,
               icon: Icon(
                 member.canControl
@@ -292,34 +294,20 @@ class PartyRosterTile extends StatelessWidget {
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
             ),
-            if (listening)
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: primaryColor,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Text(
-                  "一起听",
-                  style: TextStyle(fontSize: 10, color: Colors.white),
-                ),
-              )
-            else
-              IconButton(
-                tooltip: "从名单移除",
-                onPressed: onRemove,
-                icon: Icon(
-                  Icons.close,
-                  size: 16,
-                  color: Colors.grey[400],
-                ),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(
-                  minWidth: 28,
-                  minHeight: 28,
-                ),
+            IconButton(
+              tooltip: "从名单移除",
+              onPressed: onRemove,
+              icon: Icon(
+                Icons.close,
+                size: 16,
+                color: Colors.grey[400],
               ),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(
+                minWidth: 28,
+                minHeight: 28,
+              ),
+            ),
           ],
         ),
       ),
@@ -334,12 +322,20 @@ class PartyMemberChips extends StatelessWidget {
   final bool inRoom;
   final Map<String, String> members;
 
+  /// clientId -> UID，用来判断谁是共管
+  final Map<String, int> memberUids;
+
+  /// 有控制权的 UID
+  final Set<int> controlUids;
+
   const PartyMemberChips({
     super.key,
     required this.myName,
     required this.myFace,
     required this.inRoom,
     required this.members,
+    this.memberUids = const {},
+    this.controlUids = const {},
   });
 
   @override
@@ -357,14 +353,26 @@ class PartyMemberChips extends StatelessWidget {
       spacing: 10,
       runSpacing: 10,
       children: [
-        if (inRoom)
-          _chip("$myName（我）", myFace, primaryColor, true),
-        ...members.values.map((name) => _chip(name, "", primaryColor, false)),
+        if (inRoom) _chip("$myName（我）", myFace, primaryColor, true, true),
+        for (final entry in members.entries)
+          _chip(
+            entry.value,
+            "",
+            primaryColor,
+            false,
+            controlUids.contains(memberUids[entry.key] ?? 0),
+          ),
       ],
     );
   }
 
-  Widget _chip(String name, String face, Color primaryColor, bool highlight) {
+  Widget _chip(
+    String name,
+    String face,
+    Color primaryColor,
+    bool highlight,
+    bool canControl,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -393,6 +401,10 @@ class PartyMemberChips extends StatelessWidget {
               fontWeight: highlight ? FontWeight.bold : FontWeight.normal,
             ),
           ),
+          if (canControl) ...[
+            const SizedBox(width: 4),
+            const Icon(Icons.favorite, size: 10, color: Colors.redAccent),
+          ],
         ],
       ),
     );

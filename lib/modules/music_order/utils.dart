@@ -83,8 +83,8 @@ Future<List<MusicItem>> getUpdatedMusicList({required String tabName}) async {
         final isLast = dbMusics[index]["playId"] == dbMusics.last["playId"];
         final prev = index > 0 ? dbMusics[index - 1]["playId"] : dbMusics.last["playId"];
         final next = isLast ? dbMusics.first["playId"] : dbMusics[index + 1]["playId"];
-        final mPrev = dbMusics[index]["prev"] as String;
-        final mNext = dbMusics[index]["next"] as String;
+        final mPrev = "${dbMusics[index]["prev"] ?? ""}";
+        final mNext = "${dbMusics[index]["next"] ?? ""}";
 
         if (mPrev.isEmpty || mNext.isEmpty || prev != mPrev || next != mNext) {
           final newM = row2MusicItem(

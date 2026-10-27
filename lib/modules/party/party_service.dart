@@ -211,6 +211,9 @@ class PartyService {
   /// 有控制权的 UID（房主广播下来）
   final Set<int> controlUids = {};
 
+  /// 成员 clientId -> B 站 UID（用来在成员列表里标出谁是共管）
+  Map<String, int> get memberUids => Map.unmodifiable(_memberUids);
+
   /// 房主：谁被允许进房间（来自一起听名单）
   final Set<int> allowedUids = {};
 
@@ -226,7 +229,11 @@ class PartyService {
   Stream<PartyNotice> get notices => _noticeController.stream;
 
   /// 房主需要广播状态时（被请求 / 名单变化）的回调
-  void Function()? onSyncRequested;
+  ///
+  /// [force] 为 true 时表示「就算现在没在放歌也要回一条」——
+  /// 新成员加入时必须这样，否则他拿不到 controlUids，
+  /// 名单里点了红心的共管会一直被锁着。
+  void Function(bool force)? onSyncRequested;
 
   /// 连接状态变化
   void Function(bool connected)? onConnectionChanged;
@@ -369,7 +376,8 @@ class PartyService {
     }
     if (kicked.isNotEmpty) _emitMembers();
 
-    onSyncRequested?.call();
+    // 权限变了立刻广播：新点红心的人不用等房主下次切歌
+    _broadcastNow(force: true);
   }
 
   /// 作为听众加入别人的房间
@@ -524,7 +532,9 @@ class PartyService {
           }
           _touchMember(state.from, state.uid, state.fromName);
           _emitNotice(PartyNotice(kind: PartyNoticeKind.joined, name: state.fromName));
-          _broadcastNow();
+          // 必须回一条，哪怕房主现在没在放歌：
+          // 新成员要靠这条消息拿到 controlUids（红心共管）。
+          _broadcastNow(force: true);
           return;
         }
         _touchMember(state.from, state.uid, state.fromName);
@@ -550,7 +560,7 @@ class PartyService {
         if (state.from.isNotEmpty) {
           _touchMember(state.from, state.uid, state.fromName);
         }
-        _broadcastNow();
+        _broadcastNow(force: true);
         return;
 
       case PartyMessageType.state:
@@ -659,10 +669,13 @@ class PartyService {
   }
 
   /// 广播播放状态
+  ///
+  /// [music] 可以为空：房主暂时没放歌时也要能把 controlUids 发出去，
+  /// 否则刚加入的共管会以为自己没有权限。
   void broadcast({
-    required MusicItem music,
-    required Duration position,
-    required bool playing,
+    MusicItem? music,
+    Duration position = Duration.zero,
+    bool playing = false,
   }) {
     _publish(
       PartyMessageType.state,
@@ -672,8 +685,8 @@ class PartyService {
     );
   }
 
-  void _broadcastNow() {
-    onSyncRequested?.call();
+  void _broadcastNow({bool force = false}) {
+    onSyncRequested?.call(force);
   }
 
   /// 发布一条消息

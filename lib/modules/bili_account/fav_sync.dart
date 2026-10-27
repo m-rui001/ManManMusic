@@ -225,8 +225,6 @@ class FavSyncService {
       }
 
       page += 1;
-      // 拉够了就停，避免多余请求
-      if (totalHint > 0 && medias.length >= totalHint) break;
     }
 
     return medias;
@@ -243,14 +241,13 @@ class FavSyncService {
       );
 
       final existing = await existingMids();
-      int added = 0;
+      final rows = <Map<String, dynamic>>[];
 
       for (final media in medias) {
         final id = BiliId(aid: media.aid, bvid: media.bvid).decode();
         if (id.isEmpty || !existing.add(id)) continue;
 
-        await _db.insert(
-          TableName.myMusic,
+        rows.add(
           musicItem2Row(
             music: MusicItem(
               id: id,
@@ -264,8 +261,11 @@ class FavSyncService {
             ),
           ),
         );
-        added += 1;
       }
+
+      // 一次性事务写入，几百首也是秒级
+      await _db.insertAll(TableName.myMusic, rows);
+      final added = rows.length;
 
       await _upsertBinding(
         FavBinding(

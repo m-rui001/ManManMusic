@@ -1,3 +1,5 @@
+import "package:bobomusic/db/db.dart";
+import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/bili_account/fav_sync.dart";
 import "package:bobomusic/origin_sdk/bili/auth.dart";
 import "package:bot_toast/bot_toast.dart";
@@ -62,7 +64,12 @@ class _BiliFavPageState extends State<BiliFavPage> {
     final already = _bindings.containsKey(folder.id);
     setState(() => _busyId = folder.id);
 
+    EasyLoading.show(
+      status: "正在导入…",
+      maskType: EasyLoadingMaskType.black,
+    );
     final result = await FavSyncService.importFolder(folder);
+    EasyLoading.dismiss();
 
     if (!mounted) return;
     setState(() => _busyId = null);
@@ -80,6 +87,12 @@ class _BiliFavPageState extends State<BiliFavPage> {
           : "「${folder.title}」没有新歌",
       duration: const Duration(seconds: 3),
     );
+
+    // 歌单页可能还活在后台，直接通知它刷新，不用等用户手动返回
+    if (result.added > 0) {
+      eventBus.fire(RefreshMusicList(tabName: TableName.myMusic));
+      eventBus.fire(RefreshTabList());
+    }
 
     await _load();
   }
@@ -100,6 +113,11 @@ class _BiliFavPageState extends State<BiliFavPage> {
           : "同步完成：新增 ${summary.added} 首",
       duration: const Duration(seconds: 3),
     );
+
+    if (summary.added > 0) {
+      eventBus.fire(RefreshMusicList(tabName: TableName.myMusic));
+      eventBus.fire(RefreshTabList());
+    }
 
     await _load();
   }

@@ -1,6 +1,7 @@
 import "dart:async";
 
 import "package:audio_service/audio_service.dart";
+import "package:bobomusic/modules/party/party_control.dart";
 import "package:bobomusic/modules/player/service.dart";
 import "package:just_audio/just_audio.dart";
 import "package:flutter/material.dart";
@@ -62,24 +63,28 @@ class PlayerModel extends ChangeNotifier {
 
   // 播放
   Future<void> play({MusicItem? music}) async {
+    if (PartyControl.blocked()) return;
     await _playerHandler?.play(music: music);
     notifyListeners();
   }
 
   // 暂停
   Future<void> pause() async {
+    if (PartyControl.blocked()) return;
     await _playerService?.pause();
     notifyListeners();
   }
 
   // 上一首
   Future<void> prev() async {
+    if (PartyControl.blocked()) return;
     await _playerService?.skipToPrevious();
     notifyListeners();
   }
 
   // 下一首
   Future<void> next() async {
+    if (PartyControl.blocked()) return;
     await _playerService?.skipToNext();
     notifyListeners();
   }

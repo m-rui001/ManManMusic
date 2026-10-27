@@ -5,8 +5,6 @@ import "package:path/path.dart";
 class DBName {
   /// 歌单
   static String orderName  = "musicOrder";
-  /// 合集
-  static String collection  = "collection";
 }
 
 class TableName {
@@ -21,8 +19,6 @@ class TableName {
   static String legacyILike  = "我喜欢";
   /// 待播放列表
   static String musicWaitPlay  = "待播放列表";
-  /// 收藏合集
-  static String collection  = "收藏合集";
 }
 
 /// 歌单表的建表语句（所有歌单表结构一致）
@@ -95,6 +91,19 @@ abstract class BaseDatabaseHelper {
     }
   }
 
+  /// 批量写入（一次事务，几百首也不会卡）
+  Future<void> insertAll(String tableName, List<Map<String, dynamic>> rows) async {
+    if (rows.isEmpty) return;
+    final db = await database;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final row in rows) {
+        batch.insert(tableName, row);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
   Future<bool> isTableExists(String tableName) async {
     Database db = await database;
     var result = await db.rawQuery(
@@ -118,7 +127,7 @@ abstract class BaseDatabaseHelper {
           SELECT MIN(id) FROM $tableName
           GROUP BY $groupBy
         )
-        $isOrder ? "ORDER BY name ASC" : "ORDER BY id ASC"}
+        ${isOrder ? "ORDER BY name ASC" : "ORDER BY id ASC"}
       """);
     } catch (e) {
       print("Query error: $e");
@@ -219,35 +228,6 @@ abstract class BaseDatabaseHelper {
       rethrow;
     }
   }
-
-  Future<void> createTable(String tableName, String createTableSql) async {
-    try {
-      Database db = await database;
-      await db.execute(createTableSql);
-    } catch (e) {
-      print("Error creating table $tableName: $e");
-      rethrow;
-    }
-  }
-
-  Future<void> updateTableName({required String oldTableName, required String newTableName}) async {
-    try {
-      Database db = await database;
-      await db.execute("ALTER TABLE $oldTableName RENAME TO $newTableName");
-    } catch (e) {
-      rethrow;
-    }
-  }
-
-  Future<void> dropTable(String tableName) async {
-    try {
-      Database db = await database;
-      await db.execute("DROP TABLE IF EXISTS $tableName");
-    } catch (e) {
-      print("Error dropping table $tableName: $e");
-      rethrow;
-    }
-  }
 }
 
 class DBOrder extends BaseDatabaseHelper {
@@ -295,7 +275,10 @@ class DBOrder extends BaseDatabaseHelper {
       await db.execute('DROP TABLE "$name"');
     }
 
-    await db.update(TableName.myMusic, {"orderName": TableName.myMusic});
+    await db.rawUpdate(
+      "UPDATE ${TableName.myMusic} SET orderName = ?",
+      [TableName.myMusic],
+    );
   }
 
   Future<bool> _tableExists(Database db, String tableName) async {
@@ -344,85 +327,6 @@ class DBOrder extends BaseDatabaseHelper {
       index += 1;
     }
   }
-
-  Future<void> createOrderTable(String tableName) async {
-    try {
-      Database db = await database;
-      await db.execute(orderTableSql(tableName));
-    } catch (e) {
-      print("Error creating table $tableName: $e");
-      rethrow;
-    }
-  }
-}
-
-class DBCollection extends BaseDatabaseHelper {
-  DBCollection({
-    int version = 1,
-  }) : super._internal(DBName.collection, version);
-
-  @override
-  Future<void> _onCreate(Database db, int version) async {
-    /// 收藏合集
-    await db.execute(
-      "CREATE TABLE ${TableName.collection} (id INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT, name TEXT, cover TEXT, author TEXT, origin TEXT, musicListTableName TEXT)",
-    );
-  }
-
-  @override
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {}
-
-  @override
-  Future<int> update(String tableName, Map<String, dynamic> row) async {
-    try {
-      Database db = await database;
-      String cid = row["cid"];
-
-      return await db.update(
-        tableName,
-        row,
-        where: "cid =?",
-        whereArgs: [cid],
-      );
-    } catch (e) {
-      print("Update error: $e");
-      rethrow;
-    }
-  }
-
-  @override
-  Future<int> delete(String tableName, String param) async {
-    try {
-      Database db = await database;
-      return await db.delete(
-        tableName,
-        where: "cid =? OR name=?",
-        whereArgs: [param, param],
-      );
-    } catch (e) {
-      print("Delete error: $e");
-      rethrow;
-    }
-  }
-
-  @override
-  Future<List<Map<String, dynamic>>> queryByParam(String tableName, String param) async {
-    try {
-      Database db = await database;
-      return await db.rawQuery("""
-        SELECT * FROM $tableName
-        WHERE id IN (
-          SELECT MIN(id) FROM $tableName
-          WHERE cid =? OR name LIKE?
-          GROUP BY cid
-        )
-        ORDER BY name ASC
-      """, [param, "%$param%"]);
-    } catch (e) {
-      print("Update error: $e");
-      rethrow;
-    }
-  }
 }
 
 Map<String, dynamic> musicItem2Row({required MusicItem music, String? prev, String? next, String? isFirst, String? isLast, String? lyric}) {
@@ -462,34 +366,5 @@ MusicItem row2MusicItem({required Map<String, dynamic> dbRow, String? prev, Stri
     next: next ?? dbRow["next"] as String,
     isFirst: isFirst ?? dbRow["isFirst"] as String,
     isLast: isLast ?? dbRow["isLast"] as String,
-  );
-}
-
-String genMusicListTableName({required String id}) {
-  return "musicList_$id";
-}
-
-Map<String, dynamic> collection2Row({required CollectionItemType collection}) {
-  final musicListTableName = genMusicListTableName(id: collection.id);
-  Map<String, dynamic> musicRow = {
-    "cid": collection.id,
-    "name": collection.name,
-    "cover": collection.cover,
-    "author": collection.author,
-    "origin": collection.origin.value,
-    "musicListTableName": musicListTableName,
-  };
-
-  return musicRow;
-}
-
-CollectionItemType row2Collection({required Map<String, dynamic> dbRow}) {
-  return CollectionItemType(
-    id: dbRow["cid"] as String,
-    cover: dbRow["cover"] as String,
-    name: dbRow["name"] as String,
-    author: dbRow["author"] as String,
-    origin: OriginType.getByValue(dbRow["origin"]),
-    musicListTableName: dbRow["musicListTableName"] as String
   );
 }
