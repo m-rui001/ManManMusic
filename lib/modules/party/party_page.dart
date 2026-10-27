@@ -1,6 +1,7 @@
 import "dart:async";
 
 import "package:bobomusic/event_bus/event_bus.dart";
+import "package:bobomusic/modules/bili_account/bili_login_gate.dart";
 import "package:bobomusic/modules/party/party_roster.dart";
 import "package:bobomusic/modules/party/party_service.dart";
 import "package:bobomusic/modules/party/party_tone.dart";
@@ -298,6 +299,19 @@ class _PartyJoinPageState extends State<PartyJoinPage> {
   }
 
   Future<void> _join() async {
+    // 没登录就没有 UID，房主认不出你，一定会被拒绝
+    if (!BiliAuth.instance.isLogin) {
+      final logged = await BiliLoginGate.ensureLoggedIn(context);
+      if (!logged) {
+        if (!mounted) return;
+        setState(() {
+          busy = false;
+          ok = false;
+        });
+        return;
+      }
+    }
+
     final result = await session.join(widget.roomId.trim());
     if (!mounted) return;
     setState(() {
