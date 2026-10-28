@@ -294,7 +294,9 @@ class PartyRosterTile extends StatelessWidget {
                   const SizedBox(height: 3),
                   Text(
                     (listening
-                            ? "正在听《${clearHtmlTags(probe!.musicName)}》"
+                            ? (probe!.hasMusic
+                                ? "正在听《${clearHtmlTags(probe!.musicName)}》"
+                                : "一起听开着 · 没在放歌")
                             : "没在听歌") +
                         (member.canControl ? " · 共管" : ""),
                     maxLines: 1,

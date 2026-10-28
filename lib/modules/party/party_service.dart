@@ -5,6 +5,7 @@ import "dart:math";
 import "package:bobomusic/origin_sdk/bili/auth.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:dio/dio.dart";
+import "package:flutter/foundation.dart";
 
 /// 一起听同步消息类型
 enum PartyMessageType {
@@ -166,6 +167,9 @@ enum PartyNoticeKind {
 
   /// 房主下线，房间结束
   hostLeft,
+
+  /// 房主这边发现有人想进房间但不在名单里
+  blocked,
 }
 
 class PartyNotice {
@@ -191,13 +195,13 @@ class PartyService {
 
   /// 房主多久没动静就认为下线了
   ///
-  /// 房主每 20 秒发一次心跳，容忍丢三次。
-  static const int hostTimeoutMs = 65000;
+  /// 房主每 15 秒发一次心跳，容忍丢三次。
+  static const int hostTimeoutMs = 60000;
 
   /// 成员多久没心跳就认为掉线了
   ///
-  /// 心跳 20 秒一次，容忍丢两次；太长会在房主那边留下"幽灵成员"。
-  static const int memberTimeoutMs = 50000;
+  /// 心跳 15 秒一次，容忍丢两次；太长会在房主那边留下"幽灵成员"。
+  static const int memberTimeoutMs = 45000;
 
   PartyRole role = PartyRole.none;
   String roomId = "";
@@ -239,6 +243,9 @@ class PartyService {
 
   /// 房主：谁被允许进房间（来自一起听名单）
   final Set<int> allowedUids = {};
+
+  /// 已经提示过「被名单拦下」的 UID（重连会反复敲门，别反复弹）
+  final Set<int> _deniedUids = {};
 
   /// 正在应用远端状态时不要拦截本机播放控制
   bool applyingRemote = false;
@@ -354,6 +361,7 @@ class PartyService {
     members.clear();
     _memberUids.clear();
     _memberSeen.clear();
+    _deniedUids.clear();
 
     allowedUids
       ..clear()
@@ -651,6 +659,13 @@ class PartyService {
           // 名单外的人不许进
           if (!allowedUids.contains(state.uid)) {
             _publish(PartyMessageType.deny, toUid: state.uid);
+            // 房主这边也要知道：不然只看到「没人进来」，不知道是被名单拦了。
+            // 同一个人在重连时会反复敲门，只提示一次。
+            if (_deniedUids.add(state.uid)) {
+              _emitNotice(
+                PartyNotice(kind: PartyNoticeKind.blocked, name: state.fromName),
+              );
+            }
             return;
           }
           final isNew = _touchMember(state.from, state.uid, state.fromName);
@@ -841,10 +856,10 @@ class PartyService {
 
   void _startTimers() {
     _pingTimer?.cancel();
-    // 20 秒一次：ntfy.sh 免费额度是「60 次突发 + 每 5 秒回 1 次」，
-    // 3 秒广播 + 10 秒心跳 = 26 次/分钟，四五分钟就把额度打空，
+    // 15 秒一次：ntfy.sh 免费额度是「60 次突发 + 每 5 秒回 1 次」，
+    // 以前 3 秒广播 + 10 秒心跳 = 26 次/分钟，四五分钟就把额度打空，
     // 之后所有消息都被 429 丢掉，房间看着还连着其实已经不同步了。
-    _pingTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+    _pingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       _publish(PartyMessageType.ping);
     });
 
@@ -883,6 +898,12 @@ class PartyService {
   void _broadcastNow({bool force = false}) {
     onSyncRequested?.call(force);
   }
+
+  /// 听众主动要一次完整状态
+  ///
+  /// 丢包时靠这个补，比把房主的广播频率提回去省额度：
+  /// 只在刚进房间 / 长时间没收到消息时发几条。
+  Future<void> requestSync() => _publish(PartyMessageType.sync);
 
   /// 发布一条消息
   Future<void> _publish(
@@ -995,6 +1016,7 @@ class PartyService {
     members.clear();
     _memberUids.clear();
     _memberSeen.clear();
+    _deniedUids.clear();
     controlUids.clear();
     allowedUids.clear();
     _lastHostSeen = 0;
@@ -1016,14 +1038,16 @@ class PartyService {
     _disconnect();
   }
 
-  /// 探测某房间最近是否有人在听（一次性拉取，不建长连接）
+  /// 探测某房间最近是否还开着（一次性拉取，不建长连接）
   ///
-  /// 用 ntfy 的 poll 参数只拿最近 60 秒的历史消息，避免长连接开销，
-  /// 也不会对免费公共中继造成压力。
-  /// 如果房主发过 bye，就认为房间已经关了，返回 null。
+  /// 用 ntfy 的 poll 参数只拿最近两分钟的历史消息。这个窗口是服务端按自己的
+  /// 时钟筛的，所以「窗口里有房主的消息」就等于「房间还开着」，不受两台手机
+  /// 时间不准的影响。房主没在放歌也算在线：能进房间，只是没有歌可显示。
+  /// 如果房主最后一句是 bye，就认为房间已经关了。
   Future<PartyProbe?> probeRoom(String targetRoom) async {
     if (targetRoom.trim().isEmpty) return null;
-    final targetTopic = "manman_party_${targetRoom.trim()}";
+    final room = targetRoom.trim();
+    final targetTopic = "manman_party_$room";
 
     try {
       final resp = await Dio(
@@ -1034,73 +1058,107 @@ class PartyService {
           responseType: ResponseType.plain,
           headers: {"User-Agent": "manman-music/party"},
         ),
-      ).get<String>("$relayBase/$targetTopic/json?poll=1&since=60s");
+      ).get<String>("$relayBase/$targetTopic/json?poll=1&since=120s");
 
       if (resp.statusCode != 200) return null;
       final text = resp.data ?? "";
       if (text.isEmpty) return null;
 
-      PartyProbe? latest;
-      int lastByeAt = 0;
-
-      for (final line in text.split("\n")) {
-        final trimmed = line.trim();
-        if (trimmed.isEmpty) continue;
-
-        Map<String, dynamic> json;
-        try {
-          final decoded = jsonDecode(trimmed);
-          if (decoded is! Map) continue;
-          json = Map<String, dynamic>.from(decoded);
-        } catch (_) {
-          continue;
-        }
-
-        if (json["event"] != null && json["event"] != "message") continue;
-
-        final message = json["message"];
-        if (message is! String || message.isEmpty) continue;
-
-        Map<String, dynamic> payload;
-        try {
-          final decoded = jsonDecode(message);
-          if (decoded is! Map) continue;
-          payload = Map<String, dynamic>.from(decoded);
-        } catch (_) {
-          continue;
-        }
-
-        final state = PartyState.fromJson(payload);
-        if (state.roomId != targetRoom.trim()) continue;
-
-        if (state.type == PartyMessageType.bye) {
-          if (state.at > lastByeAt) lastByeAt = state.at;
-          continue;
-        }
-
-        if (state.type != PartyMessageType.state) continue;
-        if (state.musicId.isEmpty) continue;
-
-        // 只保留最新的一条
-        if (latest == null || state.at > latest.at) {
-          latest = PartyProbe(
-            nick: state.fromName,
-            musicName: state.name,
-            author: state.author,
-            cover: state.cover,
-            playing: state.playing,
-            at: state.at,
-          );
-        }
-      }
-
-      // 房主已经说了拜拜
-      if (latest != null && lastByeAt > latest.at) return null;
-
-      return latest;
+      return parseProbe(
+        text.split("\n"),
+        room: room,
+        nowMs: DateTime.now().millisecondsSinceEpoch,
+      );
     } catch (_) {
       return null;
     }
+  }
+
+  /// 从 poll 回来的 NDJSON 里挑出房间状态
+  ///
+  /// 纯函数，方便单测：窗口是服务端给的（since=120s），
+  /// 所以「窗口里有房主的消息」就等于「房间还开着」。
+  @visibleForTesting
+  static PartyProbe? parseProbe(
+    Iterable<String> lines, {
+    required String room,
+    required int nowMs,
+  }) {
+    final hostUid = hostUidFromRoom(room);
+
+    String nick = "";
+    int lastHostAt = 0;
+    int lastByeAt = 0;
+    PartyProbe? music;
+
+    for (final line in lines) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) continue;
+
+      Map<String, dynamic> json;
+      try {
+        final decoded = jsonDecode(trimmed);
+        if (decoded is! Map) continue;
+        json = Map<String, dynamic>.from(decoded);
+      } catch (_) {
+        continue;
+      }
+
+      if (json["event"] != null && json["event"] != "message") continue;
+
+      final message = json["message"];
+      if (message is! String || message.isEmpty) continue;
+
+      Map<String, dynamic> payload;
+      try {
+        final decoded = jsonDecode(message);
+        if (decoded is! Map) continue;
+        payload = Map<String, dynamic>.from(decoded);
+      } catch (_) {
+        continue;
+      }
+
+      final state = PartyState.fromJson(payload);
+      if (state.roomId != room) continue;
+      // 只认房主的消息：房间号里就写着房主 UID
+      if (hostUid > 0 && state.uid != hostUid) continue;
+
+      if (state.at > lastHostAt) lastHostAt = state.at;
+      if (state.fromName.isNotEmpty) nick = state.fromName;
+
+      if (state.type == PartyMessageType.bye) {
+        if (state.at > lastByeAt) lastByeAt = state.at;
+        continue;
+      }
+      if (state.type != PartyMessageType.state) continue;
+      if (state.musicId.isEmpty) continue;
+
+      // 只保留最新的一条带歌的状态
+      if (music == null || state.at > music.at) {
+        music = PartyProbe(
+          nick: state.fromName,
+          musicName: state.name,
+          author: state.author,
+          cover: state.cover,
+          playing: state.playing,
+          at: state.at,
+        );
+      }
+    }
+
+    if (lastHostAt == 0) return null;
+    // 房主最后一句就是拜拜 → 房间已经关了
+    if (lastByeAt > 0 && lastByeAt >= lastHostAt) return null;
+
+    return PartyProbe(
+      nick: music?.nick ?? nick,
+      musicName: music?.musicName ?? "",
+      author: music?.author ?? "",
+      cover: music?.cover ?? "",
+      playing: music?.playing ?? true,
+      at: music?.at ?? 0,
+      seenAt: nowMs,
+    );
   }
 }
 
@@ -1112,18 +1170,26 @@ class PartyProbe {
   final String cover;
   final bool playing;
 
-  /// 对方发出状态的本机时间戳（毫秒）
+  /// 房主发出这条状态的时间（房主手机的时钟）
   final int at;
+
+  /// 本机看到房主动静的本地时间（毫秒）
+  final int seenAt;
 
   const PartyProbe({
     required this.nick,
-    required this.musicName,
+    this.musicName = "",
     this.author = "",
     this.cover = "",
     this.playing = true,
-    required this.at,
-  });
+    this.at = 0,
+    int? seenAt,
+  }) : seenAt = seenAt ?? at;
 
-  /// 超过这个时长没更新就当作没在听
-  bool get isFresh => DateTime.now().millisecondsSinceEpoch - at < 60000;
+  /// 知道在放什么歌（只知道房间开着但没在放歌时为 false）
+  bool get hasMusic => musicName.isNotEmpty;
+
+  /// 两分钟内听不到房主动静就当作没在听
+  bool get isFresh =>
+      DateTime.now().millisecondsSinceEpoch - seenAt < 120000;
 }

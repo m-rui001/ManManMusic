@@ -15,7 +15,7 @@ const String appRepoName = "ManManMusic";
 const String appRepoToken = "";
 
 /// 版本号。启动时由 [loadAppInfo] 从包信息读取，读取失败则保留兜底值。
-String appVersion = "2.9.4";
+String appVersion = "2.9.5";
 
 /// 应用内展示的 logo（由 tools/gen_icons.py 从 logo.jpg 生成）
 const String appLogoAsset = "assets/logo.png";

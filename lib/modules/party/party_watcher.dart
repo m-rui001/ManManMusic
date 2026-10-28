@@ -23,7 +23,11 @@ class PartyWatcher with WidgetsBindingObserver {
   static const String _kEnabled = "manman_party_watch_friends";
 
   /// 一轮最多探几个人，名单再长也不会把请求数堆上去
-  static const int _maxProbe = 8;
+  ///
+  /// ntfy.sh 按 IP 限流（60 次突发，之后每 5 秒回 1 次 ≈ 12 次/分钟），
+  /// 这个额度要留给房间里的同步。一轮探 4 个、名单轮着来，
+  /// 十分钟的名单两分半就能全部过一遍。
+  static const int _probePerRound = 4;
 
   static const Duration _interval = Duration(seconds: 60);
 
@@ -33,9 +37,11 @@ class PartyWatcher with WidgetsBindingObserver {
   bool _busy = false;
   bool _started = false;
 
-  /// 上一轮谁在听
-  Set<int> _lastOnline = {};
-  bool _hasBaseline = false;
+  /// 轮询游标：每轮从名单的不同位置开始探
+  int _cursor = 0;
+
+  /// 上次探测时各自在不在听（null = 还没探过）
+  final Map<int, bool> _online = {};
 
   Future<void> init() async {
     final storage = await SharedPreferences.getInstance();
@@ -59,8 +65,8 @@ class PartyWatcher with WidgetsBindingObserver {
     } else {
       _stop();
       await PartyBackground.disable();
-      _hasBaseline = false;
-      _lastOnline = {};
+      _online.clear();
+      _cursor = 0;
     }
   }
 
@@ -94,16 +100,30 @@ class PartyWatcher with WidgetsBindingObserver {
     if (PartyService.instance.inRoom) return;
 
     await PartyRoster.instance.init();
-    final members = PartyRoster.instance.members.take(_maxProbe).toList();
-    if (members.isEmpty) return;
+    final all = PartyRoster.instance.members;
+    if (all.isEmpty) return;
+
+    // 名单里删掉的人也跟着清掉，免得残留记录
+    final mids = all.map((m) => m.mid).toSet();
+    _online.removeWhere((mid, _) => !mids.contains(mid));
+
+    // 轮着探：每轮只碰几个，把中继额度留给房间
+    final batch = <RosterMember>[];
+    for (var i = 0; i < _probePerRound && i < all.length; i++) {
+      batch.add(all[(_cursor + i) % all.length]);
+    }
+    _cursor = (_cursor + _probePerRound) % all.length;
 
     _busy = true;
-    final online = <int>{};
+    final fresh = <int>[];
     try {
-      // 排队探测，别一次打太多请求把 ntfy 的额度占满
-      await PartyService.forEachLimited(members, (m) async {
+      await PartyService.forEachLimited(batch, (m) async {
         final probe = await PartyService.instance.probeRoom(m.roomId);
-        if (probe != null && probe.isFresh) online.add(m.mid);
+        final online = probe != null && probe.isFresh;
+        // 只有「确定上次没在听 → 现在在听」才提醒；
+        // 没探过的人（null）只记状态，不提醒
+        if (_online[m.mid] == false && online) fresh.add(m.mid);
+        _online[m.mid] = online;
       }, limit: 2, gap: const Duration(milliseconds: 400));
     } catch (_) {
       // 网络抖动就跳过这一轮，不重试、不堆积
@@ -111,17 +131,9 @@ class PartyWatcher with WidgetsBindingObserver {
       _busy = false;
     }
 
-    if (!_hasBaseline) {
-      _lastOnline = online;
-      _hasBaseline = true;
-      return;
-    }
-
-    final fresh = online.difference(_lastOnline);
-    _lastOnline = online;
     if (fresh.isEmpty) return;
 
-    final names = members
+    final names = batch
         .where((m) => fresh.contains(m.mid))
         .map((m) => m.uname.isEmpty ? "好友" : m.uname)
         .toList();

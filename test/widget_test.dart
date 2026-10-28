@@ -1,3 +1,5 @@
+import "dart:convert";
+
 import "package:bobomusic/constants/app_info.dart";
 import "package:bobomusic/db/db.dart";
 import "package:bobomusic/modules/bili_account/fav_sync.dart";
@@ -212,6 +214,106 @@ void main() {
       expect(PartyService.hostUidFromRoom("bili_123456"), 123456);
       expect(PartyService.hostUidFromRoom("u12345"), 0);
       expect(PartyService.hostUidFromRoom(""), 0);
+    });
+  });
+
+  group("房间探测", () {
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    String line(PartyState state) =>
+        '{"id":"x","time":1,"event":"message","topic":"t","message":'
+        '${jsonEncode(jsonEncode(state.toJson()))}}';
+
+    const hostPing = PartyState(
+      type: PartyMessageType.ping,
+      roomId: "bili_123",
+      from: "host",
+      uid: 123,
+      fromName: "房主",
+      at: 100,
+      controlUids: [123],
+    );
+
+    test("房主只发心跳、没放歌，也算在线", () {
+      final probe = PartyService.parseProbe(
+        [line(hostPing)],
+        room: "bili_123",
+        nowMs: now,
+      );
+
+      expect(probe, isNotNull);
+      expect(probe!.nick, "房主");
+      expect(probe.hasMusic, isFalse);
+      expect(probe.isFresh, isTrue);
+    });
+
+    test("只有听众的心跳不算房间开着", () {
+      const guestPing = PartyState(
+        type: PartyMessageType.ping,
+        roomId: "bili_123",
+        from: "guest",
+        uid: 456,
+        fromName: "听众",
+        at: 100,
+      );
+
+      expect(
+        PartyService.parseProbe([line(guestPing)], room: "bili_123", nowMs: now),
+        isNull,
+      );
+    });
+
+    test("带歌的状态能拿到歌名和进度", () {
+      const state = PartyState(
+        type: PartyMessageType.state,
+        roomId: "bili_123",
+        from: "host",
+        uid: 123,
+        fromName: "房主",
+        musicId: "1_BV1_2",
+        name: "歌名",
+        position: 9000,
+        playing: true,
+        at: 200,
+        controlUids: [123],
+      );
+
+      final probe = PartyService.parseProbe(
+        [line(hostPing), line(state)],
+        room: "bili_123",
+        nowMs: now,
+      );
+
+      expect(probe!.hasMusic, isTrue);
+      expect(probe.musicName, "歌名");
+      expect(probe.playing, isTrue);
+    });
+
+    test("房主最后一句是拜拜，房间算关了", () {
+      const bye = PartyState(
+        type: PartyMessageType.bye,
+        roomId: "bili_123",
+        from: "host",
+        uid: 123,
+        fromName: "房主",
+        at: 300,
+      );
+
+      expect(
+        PartyService.parseProbe(
+          [line(hostPing), line(bye)],
+          room: "bili_123",
+          nowMs: now,
+        ),
+        isNull,
+      );
+    });
+
+    test("别的房间的消息不算", () {
+      expect(
+        PartyService.parseProbe([line(hostPing)], room: "bili_999", nowMs: now),
+        isNull,
+      );
     });
   });
 
