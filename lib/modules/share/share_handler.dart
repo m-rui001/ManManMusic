@@ -66,8 +66,9 @@ Future<void> openBiliShareText(BuildContext context, String text) async {
     musics.add(
       MusicItem(
         id: BiliId(aid: detail.aid, bvid: detail.bvid, cid: p.cid).decode(),
-        cover: detail.cover,
+        cover: detail.coverFor(p.cid),
         name: title,
+        collectionName: detail.pages.length > 1 ? detail.title : detail.seasonTitle,
         duration: p.duration,
         author: detail.author,
         origin: OriginType.bili,
@@ -195,7 +196,7 @@ Future<void> openFromClipboard(BuildContext context) async {
   }
 
   if (extractBiliUrl(text) == null) {
-    BotToast.showText(text: "剪贴板里没有哔哩哔哩或满满音乐链接");
+    BotToast.showText(text: "剪贴板里没有可播放的链接");
     return;
   }
 

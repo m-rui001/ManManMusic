@@ -126,7 +126,7 @@ class PlayInfo extends StatelessWidget {
       padding: const EdgeInsets.only(left: 12, right: 4),
       child: Row(
         children: [
-          TrackArtwork(cover: music.cover, size: 44),
+          TrackArtwork(music: music, size: 44),
           const SizedBox(width: 10),
           Expanded(
             child: Column(

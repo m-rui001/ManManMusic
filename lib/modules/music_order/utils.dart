@@ -25,7 +25,14 @@ Future<int> addToMyMusic(List<MusicItem> musics) async {
 
   int added = 0;
   for (final music in musics) {
-    if (music.id.isEmpty || !existing.add(music.id)) continue;
+    if (music.id.isEmpty) continue;
+    if (!existing.add(music.id)) {
+      if (music.collectionName.isNotEmpty || music.cover.isNotEmpty) {
+        await db.fillFavoriteMetadata(music.id,
+            collectionName: music.collectionName, cover: music.cover);
+      }
+      continue;
+    }
 
     await db.insert(
       TableName.myMusic,
@@ -49,9 +56,9 @@ collectToMusicOrder({required context, required musicList, onConfirm}) async {
   final added = await addToMyMusic(List<MusicItem>.from(musicList));
 
   if (added > 0) {
-    BotToast.showText(text: added == 1 ? "已加入满满音乐" : "已把 $added 首加入满满音乐");
+    BotToast.showText(text: added == 1 ? "已收藏" : "已收藏 $added 首");
   } else {
-    BotToast.showText(text: "已经在满满音乐里了");
+    BotToast.showText(text: "已经收藏过了");
   }
 
   if (onConfirm != null) onConfirm();
@@ -98,7 +105,13 @@ Future<List<MusicItem>> getUpdatedMusicList({required String tabName}) async {
           );
 
           newMusicList.add(newM);
-          pending.add(musicItem2Row(music: newM));
+          pending.add({
+            "mid": newM.id,
+            "prev": newM.prev,
+            "next": newM.next,
+            "isFirst": newM.isFirst,
+            "isLast": newM.isLast,
+          });
         } else {
           newMusicList.add(row2MusicItem(dbRow: dbMusics[index]));
         }

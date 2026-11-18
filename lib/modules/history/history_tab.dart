@@ -2,6 +2,7 @@ import "dart:async";
 
 import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/history/play_history.dart";
+import "package:bobomusic/modules/music_order/collection_subtitle.dart";
 import "package:bobomusic/modules/player/artwork.dart";
 import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/utils/clear_html_tags.dart";
@@ -190,7 +191,7 @@ class HistoryTabState extends State<HistoryTab> {
                               ? Icon(selected
                                   ? Icons.check_circle_rounded
                                   : Icons.circle_outlined)
-                              : TrackArtwork(cover: music.cover, size: 47),
+                              : TrackArtwork(music: music, size: 47),
                           title: Text(
                             clearHtmlTags(music.name),
                             maxLines: 1,
@@ -200,16 +201,14 @@ class HistoryTabState extends State<HistoryTab> {
                                   current ? FontWeight.w700 : FontWeight.w500,
                             ),
                           ),
-                          subtitle: music.author.isEmpty
-                              ? null
-                              : Text(
-                                  clearHtmlTags(music.author),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: colors.onSurfaceVariant,
-                                  ),
-                                ),
+                          subtitle: CollectionSubtitle(
+                            music: music,
+                            description: clearHtmlTags(music.author),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                            restoreLegacy: true,
+                          ),
                           trailing: _selecting
                               ? null
                               : current

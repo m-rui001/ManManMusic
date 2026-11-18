@@ -80,6 +80,8 @@ class BiliSearchItem extends SearchItem {
   factory BiliSearchItem.fromJson(Map<String, dynamic> json) {
     final String aid = json["aid"].toString();
     final String bvid = json["bvid"];
+    final title = clearHtmlTags(json["title"]);
+    final season = json["ugc_season"];
     String id = BiliId(aid: aid, bvid: bvid).decode();
 
     SearchType? type;
@@ -88,7 +90,7 @@ class BiliSearchItem extends SearchItem {
     // 判断是否为歌单
     final pages = json["pages"];
     if (pages is List) {
-
+      final owner = json["owner"];
       for (var j in pages) {
         final mid = BiliId(
           aid: aid,
@@ -98,12 +100,15 @@ class BiliSearchItem extends SearchItem {
 
         final item = MusicItem(
           id: mid,
-          cover: j["first_frame"]?.toString().isNotEmpty == true
-              ? j["first_frame"] as String
-              : json["pic"]?.toString() ?? "",
+          cover: firstBiliCover([
+            j["first_frame"],
+            json["pic"],
+            if (season is Map) season["cover"],
+          ]),
           name: j["part"],
+          collectionName: pages.length > 1 ? title : "",
           duration: j["duration"],
-          author: "",
+          author: owner is Map ? "${owner["name"] ?? ""}" : "",
           origin: OriginType.bili,
         );
         musicList.add(item);
@@ -120,8 +125,8 @@ class BiliSearchItem extends SearchItem {
 
     return BiliSearchItem(
       id: id,
-      cover: json["pic"],
-      name: clearHtmlTags(json["title"]),
+      cover: firstBiliCover([json["pic"]]),
+      name: title,
       duration: json["duration"] is String
         ? duration2seconds(json["duration"])
         : json["duration"],
@@ -130,7 +135,13 @@ class BiliSearchItem extends SearchItem {
       type: type,
       musicList: musicList,
       isSeasonDisplay: json["is_season_display"] ?? false,
-      ugcSeason: json["ugc_season"] != null ? UgcSeason(mid: json["ugc_season"]["mid"], seasonId: json["ugc_season"]["id"]) : null,
+      ugcSeason: season is Map && season["mid"] is int && season["id"] is int
+          ? UgcSeason(
+              mid: season["mid"],
+              seasonId: season["id"],
+              title: "${season["title"] ?? ""}".trim(),
+            )
+          : null,
     );
   }
 }
@@ -147,6 +158,7 @@ class BiliSearchSeasonItem {
   factory BiliSearchSeasonItem.fromJson(Map<String, dynamic> json) {
     final jsonMeta = json["meta"];
     final jsonArchives = json["archives"];
+    final collectionName = clearHtmlTags("${jsonMeta["name"] ?? ""}").trim();
     List<MusicItem> musicList = [];
 
     for (var archive in jsonArchives) {
@@ -156,8 +168,9 @@ class BiliSearchSeasonItem {
             aid: "${archive["aid"]}",
             bvid: "${archive["bvid"]}",
           ).decode(),
-          cover: archive["pic"],
+          cover: firstBiliCover([archive["pic"], archive["cover"], jsonMeta["cover"]]),
           name: clearHtmlTags(archive["title"]),
+          collectionName: collectionName,
           duration: archive["duration"] is String
             ? duration2seconds(archive["duration"])
             : archive["duration"],
@@ -168,7 +181,7 @@ class BiliSearchSeasonItem {
     }
 
     return BiliSearchSeasonItem(
-      meta: Meta(mid: jsonMeta["mid"], name: jsonMeta["name"], seasonId: jsonMeta["season_id"], cover: jsonMeta["cover"]),
+      meta: Meta(mid: jsonMeta["mid"], name: jsonMeta["name"], seasonId: jsonMeta["season_id"], cover: firstBiliCover([jsonMeta["cover"]])),
       musicList: musicList,
     );
   }
@@ -205,7 +218,7 @@ class BiliMusicDetail extends MusicDetail {
   ) {
     return BiliMusicDetail(
       id: id,
-      cover: json["first_frame"],
+      cover: firstBiliCover([json["first_frame"], json["pic"]]),
       name: json["part"],
       duration: json["duration"],
       author: "",

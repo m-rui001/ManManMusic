@@ -89,10 +89,12 @@ class SearchItem {
 class UgcSeason {
   final int mid;
   final int seasonId;
+  final String title;
 
   const UgcSeason({
     required this.mid,
     required this.seasonId,
+    this.title = "",
   });
 }
 
@@ -131,6 +133,7 @@ class MusicItem {
   final String id; // ID
   final String cover; // 封面
   final String name; // 名称
+  final String collectionName; // B 站合集或多分 P 视频标题
   final int duration; // 时长
   final String author; // 作者
   final OriginType origin; // 来源
@@ -144,6 +147,7 @@ class MusicItem {
   String isLast = ""; // 是否列表最后一首
 
   MusicItem({
+    this.collectionName = "",
     orderName,
     localPath,
     playId,
@@ -174,6 +178,7 @@ class MusicItem {
       id: json["id"],
       cover: json["cover"],
       name: json["name"],
+      collectionName: json["collectionName"] as String? ?? "",
       duration: json["duration"],
       author: json["author"],
       playId: json["playId"],
@@ -193,6 +198,7 @@ class MusicItem {
       "id": id,
       "cover": cover,
       "name": name,
+      if (collectionName.isNotEmpty) "collectionName": collectionName,
       "duration": duration,
       "author": author,
       "origin": origin.value,
@@ -211,6 +217,7 @@ class MusicItem {
     String? id,
     String? cover,
     String? name,
+    String? collectionName,
     int? duration,
     String? author,
     OriginType? origin,
@@ -225,6 +232,7 @@ class MusicItem {
       id: id ?? this.id,
       cover: cover ?? this.cover,
       name: name ?? this.name,
+      collectionName: collectionName ?? this.collectionName,
       duration: duration ?? this.duration,
       author: author ?? this.author,
       origin: origin ?? this.origin,
@@ -234,6 +242,8 @@ class MusicItem {
       localPath: localPath ?? this.localPath,
       prev: prev ?? this.prev,
       next: next ?? this.next,
+      isFirst: isFirst,
+      isLast: isLast,
     );
   }
 }

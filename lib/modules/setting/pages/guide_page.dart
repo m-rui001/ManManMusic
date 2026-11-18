@@ -34,7 +34,7 @@ class GuidePage extends StatelessWidget {
               title: "我的歌单",
               color: primaryColor,
               lines: const [
-                "全 App 只有一张歌单「满满音乐」，点红心就进去，再点一次取消。",
+                "点红心收藏到「我的歌单」，再点一次取消收藏。",
                 "长按或者点右边的菜单可以移除、加进待播放列表、下载。",
                 "首页「我的歌单」里能看到全部内容，不需要先选歌单。",
               ],
@@ -45,7 +45,7 @@ class GuidePage extends StatelessWidget {
               color: primaryColor,
               lines: const [
                 "入口只有一处：我的歌单 → 右上「同步 B 站」。",
-                "导入 = 把收藏夹里「满满音乐还没有」的视频补进去，只增不删。",
+                "导入会把新增曲目加入「我的歌单」。",
                 "不会自动同步。想拉新内容时自己点一次「同步」，B 站那边的收藏夹原样不动。",
               ],
             ),

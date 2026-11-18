@@ -43,7 +43,7 @@ class UserMusicOrderView extends State<MusicOrderView> with AutomaticKeepAliveCl
     if (!mounted) return;
 
     if (list.isEmpty) {
-      BotToast.showText(text: "满满音乐还是空的");
+      BotToast.showText(text: "歌单里还没有曲目");
       return;
     }
 
@@ -68,9 +68,9 @@ class UserMusicOrderView extends State<MusicOrderView> with AutomaticKeepAliveCl
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("清空满满音乐", style: TextStyle(fontSize: 14)),
+        title: const Text("清空歌单", style: TextStyle(fontSize: 14)),
         content: const Text(
-          "会把满满音乐里的歌全部删掉，B 站上的收藏夹不受影响。",
+          "清除本地歌单中的所有收藏。",
           style: TextStyle(fontSize: 12, height: 1.6),
         ),
         actions: [
@@ -151,25 +151,12 @@ class UserMusicOrderView extends State<MusicOrderView> with AutomaticKeepAliveCl
                     ),
                     const SizedBox(width: 14),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            "满满音乐",
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            "$count 首 · 点红心就会进来",
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ],
+                      child: Text(
+                        "已收藏 $count 首",
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                     IconButton(

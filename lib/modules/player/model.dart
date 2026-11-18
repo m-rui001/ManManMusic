@@ -4,7 +4,7 @@ import "package:audio_service/audio_service.dart";
 import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/party/party_control.dart";
 import "package:bobomusic/modules/player/service.dart";
-import "package:bobomusic/modules/player/audio_equalizer.dart";
+import "package:bobomusic/modules/player/audio_processing.dart";
 import "package:just_audio/just_audio.dart";
 import "package:flutter/material.dart";
 import "package:bobomusic/modules/player/const.dart";
@@ -76,33 +76,16 @@ class PlayerModel extends ChangeNotifier {
   String get sourceDescription =>
       _playerHandler?.player.sourceDescription ?? "";
 
-  AudioEqualizer? get equalizer => _playerHandler?.player.equalizer;
+  bool get processingAudio => _playerHandler?.player.processingAudio ?? false;
+  bool get automaticAudioProcessing =>
+      _playerHandler?.player.automaticAudioProcessing ?? true;
+  List<LocalAudioEffect> get activeAudioEffects =>
+      _playerHandler?.player.activeAudioEffects ?? const [];
+  String? get audioProcessingStatus =>
+      _playerHandler?.player.audioProcessingStatus;
 
-  bool get repairingAudio => _playerHandler?.player.repairingAudio ?? false;
-  AudioPreviewMode get audioPreviewMode =>
-      _playerHandler?.player.audioPreviewMode ?? AudioPreviewMode.original;
-  bool get automaticAudioRepair =>
-      _playerHandler?.player.automaticAudioRepair ?? true;
-
-  Future<String?> setAutomaticAudioRepair(bool enabled) async {
-    final work = _playerHandler?.player.setAutomaticAudioRepair(enabled);
-    notifyListeners();
-    try {
-      return await work;
-    } finally {
-      notifyListeners();
-    }
-  }
-
-  Future<String?> setAudioRepair(AudioPreviewMode mode) async {
-    final work = _playerHandler?.player.setAudioRepair(mode);
-    notifyListeners();
-    try {
-      return await work;
-    } finally {
-      notifyListeners();
-    }
-  }
+  Future<void> setAutomaticAudioProcessing(bool enabled) async =>
+      _playerHandler?.player.setAutomaticAudioProcessing(enabled);
 
   Stream<PlayerState>? get playerStates => _audio?.playerStateStream;
 

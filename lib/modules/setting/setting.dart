@@ -14,10 +14,8 @@ import "package:bobomusic/modules/setting/pages/theme_color_setting.dart";
 import "package:bobomusic/utils/get_cache_color.dart";
 import "package:bobomusic/utils/update_version.dart";
 import "package:flutter/material.dart";
-import "package:provider/provider.dart";
-import "package:bobomusic/modules/player/audio_equalizer.dart";
+import "package:bobomusic/modules/player/audio_processing.dart";
 import "package:bobomusic/modules/player/audio_options.dart";
-import "package:bobomusic/modules/player/model.dart";
 import "package:flutter_svg/svg.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
@@ -52,11 +50,6 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
     setState(() => _rosterCount = PartyRoster.instance.length);
   }
 
-  Future<void> _selectAudioPreset() async {
-    await showAudioOptions(context);
-    if (mounted) setState(() {});
-  }
-
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -72,25 +65,6 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
           child: SingleChildScrollView(
             child: Column(
               children: [
-                SettingCard(
-                  settingItems: [
-                    SettingItem(
-                      customTitle: Row(
-                        children: [
-                          const CircleAvatar(
-                            radius: 12,
-                            backgroundImage: AssetImage(appLogoAsset),
-                          ),
-                          const SizedBox(width: 18),
-                          Text(appName, style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold, fontSize: 16)),
-                          const SizedBox(width: 12),
-                          const Text(appSlogan, style: TextStyle(color: Colors.grey, fontSize: 12)),
-                        ],
-                      ),
-                    )
-                  ],
-                ),
-                const SizedBox(height: 16),
                 SettingCard(
                   settingItems: [
                     SettingItem(
@@ -120,12 +94,12 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                         }
                       }
                     ),
-                    if (AudioEqualizer.supported)
+                    if (supportsAudioProcessing)
                       SettingItem(
                         leadingIcon: Icons.equalizer_rounded,
                         title: "播放音效",
-                        trailing: Text(context.read<PlayerModel>().equalizer?.preset.label ?? "原声"),
-                        onTap: _selectAudioPreset,
+                        trailing: Icon(Icons.chevron_right, color: primaryColor),
+                        onTap: () => showAudioOptions(context),
                       ),
                   ],
                 ),

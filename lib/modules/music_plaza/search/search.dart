@@ -102,6 +102,7 @@ class SearchViewState extends State<SearchView> {
       id: detail.id,
       cover: detail.cover,
       name: detail.name,
+      collectionName: detail.ugcSeason?.title ?? "",
       duration: detail.duration,
       author: detail.author,
       origin: detail.origin,
@@ -244,11 +245,11 @@ class SearchViewState extends State<SearchView> {
     EasyLoading.dismiss();
 
     BotToast.showText(
-      text: added > 0 ? "已把 $added 首加进满满音乐" : "这些歌已经在满满音乐里了",
+      text: added > 0 ? "已收藏 $added 首" : "这些曲目已收藏",
     );
 
+    eventBus.fire(RefreshMusicList(tabName: TableName.myMusic));
     if (added > 0) {
-      eventBus.fire(RefreshMusicList(tabName: TableName.myMusic));
       eventBus.fire(RefreshTabList());
     }
   }

@@ -1,0 +1,114 @@
+import "dart:convert";
+
+import "package:bobomusic/db/db.dart";
+import "package:bobomusic/modules/history/play_history.dart";
+import "package:bobomusic/modules/music_order/collection_subtitle.dart";
+import "package:bobomusic/origin_sdk/bili/types.dart";
+import "package:bobomusic/origin_sdk/origin_types.dart";
+import "package:bobomusic/utils/bili_link.dart";
+import "package:flutter/material.dart";
+import "package:flutter_test/flutter_test.dart";
+import "package:shared_preferences/shared_preferences.dart";
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  const video = {
+    "aid": 1,
+    "bvid": "BVExample",
+    "title": "第一交响曲",
+    "pic": "http://i0.hdslb.com/video.jpg",
+    "duration": 600,
+    "ugc_season": {"mid": 7, "id": 8, "title": "交响曲全集"},
+    "pages": [
+      {
+        "cid": 10,
+        "part": "第一乐章",
+        "duration": 300,
+        "first_frame": "//i0.hdslb.com/first.jpg"
+      },
+      {"cid": 11, "part": "第二乐章", "duration": 300},
+    ],
+  };
+
+  test("多分 P 和独立视频合集都保留作品名，收藏行和播放队列可以回读", () {
+    final details = BiliSearchItem.fromJson(video);
+    final first = details.musicList!.first;
+    expect(first.id, "1_BVExample_10");
+    expect(first.name, "第一乐章");
+    expect(first.collectionName, "第一交响曲");
+    expect(first.cover, "https://i0.hdslb.com/first.jpg");
+    expect(details.musicList![1].cover, "https://i0.hdslb.com/video.jpg");
+    expect(details.ugcSeason?.title, "交响曲全集");
+    final shared = BiliVideoDetail.fromJson(video);
+    expect(shared.seasonTitle, "交响曲全集");
+    expect(shared.coverFor("10"), first.cover);
+    expect(shared.coverFor("11"), details.musicList![1].cover);
+
+    final season = BiliSearchSeasonItem.fromJson({
+      "meta": {
+        "mid": 7,
+        "name": "第二交响曲",
+        "season_id": 8,
+        "cover": "//i0.hdslb.com/season.jpg"
+      },
+      "archives": [
+        {
+          "aid": 2,
+          "bvid": "BVSecond",
+          "title": "第一乐章",
+          "pic": "",
+          "duration": 300
+        },
+      ],
+    });
+    final second = season.musicList.single;
+    expect(second.collectionName, "第二交响曲");
+    expect(second.cover, "https://i0.hdslb.com/season.jpg");
+    expect(second.name, first.name);
+    expect(
+        row2MusicItem(
+            dbRow: musicItem2Row(
+                music: second.copyWith(
+          orderName: TableName.myMusic,
+        ))).collectionName,
+        "第二交响曲");
+    expect(MusicItem.fromJson(first.toJson()).collectionName, "第一交响曲");
+    final legacy = first.toJson()..remove("collectionName");
+    expect(MusicItem.fromJson(legacy).collectionName, isEmpty);
+  });
+
+  test("补全旧历史后保留记录时间和次数，再播旧条目也保留合集名", () async {
+    final first = BiliSearchItem.fromJson(video).musicList!.first;
+    final legacy = first.copyWith(collectionName: "", cover: "");
+    final playedAt = DateTime.fromMillisecondsSinceEpoch(1000);
+    SharedPreferences.setMockInitialValues({
+      "manman_play_history": jsonEncode([
+        HistoryEntry(music: legacy, playedAt: playedAt, count: 4).toJson(),
+      ]),
+    });
+    final history = PlayHistory.instance;
+    await history.fillMetadata(legacy.id,
+        collectionName: first.collectionName, cover: first.cover);
+    expect(history.entries.single.playedAt, playedAt);
+    expect(history.entries.single.count, 4);
+    await history.record(legacy);
+    expect(history.entries.single.count, 5);
+    expect(history.entries.single.music.collectionName, "第一交响曲");
+    expect(history.entries.single.music.cover, first.cover);
+  });
+
+  testWidgets("合集副标题优先显示作品名，普通曲目仍然显示原副标题", (tester) async {
+    final first = BiliSearchItem.fromJson(video).musicList!.first;
+    await tester.pumpWidget(MaterialApp(
+        home: Column(children: [
+      CollectionSubtitle(music: first, description: "作者甲", style: null),
+      CollectionSubtitle(
+          music: first.copyWith(collectionName: ""),
+          description: "作者乙",
+          style: null),
+    ])));
+    expect(find.text("第一交响曲"), findsOneWidget);
+    expect(find.text("作者乙"), findsOneWidget);
+  });
+}

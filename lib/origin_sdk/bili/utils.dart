@@ -25,3 +25,16 @@ class BiliId {
     return id;
   }
 }
+
+String firstBiliCover(List<Object?> candidates) {
+  for (final candidate in candidates.whereType<String>()) {
+    final value = candidate.trim();
+    final uri = Uri.tryParse(value.startsWith("//") ? "https:$value" : value);
+    if (uri != null &&
+        uri.host.isNotEmpty &&
+        (uri.scheme == "https" || uri.scheme == "http")) {
+      return uri.replace(scheme: "https").toString();
+    }
+  }
+  return "";
+}

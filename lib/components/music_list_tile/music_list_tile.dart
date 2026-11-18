@@ -1,4 +1,6 @@
 import "package:bobomusic/components/continuous_rounding.dart";
+import "package:bobomusic/db/db.dart";
+import "package:bobomusic/modules/music_order/collection_subtitle.dart";
 import "package:bobomusic/modules/player/artwork.dart";
 import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
@@ -13,6 +15,7 @@ class MusicListTile extends StatelessWidget {
   final bool showAddIcon;
   final bool showOrderName;
   final bool showOrgin;
+  final bool showCollectionName;
 
   const MusicListTile(
     this.music, {
@@ -22,6 +25,7 @@ class MusicListTile extends StatelessWidget {
     this.showAddIcon = true,
     this.showOrderName = false,
     this.showOrgin = true,
+    this.showCollectionName = true,
   });
 
   @override
@@ -38,7 +42,8 @@ class MusicListTile extends StatelessWidget {
     final description = [
       if (showOrgin) music.origin.name,
       if (music.author.isNotEmpty) clearHtmlTags(music.author),
-      if (showOrderName && music.orderName.isNotEmpty) music.orderName,
+      if (showOrderName && music.orderName.isNotEmpty)
+        music.orderName == TableName.myMusic ? "我的歌单" : music.orderName,
       if (music.duration > 0) seconds2duration(music.duration),
     ].join(" · ");
 
@@ -52,7 +57,7 @@ class MusicListTile extends StatelessWidget {
         child: ListTile(
           shape: shape,
           contentPadding: const EdgeInsetsDirectional.only(start: 10, end: 4),
-          leading: TrackArtwork(cover: music.cover, size: 46),
+          leading: TrackArtwork(music: music, size: 46),
           title: Text(
             clearHtmlTags(music.name),
             maxLines: 1,
@@ -62,16 +67,15 @@ class MusicListTile extends StatelessWidget {
               color: active ? colors.onSecondaryContainer : colors.onSurface,
             ),
           ),
-          subtitle: description.isEmpty
-              ? null
-              : Text(
-                  description,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
+          subtitle: CollectionSubtitle(
+            music: music,
+            description: description,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+            showCollectionName: showCollectionName,
+            restoreLegacy: music.orderName == TableName.myMusic,
+          ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [

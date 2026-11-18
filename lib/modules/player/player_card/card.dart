@@ -10,6 +10,7 @@ import "package:bobomusic/constants/covers.dart";
 import "package:bobomusic/db/db.dart";
 import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/download/model.dart";
+import "package:bobomusic/modules/music_order/track_metadata.dart";
 import "package:bobomusic/modules/player/artwork.dart";
 import "package:bobomusic/modules/player/audio_options.dart";
 import "package:bobomusic/modules/player/player_card/progress.dart";
@@ -75,12 +76,20 @@ class PlayerCardState extends State<PlayerCard> {
     setState(() => isLike = liked);
   }
 
-  void _initCover() {
+  Future<void> _initCover() async {
     if (!mounted) return;
     final current = context.read<PlayerModel>().current;
     if (current == null || identical(current, _artworkTrack)) return;
     _artworkTrack = current;
-    _loadImage(musicArtwork(current.cover));
+    final image = musicArtwork(current.cover);
+    _loadImage(image);
+    if (image != null) return;
+    final lookup = restoreTrackMetadata(current);
+    if (lookup == null) return;
+    final restored = musicArtwork((await lookup)?.cover ?? "");
+    if (restored != null && mounted && identical(current, _artworkTrack)) {
+      _loadImage(restored);
+    }
   }
 
   void _removeImageListener() {
@@ -317,7 +326,7 @@ class PlayerCardState extends State<PlayerCard> {
         ),
         const SizedBox(width: 8),
         IconButton.filledTonal(
-          tooltip: isLike ? "移出满满音乐" : "收藏到满满音乐",
+          tooltip: isLike ? "取消收藏" : "收藏",
           color: isLike ? colors.primary : colors.onSurface,
           onPressed: _savingLike ? null : () => _toggleLike(music),
           icon: Icon(
@@ -342,7 +351,7 @@ class PlayerCardState extends State<PlayerCard> {
         setState(() => isLike = like);
       }
       eventBus.fire(RefreshMusicList(tabName: TableName.myMusic));
-      BotToast.showText(text: like ? "已加进满满音乐" : "已从满满音乐移除");
+      BotToast.showText(text: like ? "已收藏" : "已取消收藏");
     } catch (_) {
       BotToast.showText(text: "收藏操作失败");
     } finally {

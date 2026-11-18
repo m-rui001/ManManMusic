@@ -23,7 +23,7 @@ class TableName {
 
 /// 歌单表的建表语句（所有歌单表结构一致）
 String orderTableSql(String tableName) =>
-    "CREATE TABLE IF NOT EXISTS $tableName (id INTEGER PRIMARY KEY AUTOINCREMENT, mid TEXT, name TEXT, cover TEXT, duration INTEGER, author TEXT, origin TEXT, playId TEXT, lyric TEXT, localPath TEXT, prev TEXT, next TEXT, orderName TEXT, isFirst TEXT, isLast TEXT)";
+    "CREATE TABLE IF NOT EXISTS $tableName (id INTEGER PRIMARY KEY AUTOINCREMENT, mid TEXT, name TEXT, cover TEXT, duration INTEGER, author TEXT, origin TEXT, playId TEXT, lyric TEXT, localPath TEXT, prev TEXT, next TEXT, orderName TEXT, isFirst TEXT, isLast TEXT, collectionName TEXT NOT NULL DEFAULT '')";
 
 // 基础数据库帮助类
 abstract class BaseDatabaseHelper {
@@ -160,11 +160,11 @@ abstract class BaseDatabaseHelper {
         SELECT * FROM $tableName
         WHERE id IN (
           SELECT MIN(id) FROM $tableName
-          WHERE mid =? OR name LIKE? OR playId =?
+          WHERE mid =? OR name LIKE? OR playId =? OR collectionName LIKE? OR author LIKE?
           GROUP BY mid
         )
         ORDER BY name ASC
-      """, [param, "%$param%", param]);
+      """, [param, "%$param%", param, "%$param%", "%$param%"]);
     } catch (e) {
       print("Update error: $e");
       rethrow;
@@ -250,7 +250,7 @@ abstract class BaseDatabaseHelper {
 
 class DBOrder extends BaseDatabaseHelper {
   DBOrder({
-    int version = 3,
+    int version = 4,
   }) : super._internal(DBName.orderName, version);
 
   @override
@@ -268,6 +268,48 @@ class DBOrder extends BaseDatabaseHelper {
     if (oldVersion < 3) {
       await _migrateToMyMusic(db);
     }
+    if (oldVersion < 4) {
+      for (final table in [
+        TableName.musicLocal,
+        TableName.myMusic,
+        TableName.musicWaitPlay,
+      ]) {
+        await db.execute(orderTableSql(table));
+        final columns = await db.rawQuery('PRAGMA table_info("$table")');
+        if (!columns.any((column) => column["name"] == "collectionName")) {
+          await db.execute(
+            "ALTER TABLE \"$table\" ADD COLUMN collectionName TEXT NOT NULL DEFAULT ''",
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> fillFavoriteMetadata(
+    String id, {
+    String collectionName = "",
+    String cover = "",
+  }) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      if (collectionName.isNotEmpty) {
+        await txn.update(
+          TableName.myMusic,
+          {"collectionName": collectionName},
+          where: "mid = ? AND origin = 'bili' AND collectionName = ''",
+          whereArgs: [id],
+        );
+      }
+      if (cover.isNotEmpty) {
+        await txn.update(
+          TableName.myMusic,
+          {"cover": cover},
+          where: "mid = ? AND origin = 'bili' AND "
+              "(cover IS NULL OR TRIM(cover) IN ('', 'null'))",
+          whereArgs: [id],
+        );
+      }
+    });
   }
 
   /// v2 → v3：把「我喜欢」和所有「收藏夹_xxx」并成一张「满满音乐」
@@ -351,6 +393,7 @@ Map<String, dynamic> musicItem2Row({required MusicItem music, String? prev, Stri
   Map<String, dynamic> musicRow = {
     "mid": music.id,
     "name": music.name,
+    if (music.collectionName.isNotEmpty) "collectionName": music.collectionName,
     "cover": music.cover,
     "duration": music.duration,
     "author": music.author,
@@ -373,6 +416,7 @@ MusicItem row2MusicItem({required Map<String, dynamic> dbRow, String? prev, Stri
     id: dbRow["mid"] as String,
     cover: dbRow["cover"] as String,
     name: dbRow["name"] as String,
+    collectionName: dbRow["collectionName"] as String? ?? "",
     duration: dbRow["duration"] as int,
     author: dbRow["author"] as String,
     origin: OriginType.getByValue(dbRow["origin"]),

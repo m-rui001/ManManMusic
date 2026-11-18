@@ -83,7 +83,7 @@ class _BiliFavPageState extends State<BiliFavPage> {
       text: result.added > 0
           ? (already
               ? "「${folder.title}」新增 ${result.added} 首"
-              : "已把 ${result.added} 首加进满满音乐")
+              : "已导入 ${result.added} 首")
           : "「${folder.title}」没有新歌",
       duration: const Duration(seconds: 3),
     );
@@ -299,7 +299,7 @@ class _BiliFavPageState extends State<BiliFavPage> {
           const SizedBox(width: 8),
           const Expanded(
             child: Text(
-              "导入会把收藏夹里满满音乐还没有的视频补进去，只增不删。\n"
+              "导入会把新增曲目加入我的歌单。\n"
               "不会自动同步——想拉新内容时点一次「同步」就行。",
               style: TextStyle(fontSize: 10, height: 1.7, color: Colors.grey),
             ),

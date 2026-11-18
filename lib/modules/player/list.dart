@@ -71,7 +71,7 @@ class _PlayerListState extends State<PlayerList> {
                   ),
                   child: Row(
                     children: [
-                      TrackArtwork(cover: current.cover, size: 42),
+                      TrackArtwork(music: current, size: 42),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Column(

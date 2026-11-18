@@ -33,10 +33,6 @@ class _MusicPlazaViewState extends State<MusicPlazaView>
     super.build(context);
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final title = theme.textTheme.headlineMedium?.copyWith(
-      fontWeight: FontWeight.w800,
-      letterSpacing: -.65,
-    );
 
     return SafeArea(
       bottom: false,
@@ -46,18 +42,18 @@ class _MusicPlazaViewState extends State<MusicPlazaView>
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(22, 14, 20, 14),
-                child: Row(
-                  children: [
-                    Expanded(child: Text("满满音乐", style: title)),
-                    IconButton.filledTonal(
-                      tooltip: "搜索歌曲、UP 主",
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const SearchView()),
-                      ),
-                      icon: const Icon(Icons.search_rounded),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+                child: Material(
+                  color: colors.surfaceContainer,
+                  shape: const ContinuousRounding(21),
+                  clipBehavior: Clip.antiAlias,
+                  child: ListTile(
+                    leading: const Icon(Icons.search_rounded),
+                    title: const Text("搜索歌曲、UP 主"),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const SearchView()),
                     ),
-                  ],
+                  ),
                 ),
               ),
               Expanded(
@@ -121,7 +117,7 @@ class _ContinuePlaying extends StatelessWidget {
                     padding: const EdgeInsets.all(13),
                     child: Row(
                       children: [
-                        TrackArtwork(cover: music.cover, size: 64, radius: 13),
+                        TrackArtwork(music: music, size: 64, radius: 13),
                         const SizedBox(width: 13),
                         Expanded(
                           child: Column(

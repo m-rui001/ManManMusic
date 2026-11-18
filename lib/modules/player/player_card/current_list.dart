@@ -131,7 +131,7 @@ class CurrentListState extends State<CurrentList> {
                             padding: const EdgeInsets.only(left: 8),
                             child: Row(
                               children: [
-                                TrackArtwork(cover: item.cover, size: 44),
+                                TrackArtwork(music: item, size: 44),
                                 const SizedBox(width: 11),
                                 Expanded(
                                   child: Column(

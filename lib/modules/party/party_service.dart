@@ -55,6 +55,7 @@ class PartyState {
   final String musicId;
   final String origin;
   final String name;
+  final String collectionName;
   final String author;
   final String cover;
   final int duration;
@@ -85,6 +86,7 @@ class PartyState {
     this.musicId = "",
     this.origin = "bili",
     this.name = "",
+    this.collectionName = "",
     this.author = "",
     this.cover = "",
     this.duration = 0,
@@ -103,6 +105,7 @@ class PartyState {
       id: musicId,
       cover: cover,
       name: name,
+      collectionName: collectionName,
       duration: duration,
       author: author,
       origin: OriginType.getByValue(origin),
@@ -119,6 +122,7 @@ class PartyState {
       "i": musicId,
       "o": origin,
       "n": name,
+      if (collectionName.isNotEmpty) "cn": collectionName,
       "a": author,
       "c": cover,
       "d": duration,
@@ -143,6 +147,7 @@ class PartyState {
       musicId: "${json["i"] ?? ""}",
       origin: "${json["o"] ?? "bili"}",
       name: "${json["n"] ?? ""}",
+      collectionName: "${json["cn"] ?? ""}",
       author: "${json["a"] ?? ""}",
       cover: "${json["c"] ?? ""}",
       duration: json["d"] is int ? json["d"] : 0,
@@ -933,6 +938,7 @@ class PartyService {
       musicId: music?.id ?? "",
       origin: music?.origin.value ?? "bili",
       name: music?.name ?? "",
+      collectionName: music?.collectionName ?? "",
       author: music?.author ?? "",
       cover: music?.cover ?? "",
       duration: music?.duration ?? 0,

@@ -36,28 +36,14 @@ final class NoiseReduction {
         }
     }
 
+    void useProfileFrom(NoiseReduction probe) {
+        System.arraycopy(probe.profile, 0, profile, 0, profile.length);
+        profileFrames = probe.profileFrames;
+    }
+
     // The output is the previous hop. Start and finish with one zero-padded hop.
     void advance(short[] input, short[] output) {
-        Arrays.fill(power, 0);
-        double timePower = 0;
-        for (int c = 0; c < channels; c++) {
-            double[] re = real[c];
-            double[] im = imaginary[c];
-            Arrays.fill(im, 0);
-            for (int i = 0; i < HOP; i++) {
-                double old = previous[i * channels + c];
-                double next = input[i * channels + c];
-                timePower += old * old + next * next;
-                re[i] = old * window[i];
-                re[i + HOP] = next * window[i + HOP];
-            }
-            fft.transform(re, im, false);
-            for (int bin = firstBin - 1; bin <= lastBin + 1; bin++) {
-                power[bin] += re[bin] * re[bin] + im[bin] * im[bin];
-            }
-        }
-        updateGains(timePower / (AudioFft.SIZE * channels));
-
+        analyze(input);
         if (profileFrames < 16) {
             passThrough(input, output);
             return;
@@ -86,6 +72,44 @@ final class NoiseReduction {
         System.arraycopy(input, 0, previous, 0, previous.length);
     }
 
+    void probe(short[] input) {
+        analyze(input);
+        System.arraycopy(input, 0, previous, 0, previous.length);
+    }
+
+    private void analyze(short[] input) {
+        double timePower = 0;
+        for (int c = 0; c < channels; c++) {
+            double[] re = real[c];
+            for (int i = 0; i < HOP; i++) {
+                double old = previous[i * channels + c];
+                double next = input[i * channels + c];
+                timePower += old * old + next * next;
+                re[i] = old * window[i];
+                re[i + HOP] = next * window[i + HOP];
+            }
+        }
+        double meanSquare = timePower / (AudioFft.SIZE * channels);
+        boolean quietAndSteady = meanSquare >= 45 && meanSquare <= 90_000
+            && meanSquare < lastFramePower * 1.5 && lastFramePower < meanSquare * 1.5;
+        if (profileFrames < 16 && !quietAndSteady) {
+            lastFramePower = meanSquare;
+            return;
+        }
+
+        Arrays.fill(power, firstBin - 1, lastBin + 2, 0);
+        for (int c = 0; c < channels; c++) {
+            double[] re = real[c];
+            double[] im = imaginary[c];
+            Arrays.fill(im, 0);
+            fft.transform(re, im, false);
+            for (int bin = firstBin - 1; bin <= lastBin + 1; bin++) {
+                power[bin] += re[bin] * re[bin] + im[bin] * im[bin];
+            }
+        }
+        updateGains(meanSquare, quietAndSteady);
+    }
+
     private void passThrough(short[] input, short[] output) {
         System.arraycopy(previous, 0, output, 0, previous.length);
         for (int c = 0; c < channels; c++) {
@@ -96,7 +120,7 @@ final class NoiseReduction {
         System.arraycopy(input, 0, previous, 0, previous.length);
     }
 
-    private void updateGains(double meanSquare) {
+    private void updateGains(double meanSquare, boolean quietAndSteady) {
         double total = 0;
         double peak = 0;
         for (int bin = firstBin; bin <= lastBin; bin++) {
@@ -104,10 +128,8 @@ final class NoiseReduction {
             peak = Math.max(peak, power[bin]);
         }
         // A narrow, sustained musical partial must not become the noise profile.
-        boolean steady = meanSquare < lastFramePower * 1.5 && lastFramePower < meanSquare * 1.5;
         double minimumBroadbandPower = .035 * meanSquare * channels * AudioFft.SIZE * AudioFft.SIZE;
-        if (steady && meanSquare >= 45 && meanSquare <= 90_000
-                && peak < .075 * total && total > minimumBroadbandPower) {
+        if (quietAndSteady && peak < .075 * total && total > minimumBroadbandPower) {
             profileFrames++;
             double weight = 1.0 / Math.min(48, profileFrames);
             for (int bin = firstBin; bin <= lastBin; bin++) {

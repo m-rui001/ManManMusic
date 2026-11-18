@@ -1,6 +1,7 @@
 import "dart:async";
 import "dart:convert";
 
+import "package:bobomusic/origin_sdk/bili/utils.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
@@ -17,7 +18,7 @@ class PlayHistory {
   static const int _maxCount = 100;
 
   List<HistoryEntry> _entries = [];
-  bool _inited = false;
+  Future<void>? _initializing;
 
   /// 当前内存中的历史（越靠前越新）
   List<HistoryEntry> get entries => List.unmodifiable(_entries);
@@ -27,9 +28,9 @@ class PlayHistory {
   /// 历史变化时触发，页面可以监听刷新
   Stream<void> get changes => _changes.stream;
 
-  Future<void> init() async {
-    if (_inited) return;
-    _inited = true;
+  Future<void> init() => _initializing ??= _read();
+
+  Future<void> _read() async {
     final storage = await SharedPreferences.getInstance();
     final raw = storage.getString(_key);
     if (raw == null || raw.isEmpty) return;
@@ -50,13 +51,17 @@ class PlayHistory {
   /// 记一首歌。播放器每次真正开始播放时调用。
   Future<void> record(MusicItem music) async {
     if (music.id.isEmpty) return;
+    await init();
 
     final same = _entries.indexWhere(
       (e) => e.music.id == music.id && e.music.playId == music.playId,
     );
 
+    final saved = same >= 0 ? _entries[same].music : null;
     final entry = HistoryEntry(
-      music: music,
+      music: saved != null
+          ? _withMetadata(music, saved.collectionName, saved.cover)
+          : music,
       playedAt: DateTime.now(),
       count: same >= 0 ? _entries[same].count + 1 : 1,
     );
@@ -72,6 +77,38 @@ class PlayHistory {
 
     _changes.add(null);
     await _persist();
+  }
+
+  Future<void> fillMetadata(String id,
+      {String collectionName = "", String cover = ""}) async {
+    await init();
+    var changed = false;
+    _entries = _entries.map((entry) {
+      final music = entry.music;
+      if (music.origin != OriginType.bili || music.id != id) return entry;
+      final updated = _withMetadata(music, collectionName, cover);
+      if (identical(updated, music)) return entry;
+      changed = true;
+      return HistoryEntry(
+        music: updated,
+        playedAt: entry.playedAt,
+        count: entry.count,
+      );
+    }).toList();
+    if (!changed) return;
+    _changes.add(null);
+    await _persist();
+  }
+
+  MusicItem _withMetadata(MusicItem music, String collection, String cover) {
+    final newCollection = music.collectionName.isEmpty && collection.isNotEmpty
+        ? collection
+        : null;
+    final newCover = cover.isNotEmpty && firstBiliCover([music.cover]).isEmpty
+        ? cover
+        : null;
+    if (newCollection == null && newCover == null) return music;
+    return music.copyWith(collectionName: newCollection, cover: newCover);
   }
 
   Future<void> removeAt(int index) async {
@@ -124,6 +161,8 @@ class HistoryEntry {
       "music": {
         "id": music.id,
         "name": music.name,
+        if (music.collectionName.isNotEmpty)
+          "collectionName": music.collectionName,
         "cover": music.cover,
         "duration": music.duration,
         "author": music.author,
@@ -143,6 +182,7 @@ class HistoryEntry {
       music: MusicItem(
         id: "${map["id"] ?? ""}",
         name: "${map["name"] ?? ""}",
+        collectionName: "${map["collectionName"] ?? ""}",
         cover: "${map["cover"] ?? ""}",
         duration: (map["duration"] is int) ? map["duration"] : 0,
         author: "${map["author"] ?? ""}",

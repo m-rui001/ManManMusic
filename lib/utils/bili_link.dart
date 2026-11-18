@@ -1,5 +1,6 @@
 import "dart:convert";
 
+import "package:bobomusic/origin_sdk/bili/utils.dart";
 import "package:dio/dio.dart";
 
 /// 解析结果：一个 B 站视频（可能带分 P）
@@ -141,6 +142,8 @@ class BiliVideoDetail {
   final String aid;
   final String bvid;
   final String title;
+  final String seasonTitle;
+  final String seasonCover;
   final String cover;
   final String author;
   final int pageCount;
@@ -152,6 +155,8 @@ class BiliVideoDetail {
     required this.aid,
     required this.bvid,
     required this.title,
+    this.seasonTitle = "",
+    this.seasonCover = "",
     required this.cover,
     required this.author,
     required this.pageCount,
@@ -169,26 +174,38 @@ class BiliVideoDetail {
       }
     }
     final owner = json["owner"];
+    final season = json["ugc_season"];
     return BiliVideoDetail(
       aid: "${json["aid"] ?? ""}",
       bvid: "${json["bvid"] ?? ""}",
       title: "${json["title"] ?? ""}",
-      cover: "${json["pic"] ?? ""}",
+      seasonTitle: season is Map ? "${season["title"] ?? ""}".trim() : "",
+      cover: firstBiliCover([json["pic"]]),
+      seasonCover: firstBiliCover([if (season is Map) season["cover"]]),
       author: owner is Map ? "${owner["name"] ?? ""}" : "",
       pageCount: json["videos"] ?? pages.length,
       pages: pages,
     );
+  }
+
+  String coverFor(String? cid) {
+    for (final page in pages) {
+      if (page.cid == cid) return firstBiliCover([page.cover, cover, seasonCover]);
+    }
+    return firstBiliCover([cover, seasonCover]);
   }
 }
 
 class BiliVideoPage {
   final String cid;
   final String part;
+  final String cover;
   final int duration;
 
   const BiliVideoPage({
     required this.cid,
     required this.part,
+    this.cover = "",
     required this.duration,
   });
 
@@ -196,12 +213,13 @@ class BiliVideoPage {
     return BiliVideoPage(
       cid: "${json["cid"] ?? ""}",
       part: "${json["part"] ?? ""}",
+      cover: firstBiliCover([json["first_frame"]]),
       duration: json["duration"] is int ? json["duration"] : 0,
     );
   }
 }
 
-/// 直接用 bvid / aid 拉视频详情（走 web 接口，只读，不会触发风控）
+/// 直接用 bvid / aid 拉视频详情。
 Future<BiliVideoDetail?> fetchBiliVideoDetail(BiliLinkInfo info) async {
   final dio = Dio(
     BaseOptions(

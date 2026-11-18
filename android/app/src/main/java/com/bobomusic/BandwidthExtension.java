@@ -16,7 +16,6 @@ final class BandwidthExtension {
     private int consecutive;
     private int repairedBlocks;
     private int broadBlocks;
-    private int analyzedBlocks;
 
     BandwidthExtension(int rate, int channels) {
         this.rate = rate;
@@ -38,13 +37,8 @@ final class BandwidthExtension {
     }
 
     void process(short[] pcm, int frames) {
-        if (frames == FRAMES && hasStrongCutoff(pcm)) {
-            consecutive++;
-        } else {
-            consecutive = 0;
-        }
-        boolean extending = consecutive >= 3;
-        if (extending) repairedBlocks++;
+        boolean extending = frames == FRAMES && observe(pcm);
+        if (frames != FRAMES) consecutive = 0;
         if (!extending && mix == 0) return;
         for (int frame = 0; frame < frames; frame++) {
             mix = extending ? Math.min(1, mix + rampStep) : Math.max(0, mix - rampStep);
@@ -77,12 +71,18 @@ final class BandwidthExtension {
         return broadBlocks >= 24;
     }
 
-    boolean shouldStopProbing() {
-        return hasBroadSpectrum() || (analyzedBlocks >= 30 * rate / FRAMES && !hasUsefulOutput());
+    void probe(short[] pcm) {
+        if (!hasBroadSpectrum()) observe(pcm);
+    }
+
+    private boolean observe(short[] pcm) {
+        consecutive = hasStrongCutoff(pcm) ? consecutive + 1 : 0;
+        boolean extending = consecutive >= 3;
+        if (extending) repairedBlocks++;
+        return extending;
     }
 
     private boolean hasStrongCutoff(short[] samples) {
-        analyzedBlocks++;
         java.util.Arrays.fill(power, 0);
         for (int c = 0; c < channels; c++) {
             for (int i = 0; i < FRAMES; i++) {

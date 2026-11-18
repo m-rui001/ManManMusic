@@ -5,6 +5,7 @@ import android.app.job.JobScheduler
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.Process
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -70,18 +71,13 @@ class MainActivity : AudioServiceActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "manman/audio")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "equalizer" -> result.success(PlaybackEffects.apply(
-                        call.argument<Int>("session"),
-                        call.argument<String>("preset")
-                    ))
                     "renderAudio" -> {
                         val path = call.argument<String>("path")
-                        val mode = call.argument<String>("mode")
                         val request = call.argument<Int>("request")
-                        if (path.isNullOrEmpty() || mode == null || request == null) {
+                        if (path.isNullOrEmpty() || request == null) {
                             result.error("format", null, null)
                         } else {
-                            renderAudio(path, mode, request, result)
+                            renderAudio(path, request, result)
                         }
                     }
                     "cancelAudioRender" -> {
@@ -94,7 +90,7 @@ class MainActivity : AudioServiceActivity() {
             }
     }
 
-    private fun renderAudio(path: String, mode: String, request: Int, result: MethodChannel.Result) {
+    private fun renderAudio(path: String, request: Int, result: MethodChannel.Result) {
         val job = AudioRender(request)
         if (!audioRender.compareAndSet(null, job)) {
             result.error("busy", null, null)
@@ -103,10 +99,17 @@ class MainActivity : AudioServiceActivity() {
         val directory = File(cacheDir, "audio-repair")
         audioWorker.execute {
             try {
-                val output = AudioRestoration.render(File(path), directory, mode) { job.cancelled }
-                runOnUiThread { result.success(output.absolutePath) }
+                Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
+                val output = AudioRestoration.render(File(path), directory) { job.cancelled }
+                runOnUiThread {
+                    result.success(mapOf(
+                        "path" to output.file.absolutePath,
+                        "effects" to output.effects,
+                        "durationMs" to output.durationMs
+                    ))
+                }
             } catch (error: IOException) {
-                val known = setOf("format", "storage", "size", "decode", "timeout", "bandwidth", "noise", "cancelled")
+                val known = setOf("format", "storage", "size", "decode", "timeout", "unchanged", "cancelled")
                 val code = error.message?.takeIf { it in known } ?: "decode"
                 runOnUiThread { result.error(code, null, null) }
             } catch (_: RuntimeException) {

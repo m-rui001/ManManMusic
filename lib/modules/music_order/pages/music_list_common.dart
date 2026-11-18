@@ -191,7 +191,7 @@ class MusicListCommonState extends State<MusicListCommon> {
         },
       ),
       SheetItem(
-        title: const Text("从满满音乐移除"),
+        title: const Text("移出歌单"),
         onPressed: () async {
           EasyLoading.show(maskType: EasyLoadingMaskType.black);
           await db.deleteByMid(widget.tabName, musicItem.id);

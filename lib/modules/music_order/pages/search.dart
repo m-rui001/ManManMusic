@@ -348,7 +348,7 @@ class _SearchFormState extends State<_SearchForm> {
           borderSide: BorderSide.none,
           borderRadius: BorderRadius.all(Radius.circular(20)),
         ),
-        hintText: "请输入歌曲名或歌手名搜索曲目",
+        hintText: "搜索曲目、合集或作者",
         hintStyle: TextStyle(fontSize: 12),
         contentPadding: EdgeInsets.symmetric(vertical: 13.5, horizontal: 16),
       ),

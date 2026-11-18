@@ -30,6 +30,7 @@ class SharePayload {
   final String musicId;
   final String origin;
   final String name;
+  final String collectionName;
   final String author;
   final String cover;
   final int duration;
@@ -48,6 +49,7 @@ class SharePayload {
     this.musicId = "",
     this.origin = "bili",
     this.name = "",
+    this.collectionName = "",
     this.author = "",
     this.cover = "",
     this.duration = 0,
@@ -66,6 +68,7 @@ class SharePayload {
       musicId: music.id,
       origin: music.origin.value,
       name: music.name,
+      collectionName: music.collectionName,
       author: music.author,
       cover: music.cover,
       duration: music.duration,
@@ -85,6 +88,7 @@ class SharePayload {
       musicId: music.id,
       origin: music.origin.value,
       name: music.name,
+      collectionName: music.collectionName,
       author: music.author,
       cover: music.cover,
       duration: music.duration,
@@ -100,6 +104,7 @@ class SharePayload {
       if (musicId.isNotEmpty) "i": musicId,
       if (origin.isNotEmpty) "o": origin,
       if (name.isNotEmpty) "n": name,
+      if (collectionName.isNotEmpty) "cn": collectionName,
       if (author.isNotEmpty) "a": author,
       if (cover.isNotEmpty) "c": cover,
       if (duration > 0) "d": duration,
@@ -115,6 +120,7 @@ class SharePayload {
       musicId: "${json["i"] ?? ""}",
       origin: "${json["o"] ?? "bili"}",
       name: "${json["n"] ?? ""}",
+      collectionName: "${json["cn"] ?? ""}",
       author: "${json["a"] ?? ""}",
       cover: "${json["c"] ?? ""}",
       duration: json["d"] is int ? json["d"] : 0,
@@ -130,6 +136,7 @@ class SharePayload {
       id: musicId,
       cover: cover,
       name: name,
+      collectionName: collectionName,
       duration: duration,
       author: author,
       origin: OriginType.getByValue(origin),

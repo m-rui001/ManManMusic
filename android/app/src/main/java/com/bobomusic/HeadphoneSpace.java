@@ -46,8 +46,10 @@ final class HeadphoneSpace {
             index = (index + 1) & delayMask;
             midPower += runningPower * (mid * mid - midPower);
             sidePower += runningPower * (side * side - sidePower);
-            float fill = Math.max(0, 1 - 6 * sidePower / (midPower + 1));
-            float added = .17f * (side - sideBass) + .043f * fill * taps;
+            float ratio = sidePower / (midPower + 1);
+            float fill = Math.max(0, 1 - 6 * ratio);
+            float widening = Math.max(0, Math.min(1, 1.6f - 4 * ratio));
+            float added = .17f * widening * (side - sideBass) + .043f * fill * taps;
             float room = 32767 - Math.max(Math.abs(left), Math.abs(right));
             float bounded = Math.min(Math.max(0, room), Math.abs(added));
             int offset = Math.round(Math.copySign(bounded, added));
