@@ -96,12 +96,14 @@ final class BandwidthExtension {
         }
         double donor = energy(5500, 8200);
         double reference = energy(8200, 11800);
-        double high = energy(12200, 18500);
-        if (high > 1.0e9 && high > .02 * reference) broadBlocks++;
+        double high = energy(12800, 18500);
+        double farHigh = energy(13500, 18500);
+        // AAC can retain a narrow transition band just above its nominal cutoff.
+        if (farHigh > 1.0e9 && farHigh > .02 * reference) broadBlocks++;
         return donor > 1.0e9
             && reference > donor * .015
             && high < reference * .0025
-            && energy(12400, 14400) < energy(10000, 11800) * .004;
+            && energy(12800, 14400) < energy(10000, 11800) * .004;
     }
 
     private double energy(int low, int high) {
