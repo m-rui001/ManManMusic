@@ -1,114 +1,106 @@
-import "package:bobomusic/components/ripple_icon/ripple_icon.dart";
-import "package:bobomusic/components/text_tags/tags.dart";
+import "package:bobomusic/components/continuous_rounding.dart";
+import "package:bobomusic/modules/player/artwork.dart";
 import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:bobomusic/utils/clear_html_tags.dart";
 import "package:flutter/material.dart";
 import "package:provider/provider.dart";
 
-class MusicListTile extends StatefulWidget {
+class MusicListTile extends StatelessWidget {
   final MusicItem music;
-  final void Function() onMore;
+  final VoidCallback onMore;
   final VoidCallback? onPlay;
   final bool showAddIcon;
   final bool showOrderName;
   final bool showOrgin;
 
   const MusicListTile(
-    this.music,
-    {
-      super.key,
-      required this.onMore,
-      this.onPlay,
-      this.showAddIcon = true,
-      this.showOrderName = false,
-      this.showOrgin = true
-    }
-  );
-
-   @override
-  MusicListTitleState createState() => MusicListTitleState();
-}
-
-class MusicListTitleState extends State<MusicListTile> with SingleTickerProviderStateMixin {
-  bool isPlaying = false;
-
-  Color color = const Color.fromARGB(255, 37, 37, 37);
+    this.music, {
+    super.key,
+    required this.onMore,
+    this.onPlay,
+    this.showAddIcon = true,
+    this.showOrderName = false,
+    this.showOrgin = true,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final List<String> tags = [];
+    final player = context.watch<PlayerModel>();
+    final current = player.current;
+    final active = current != null &&
+        current.orderName == music.orderName &&
+        (current.playId.isNotEmpty && current.orderName.isNotEmpty
+            ? current.playId == music.playId
+            : current.id == music.id);
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final description = [
+      if (showOrgin) music.origin.name,
+      if (music.author.isNotEmpty) clearHtmlTags(music.author),
+      if (showOrderName && music.orderName.isNotEmpty) music.orderName,
+      if (music.duration > 0) seconds2duration(music.duration),
+    ].join(" · ");
 
-    if (widget.showOrgin) {
-      tags.add(widget.music.origin.name);
-    }
-
-    if (widget.music.author.isNotEmpty) {
-      tags.add(widget.music.author);
-    }
-
-    if (widget.showOrderName) {
-      tags.add(widget.music.orderName);
-    }
-
-    tags.add(seconds2duration(widget.music.duration));
-
-    return Consumer<PlayerModel>(builder: (context, player, child) {
-      if (player.current != null) {
-        if (player.current!.playId.isNotEmpty && player.current!.orderName.isNotEmpty) {
-          isPlaying = player.current!.playId == widget.music.playId && player.current!.orderName == widget.music.orderName;
-        } else if (player.current!.orderName.isEmpty && widget.music.orderName.isEmpty) {
-          isPlaying = player.current!.id == widget.music.id;
-        } else {
-          isPlaying = false;
-        }
-      }
-
-      final mainColor = isPlaying ? Theme.of(context).primaryColor : color;
-
-      final playingIcon = isPlaying
-        ? Icon(
-            player.isPlaying ? Icons.pause : Icons.play_arrow,
-            size: 18,
-            color: Theme.of(context).primaryColor,
-          )
-        : const Text("");
-      return ListTile(
-        title: Row(
-          children: [
-            Flexible(
-              child: Text(
-                maxLines: 1,
-                widget.music.name,
-                style: TextStyle(
-                  overflow: TextOverflow.ellipsis,
-                  color: mainColor,
-                  fontSize: 14
-                ),
-              ),
+    const shape = ContinuousRounding(17);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: Material(
+        color: active ? colors.secondaryContainer : Colors.transparent,
+        shape: shape,
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          shape: shape,
+          contentPadding: const EdgeInsetsDirectional.only(start: 10, end: 4),
+          leading: TrackArtwork(cover: music.cover, size: 46),
+          title: Text(
+            clearHtmlTags(music.name),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+              color: active ? colors.onSecondaryContainer : colors.onSurface,
             ),
-            const SizedBox(width: 10),
-            playingIcon
-          ],
+          ),
+          subtitle: description.isEmpty
+              ? null
+              : Text(
+                  description,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (active)
+                Icon(
+                  player.isPlaying
+                      ? Icons.graphic_eq_rounded
+                      : Icons.pause_rounded,
+                  color: colors.onSecondaryContainer,
+                  size: 18,
+                ),
+              if (showAddIcon)
+                IconButton(
+                  icon: const Icon(Icons.playlist_add_rounded, size: 21),
+                  tooltip: "加入待播放",
+                  onPressed: () =>
+                      player.addPlayerList([music], showToast: true),
+                ),
+              IconButton(
+                icon: const Icon(Icons.more_horiz_rounded, size: 21),
+                tooltip: "曲目选项",
+                onPressed: onMore,
+              ),
+            ],
+          ),
+          onTap: onPlay ?? () => player.play(music: music),
+          onLongPress: onMore,
         ),
-        leading: widget.showAddIcon ? RippleIcon(
-          size: 20,
-          onTap: () {
-            Provider.of<PlayerModel>(context, listen: false).addPlayerList([widget.music], showToast: true);
-          },
-          child: Icon(Icons.add_circle, size: 20, color: mainColor),
-        ) : null,
-        subtitle: TextTags(tags: tags, textStyle: TextStyle(fontSize: 8, color: mainColor)),
-        trailing: InkWell(
-          borderRadius: BorderRadius.circular(4.0),
-          onTap: widget.onMore,
-          child: Icon(Icons.more_vert, color: mainColor, size: 22),
-        ),
-        onTap: widget.onPlay ?? () {
-          Provider.of<PlayerModel>(context, listen: false).play(music: widget.music);
-        },
-        onLongPress: widget.onMore,
-      );
-    });
+      ),
+    );
   }
 }

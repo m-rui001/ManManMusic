@@ -54,6 +54,8 @@ class PlayerModel extends ChangeNotifier {
     _playerService = playerService;
     _subscriptions
         .add(eventBus.on<RefreshPlayerCard>().listen((_) => notifyListeners()));
+    _subscriptions.add(
+        eventBus.on<RefreshAudioOptions>().listen((_) => notifyListeners()));
     _subscriptions.add(_audio?.playerStateStream.listen((event) {
       notifyListeners();
     }));
@@ -75,6 +77,32 @@ class PlayerModel extends ChangeNotifier {
       _playerHandler?.player.sourceDescription ?? "";
 
   AudioEqualizer? get equalizer => _playerHandler?.player.equalizer;
+
+  bool get repairingAudio => _playerHandler?.player.repairingAudio ?? false;
+  bool get repairActive => _playerHandler?.player.repairActive ?? false;
+  bool get hasRepairPreview => _playerHandler?.player.hasRepairPreview ?? false;
+  bool get automaticAudioRepair =>
+      _playerHandler?.player.automaticAudioRepair ?? true;
+
+  Future<String?> setAutomaticAudioRepair(bool enabled) async {
+    final work = _playerHandler?.player.setAutomaticAudioRepair(enabled);
+    notifyListeners();
+    try {
+      return await work;
+    } finally {
+      notifyListeners();
+    }
+  }
+
+  Future<String?> setAudioRepair(bool enabled) async {
+    final work = _playerHandler?.player.setAudioRepair(enabled);
+    notifyListeners();
+    try {
+      return await work;
+    } finally {
+      notifyListeners();
+    }
+  }
 
   Stream<PlayerState>? get playerStates => _audio?.playerStateStream;
 

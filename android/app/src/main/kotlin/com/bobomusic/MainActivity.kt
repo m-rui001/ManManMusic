@@ -5,6 +5,10 @@ import android.os.Bundle
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 继承 AudioServiceActivity 以保持后台播放能力，
@@ -35,15 +39,44 @@ class MainActivity : AudioServiceActivity() {
         }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "manman/audio")
             .setMethodCallHandler { call, result ->
-                if (call.method != "equalizer") {
-                    result.notImplemented()
-                } else {
-                    result.success(PlaybackEffects.apply(
+                when (call.method) {
+                    "equalizer" -> result.success(PlaybackEffects.apply(
                         call.argument<Int>("session"),
                         call.argument<String>("preset")
                     ))
+                    "restoreBandwidth" -> {
+                        val path = call.argument<String>("path")
+                        if (path.isNullOrEmpty()) {
+                            result.error("format", null, null)
+                        } else {
+                            restoreBandwidth(path, result)
+                        }
+                    }
+                    else -> result.notImplemented()
                 }
             }
+    }
+
+    private fun restoreBandwidth(path: String, result: MethodChannel.Result) {
+        if (!restoringAudio.compareAndSet(false, true)) {
+            result.error("busy", null, null)
+            return
+        }
+        val directory = File(cacheDir, "audio-repair")
+        audioWorker.execute {
+            try {
+                val output = AudioRestoration.render(File(path), directory)
+                runOnUiThread { result.success(output.absolutePath) }
+            } catch (error: IOException) {
+                val known = setOf("format", "storage", "size", "decode", "timeout", "bandwidth")
+                val code = error.message?.takeIf { it in known } ?: "decode"
+                runOnUiThread { result.error(code, null, null) }
+            } catch (_: RuntimeException) {
+                runOnUiThread { result.error("decode", null, null) }
+            } finally {
+                restoringAudio.set(false)
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -70,5 +103,7 @@ class MainActivity : AudioServiceActivity() {
 
     companion object {
         private const val CHANNEL = "manman/share"
+        private val restoringAudio = AtomicBoolean()
+        private val audioWorker = Executors.newSingleThreadExecutor()
     }
 }

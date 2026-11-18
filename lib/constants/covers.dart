@@ -1,11 +1,9 @@
-import "package:path/path.dart" as path;
+import "package:bobomusic/constants/app_info.dart";
 
 class Covers {
   static String getLocalCover() {
     return Covers.local[0];
   }
 
-  static List<String> local = [
-    path.join("assets", "images", "cover-1.jpg"),
-  ];
+  static const local = [appLogoAsset];
 }

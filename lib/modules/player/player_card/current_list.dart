@@ -1,4 +1,5 @@
-import "package:bobomusic/components/music_list_tile/music_list_tile.dart";
+import "package:bobomusic/modules/player/artwork.dart";
+import "package:bobomusic/utils/clear_html_tags.dart";
 import "package:bobomusic/modules/download/model.dart";
 import "package:bobomusic/modules/music_order/utils.dart";
 import "package:bobomusic/utils/check_music_local_repeat.dart";
@@ -19,6 +20,7 @@ class CurrentList extends StatefulWidget {
 
 class CurrentListState extends State<CurrentList> {
   final ScrollController _scrollController = ScrollController();
+  static const _rowHeight = 66.0;
 
   @override
   void initState() {
@@ -43,7 +45,7 @@ class CurrentListState extends State<CurrentList> {
         widget.musicList.indexWhere((item) => _isCurrent(item, player.current));
     if (index < 0 || !_scrollController.hasClients) return;
     _scrollController.jumpTo(
-      (index * 64.0).clamp(0, _scrollController.position.maxScrollExtent),
+      (index * _rowHeight).clamp(0, _scrollController.position.maxScrollExtent),
     );
   }
 
@@ -56,48 +58,128 @@ class CurrentListState extends State<CurrentList> {
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerModel>();
-    final selectedColor = Theme.of(context).colorScheme.primaryContainer;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final items = widget.musicList;
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              Expanded(
+          padding: const EdgeInsets.fromLTRB(21, 2, 12, 2),
+          child: SizedBox(
+            height: 46,
+            child: Row(
+              children: [
+                Expanded(
                   child: Text(
-                "${items.length} 首",
-                style: Theme.of(context).textTheme.labelMedium,
-              )),
-              if (widget.waiting)
-                TextButton(
-                  onPressed: items.isEmpty ? null : player.clearPlayerList,
-                  child: const Text("清空"),
+                    "${items.length} 首",
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
                 ),
-            ],
+                if (widget.waiting)
+                  TextButton.icon(
+                    onPressed: items.isEmpty ? null : player.clearPlayerList,
+                    icon: const Icon(Icons.clear_all_rounded, size: 19),
+                    label: const Text("清空"),
+                  )
+                else
+                  IconButton(
+                    tooltip: "定位到当前曲目",
+                    onPressed:
+                        items.any((item) => _isCurrent(item, player.current))
+                            ? _scrollToCurrentSong
+                            : null,
+                    icon: const Icon(Icons.my_location_rounded, size: 19),
+                  ),
+              ],
+            ),
           ),
         ),
         Expanded(
           child: items.isEmpty
-              ? Center(child: Text(widget.waiting ? "待播放列表为空" : "还没有正在播放的歌曲"))
+              ? Center(
+                  child: Text(
+                    widget.waiting ? "待播放列表为空" : "还没有正在播放的歌曲",
+                    style: TextStyle(color: colors.onSurfaceVariant),
+                  ),
+                )
               : ListView.builder(
                   controller: _scrollController,
-                  itemExtent: 64,
-                  padding: const EdgeInsets.only(bottom: 8),
+                  itemExtent: _rowHeight,
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                   itemCount: items.length,
                   itemBuilder: (context, index) {
                     final item = items[index];
-                    return ColoredBox(
+                    final active = _isCurrent(item, player.current);
+                    void overflow() => showItemSheet(context, item, player);
+                    return Padding(
                       key: ValueKey(item.playId.isEmpty
                           ? "$index:${item.id}"
                           : item.playId),
-                      color: _isCurrent(item, player.current)
-                          ? selectedColor
-                          : Colors.transparent,
-                      child: MusicListTile(
-                        item,
-                        showAddIcon: false,
-                        onMore: () => showItemSheet(context, item, player),
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Material(
+                        color: active
+                            ? colors.secondaryContainer
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(14),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(14),
+                          onTap: () => player.play(music: item),
+                          onLongPress: overflow,
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: Row(
+                              children: [
+                                TrackArtwork(cover: item.cover, size: 44),
+                                const SizedBox(width: 11),
+                                Expanded(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        clearHtmlTags(item.name),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: theme.textTheme.titleSmall
+                                            ?.copyWith(
+                                          fontWeight: active
+                                              ? FontWeight.w700
+                                              : FontWeight.w500,
+                                        ),
+                                      ),
+                                      if (item.author.isNotEmpty)
+                                        Text(
+                                          clearHtmlTags(item.author),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                            color: colors.onSurfaceVariant,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                if (active)
+                                  Icon(
+                                    player.isPlaying
+                                        ? Icons.graphic_eq_rounded
+                                        : Icons.pause_rounded,
+                                    color: colors.onSecondaryContainer,
+                                    size: 18,
+                                  ),
+                                IconButton(
+                                  tooltip: "曲目选项",
+                                  onPressed: overflow,
+                                  icon: const Icon(Icons.more_horiz_rounded),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     );
                   },

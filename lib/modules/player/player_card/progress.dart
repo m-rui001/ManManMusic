@@ -1,4 +1,5 @@
 import "dart:async";
+import "dart:math" as math;
 
 import "package:bobomusic/modules/party/party_page.dart";
 import "package:bobomusic/modules/player/model.dart";
@@ -16,9 +17,20 @@ class PlayerProgress extends StatefulWidget {
   State<PlayerProgress> createState() => _PlayerProgressState();
 }
 
-class _PlayerProgressState extends State<PlayerProgress> {
+class _PlayerProgressState extends State<PlayerProgress>
+    with SingleTickerProviderStateMixin {
+  late final _wave = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1700),
+  );
   double? _dragValue;
   int _seekRequest = 0;
+
+  @override
+  void dispose() {
+    _wave.dispose();
+    super.dispose();
+  }
 
   void _seek(PlayerModel player, Duration duration, double value) {
     final request = ++_seekRequest;
@@ -39,6 +51,14 @@ class _PlayerProgressState extends State<PlayerProgress> {
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerModel>();
+    final animate = player.isPlaying &&
+        TickerMode.of(context) &&
+        !MediaQuery.disableAnimationsOf(context);
+    if (animate && !_wave.isAnimating) {
+      _wave.repeat();
+    } else if (!animate && _wave.isAnimating) {
+      _wave.stop();
+    }
     return StreamBuilder<void>(
       stream: PartySession.instance.changes,
       builder: (context, _) => StreamBuilder<Duration>(
@@ -58,49 +78,65 @@ class _PlayerProgressState extends State<PlayerProgress> {
             builder: (context, buffer) => Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 3,
-                    trackShape: const TadpoleTrackShape(),
-                    thumbShape: SliderComponentShape.noThumb,
-                    overlayShape:
-                        const RoundSliderOverlayShape(overlayRadius: 17),
-                    activeTrackColor: widget.color,
-                    inactiveTrackColor: widget.color.withValues(alpha: .18),
-                    secondaryActiveTrackColor:
-                        widget.color.withValues(alpha: .34),
-                    disabledActiveTrackColor:
-                        widget.color.withValues(alpha: .55),
-                    disabledInactiveTrackColor:
-                        widget.color.withValues(alpha: .14),
-                    disabledSecondaryActiveTrackColor:
-                        widget.color.withValues(alpha: .24),
-                    overlayColor: widget.color.withValues(alpha: .12),
-                  ),
-                  child: Slider(
-                    value: value,
-                    secondaryTrackValue: progress(buffer.data ?? Duration.zero),
-                    semanticFormatterCallback: (v) =>
-                        seconds2duration((v * duration.inSeconds).round()),
-                    onChangeStart: locked || total <= 0
-                        ? null
-                        : (v) => setState(() => _dragValue = v),
-                    onChanged: locked || total <= 0
-                        ? null
-                        : (v) => setState(() => _dragValue = v),
-                    onChangeEnd: locked || total <= 0
-                        ? null
-                        : (v) => _seek(player, duration, v),
+                RepaintBoundary(
+                  child: AnimatedBuilder(
+                    animation: _wave,
+                    builder: (context, slider) => SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 2.8,
+                        trackShape: TadpoleTrackShape(
+                          phase: _wave.value * 2 * math.pi,
+                          amplitude: animate && _dragValue == null ? 2.35 : 0,
+                        ),
+                        thumbShape: SliderComponentShape.noThumb,
+                        overlayShape:
+                            const RoundSliderOverlayShape(overlayRadius: 11),
+                        activeTrackColor: widget.color,
+                        inactiveTrackColor: widget.color.withValues(alpha: .18),
+                        secondaryActiveTrackColor:
+                            widget.color.withValues(alpha: .34),
+                        disabledActiveTrackColor:
+                            widget.color.withValues(alpha: .55),
+                        disabledInactiveTrackColor:
+                            widget.color.withValues(alpha: .14),
+                        disabledSecondaryActiveTrackColor:
+                            widget.color.withValues(alpha: .24),
+                        overlayColor: widget.color.withValues(alpha: .12),
+                      ),
+                      child: slider!,
+                    ),
+                    child: Slider(
+                      value: value,
+                      secondaryTrackValue:
+                          progress(buffer.data ?? Duration.zero),
+                      semanticFormatterCallback: (v) =>
+                          seconds2duration((v * duration.inSeconds).round()),
+                      onChangeStart: locked || total <= 0
+                          ? null
+                          : (v) => setState(() => _dragValue = v),
+                      onChanged: locked || total <= 0
+                          ? null
+                          : (v) => setState(() => _dragValue = v),
+                      onChangeEnd: locked || total <= 0
+                          ? null
+                          : (v) => _seek(player, duration, v),
+                    ),
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 17),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(seconds2duration((value * total / 1000).floor())),
-                      Text(seconds2duration(duration.inSeconds)),
-                    ],
+                  padding: const EdgeInsets.symmetric(horizontal: 9),
+                  child: DefaultTextStyle(
+                    style: Theme.of(context).textTheme.labelSmall!.copyWith(
+                      color: widget.color.withValues(alpha: .70),
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(seconds2duration((value * total / 1000).floor())),
+                        Text(seconds2duration(duration.inSeconds)),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -114,7 +150,10 @@ class _PlayerProgressState extends State<PlayerProgress> {
 
 /// A tapered active track and rounded head, using Flutter's normal Slider gestures.
 class TadpoleTrackShape extends RoundedRectSliderTrackShape {
-  const TadpoleTrackShape();
+  const TadpoleTrackShape({this.phase = 0, this.amplitude = 0});
+
+  final double phase;
+  final double amplitude;
 
   @override
   void paint(
@@ -145,7 +184,7 @@ class TadpoleTrackShape extends RoundedRectSliderTrackShape {
     final start = rtl ? rect.right : rect.left;
     final end = rtl ? rect.left : rect.right;
     final thumb = thumbCenter.dx.clamp(rect.left, rect.right);
-    final head = Offset(thumb, centerY);
+    final sign = rtl ? -1.0 : 1.0;
     final active = isEnabled
         ? sliderTheme.activeTrackColor!
         : sliderTheme.disabledActiveTrackColor!;
@@ -154,32 +193,54 @@ class TadpoleTrackShape extends RoundedRectSliderTrackShape {
       ..color = isEnabled
           ? sliderTheme.inactiveTrackColor!
           : sliderTheme.disabledInactiveTrackColor!;
-    canvas.drawLine(Offset(start, centerY), Offset(end, centerY), paint);
+    final remaining = (end - thumb).abs();
+    final tailStart = thumb + remaining.clamp(0.0, 7.0) * sign;
+    if (remaining > 7) {
+      canvas.drawLine(Offset(tailStart, centerY), Offset(end, centerY), paint);
+    }
     if (secondaryOffset != null) {
       paint.color = isEnabled
           ? sliderTheme.secondaryActiveTrackColor!
           : sliderTheme.disabledSecondaryActiveTrackColor!;
       final buffered = secondaryOffset.dx.clamp(rect.left, rect.right);
-      canvas.drawLine(Offset(start, centerY), Offset(buffered, centerY), paint);
+      if ((buffered - tailStart) * sign > 0) {
+        canvas.drawLine(
+            Offset(tailStart, centerY), Offset(buffered, centerY), paint);
+      }
     }
 
     paint.color = active;
     final length = (thumb - start).abs();
-    const radius = 5.0;
     if (length > 0) {
-      final sign = rtl ? -1 : 1;
-      final shoulder = thumb - length.clamp(0.0, 50.0) * sign;
-      canvas.drawLine(Offset(start, centerY), Offset(shoulder, centerY), paint);
-      final tail = Path()
-        ..moveTo(shoulder, centerY - rect.height / 2)
-        ..cubicTo(thumb - 15 * sign, centerY - 1, thumb - 6 * sign,
-            centerY - radius, thumb, centerY - radius)
-        ..lineTo(thumb, centerY + radius)
-        ..cubicTo(thumb - 6 * sign, centerY + radius, thumb - 15 * sign,
-            centerY + 1, shoulder, centerY + rect.height / 2)
-        ..close();
-      if (length > radius * 2) canvas.drawPath(tail, paint);
+      final shoulder = thumb - length.clamp(0.0, 14.0) * sign;
+      final waveLength = (shoulder - start).abs();
+      if (amplitude == 0 || waveLength < 12 || !isEnabled) {
+        canvas.drawLine(
+            Offset(start, centerY), Offset(shoulder, centerY), paint);
+      } else {
+        final path = Path()..moveTo(start, centerY);
+        for (var x = 3.0; x < waveLength; x += 3) {
+          final edge = math.min(x, waveLength - x) / 15;
+          final y = amplitude *
+              edge.clamp(0.0, 1.0) *
+              math.sin(x * math.pi / 17 - phase);
+          path.lineTo(start + x * sign, centerY + y);
+        }
+        path.lineTo(shoulder, centerY);
+        paint
+          ..style = PaintingStyle.stroke
+          ..strokeJoin = StrokeJoin.round;
+        canvas.drawPath(path, paint);
+        paint.style = PaintingStyle.fill;
+      }
+      canvas.drawLine(Offset(shoulder, centerY), Offset(thumb, centerY), paint);
     }
-    canvas.drawCircle(head, radius, paint);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(thumb, centerY), width: 3.4, height: 21),
+        const Radius.circular(2),
+      ),
+      paint,
+    );
   }
 }

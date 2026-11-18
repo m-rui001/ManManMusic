@@ -53,7 +53,6 @@ internal object PlaybackEffects {
             val hz = effect.getCenterFreq(band) / 1000
             // Attenuation preserves headroom for loud masters. Android levels are in millibels.
             val level = when (preset) {
-                "clear" -> if (hz < 200) -200 else if (hz < 700) -130 else 0
                 "warm" -> if (hz > 5000) -230 else if (hz > 1800) -110 else 0
                 else -> 0
             }

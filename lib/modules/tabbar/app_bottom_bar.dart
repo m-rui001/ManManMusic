@@ -1,77 +1,100 @@
+import "package:bobomusic/components/continuous_rounding.dart";
 import "package:flutter/material.dart";
 
 class MenuData {
-  final String label;
-  final Icon icon;
   const MenuData({
     required this.label,
     required this.icon,
+    required this.activeIcon,
   });
+
+  final String label;
+  final IconData icon;
+  final IconData activeIcon;
 }
 
 class AppBottomBar extends StatelessWidget {
-  final int currentIndex;
-  final List<MenuData> menus;
-  final ValueChanged<int>? onItemTap;
-
   const AppBottomBar({
     super.key,
-    this.onItemTap,
-    this.currentIndex = 0,
+    required this.currentIndex,
     required this.menus,
+    required this.onItemTap,
   });
+
+  final int currentIndex;
+  final List<MenuData> menus;
+  final ValueChanged<int> onItemTap;
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor;
-
-    return Material(
-      color: Colors.white,
-      elevation: 3,
-      child: SafeArea(
-        top: false,
-        bottom: true,
-        // 再留 4px，避免和全面屏手势条 / 三键导航贴在一起
-        minimum: const EdgeInsets.only(bottom: 4),
-        child: SizedBox(
-          height: 52,
-          child: Row(
-            children: [
-              for (var i = 0; i < menus.length; i++)
-                Expanded(child: _buildItem(i, primaryColor)),
-            ],
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return SafeArea(
+      top: false,
+      minimum: const EdgeInsets.only(bottom: 11),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 1, 14, 5),
+        child: Material(
+          color: colors.surfaceContainerHigh,
+          shape: const ContinuousRounding(40),
+          clipBehavior: Clip.antiAlias,
+          child: SizedBox(
+            height: 62,
+            child: Padding(
+              padding: const EdgeInsets.all(5),
+              child: Row(
+                children: [
+                  for (var i = 0; i < menus.length; i++)
+                    Expanded(
+                      child: _destination(context, menus[i], i),
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 
-  /// 自己画每一项
-  ///
-  /// 以前用 BottomNavigationBar，它在固定高度里会自己再算一遍安全区，
-  /// 结果整栏被顶到系统导航栏上，三个 tab 和返回键叠在一起。
-  Widget _buildItem(int index, Color primaryColor) {
-    final menu = menus[index];
+  Widget _destination(BuildContext context, MenuData menu, int index) {
     final selected = index == currentIndex;
-    final color = selected ? primaryColor : const Color(0xFF9E9E9E);
-
-    return InkWell(
-      onTap: onItemTap == null ? null : () => onItemTap!(index),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(menu.icon.icon, size: 22, color: color),
-          const SizedBox(height: 2),
-          Text(
-            menu.label,
-            maxLines: 1,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-              color: color,
-            ),
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final ink =
+        selected ? colors.onSecondaryContainer : colors.onSurfaceVariant;
+    final shape = ContinuousRounding(selected ? 27 : 18);
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 190),
+        curve: Curves.easeOutCubic,
+        decoration: ShapeDecoration(
+          color: selected ? colors.secondaryContainer : Colors.transparent,
+          shape: shape,
+        ),
+        child: InkWell(
+          customBorder: shape,
+          onTap: () => onItemTap(index),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(selected ? menu.activeIcon : menu.icon,
+                  color: ink, size: 22),
+              const SizedBox(height: 3),
+              Text(
+                menu.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: ink,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

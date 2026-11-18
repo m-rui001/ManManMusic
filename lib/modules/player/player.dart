@@ -1,11 +1,12 @@
 import "dart:async";
 
+import "package:bobomusic/components/continuous_rounding.dart";
 import "package:bobomusic/modules/party/party_control.dart";
 import "package:bobomusic/modules/party/party_page.dart";
 import "package:bobomusic/modules/player/artwork.dart";
-import "package:bobomusic/utils/color.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
+import "package:flutter/services.dart";
 import "package:bobomusic/modules/player/player_card/card.dart";
 import "package:bobomusic/modules/player/list.dart";
 import "package:bobomusic/modules/player/model.dart";
@@ -17,30 +18,56 @@ class PlayerView extends StatelessWidget {
   const PlayerView({super.key, this.cancelMargin = false});
   @override
   Widget build(BuildContext context) {
-    // Color primaryColor = Theme.of(context).primaryColor;
-    return GestureDetector(
-      onTap: () {
-        showPlayerCard(context);
-      },
-      child: Container(
-        height: 60,
-        width: MediaQuery.of(context).size.width - 32,
-        margin: EdgeInsets.only(bottom: cancelMargin ? 0 : 34),
-        padding: const EdgeInsets.only(left: 9, right: 4),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          color: ColorPallette.colorMix(context, 0.1),
-        ),
-        child: const Flex(
-          direction: Axis.horizontal,
+    final player = context.watch<PlayerModel>();
+    final music = player.current;
+    if (music == null) return const SizedBox.shrink();
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(14, 4, 14, cancelMargin ? 6 : 34),
+      child: Material(
+        color: colors.surfaceContainerHigh,
+        shape: const ContinuousRounding(42),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            PlayInfo(),
-            PartyLockBadge(),
-            Row(children: [
-              PlayButton(),
-              NextButton(),
-              PlayerListButton(),
-            ]),
+            SizedBox(
+              height: 60,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => showPlayerCard(context),
+                      child: const PlayInfo(),
+                    ),
+                  ),
+                  const PartyLockBadge(),
+                  PlayButton(size: 26, color: colors.onSurface, flat: true),
+                  NextButton(size: 26, color: colors.onSurface),
+                  const SizedBox(width: 7),
+                ],
+              ),
+            ),
+            StreamBuilder<Duration>(
+              stream: player.positions,
+              initialData: player.currentPosition,
+              builder: (context, snapshot) {
+                final total = player.duration?.inMilliseconds ?? 0;
+                final position = snapshot.data?.inMilliseconds ?? 0;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 27),
+                  child: LinearProgressIndicator(
+                    value: total > 0 ? (position / total).clamp(0.0, 1.0) : 0,
+                    minHeight: 2,
+                    borderRadius:
+                        const BorderRadius.vertical(top: Radius.circular(3)),
+                    color: colors.primary,
+                    backgroundColor:
+                        colors.outlineVariant.withValues(alpha: .35),
+                  ),
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -87,60 +114,43 @@ class PartyLockBadge extends StatelessWidget {
   }
 }
 
-/// 音乐信息
 class PlayInfo extends StatelessWidget {
   const PlayInfo({super.key});
+
   @override
   Widget build(BuildContext context) {
-    return Consumer<PlayerModel>(
-      builder: (context, player, child) {
-        String name = player.current?.name ?? "暂无歌曲";
-
-        final artwork = musicArtwork(player.current?.cover ?? "");
-        final author = player.current?.author ?? "";
-        return Expanded(
-          child: Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(9),
-                child: SizedBox.square(
-                  dimension: 42,
-                  child: artwork == null
-                      ? const Icon(Icons.music_note_rounded)
-                      : Image(
-                          image: artwork,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              const Icon(Icons.music_note_rounded),
-                        ),
-                ),
-              ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
+    final music = context.watch<PlayerModel>().current;
+    if (music == null) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(left: 12, right: 4),
+      child: Row(
+        children: [
+          TrackArtwork(cover: music.cover, size: 44),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(music.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    )),
+                if (music.author.isNotEmpty)
+                  Text(music.author,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    if (author.isNotEmpty)
-                      Text(
-                        author,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                  ],
-                ),
-              ),
-            ],
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      )),
+              ],
+            ),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 }
@@ -149,8 +159,16 @@ class PlayInfo extends StatelessWidget {
 class PlayButton extends StatelessWidget {
   final double? size;
   final Color? color;
+  final bool prominent;
+  final bool flat;
 
-  const PlayButton({super.key, this.size = 40, this.color});
+  const PlayButton({
+    super.key,
+    this.size = 40,
+    this.color,
+    this.prominent = false,
+    this.flat = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -158,21 +176,46 @@ class PlayButton extends StatelessWidget {
 
     return Consumer<PlayerModel>(
       builder: (context, player, child) {
+        final label = player.isPlaying ? "暂停" : "播放";
+        void toggle() {
+          if (PartyControl.blocked()) return;
+          if (player.isPlaying) {
+            player.pause();
+          } else {
+            player.play();
+          }
+        }
+
+        if (prominent) {
+          final colors = Theme.of(context).colorScheme;
+          return IconButton.filled(
+            tooltip: label,
+            onPressed: toggle,
+            style: IconButton.styleFrom(
+              minimumSize: const Size(0, 68),
+              shape: const ContinuousRounding(28),
+              backgroundColor: colors.onSurface,
+              foregroundColor: colors.surface,
+            ),
+            iconSize: 34,
+            icon: Icon(player.isPlaying
+                ? Icons.pause_rounded
+                : Icons.play_arrow_rounded),
+          );
+        }
         return IconButton(
+          tooltip: label,
           color: color ?? primaryColor,
           iconSize: size,
           padding: const EdgeInsets.only(bottom: 0),
-          icon: player.isPlaying
-              ? const Icon(Icons.pause_circle_filled)
-              : const Icon(Icons.play_circle_filled),
-          onPressed: () {
-            if (PartyControl.blocked()) return;
-            if (player.isPlaying) {
-              player.pause();
-            } else {
-              player.play();
-            }
-          },
+          icon: Icon(flat
+              ? (player.isPlaying
+                  ? Icons.pause_rounded
+                  : Icons.play_arrow_rounded)
+              : (player.isPlaying
+                  ? Icons.pause_circle_filled
+                  : Icons.play_circle_filled)),
+          onPressed: toggle,
         );
       },
     );
@@ -293,35 +336,23 @@ Future<void>? showPlayerCard(BuildContext context) {
   final NavigatorState navigator = Navigator.of(context, rootNavigator: false);
   final player = Provider.of<PlayerModel>(context, listen: false);
   if (player.current == null) return null;
-  final screenSize = MediaQuery.of(context).size;
-  final isLandscape = screenSize.width > screenSize.height;
-
-  if (isLandscape) {
-    return navigator.push(ModalBottomSheetRoute(
-      isScrollControlled: true,
-      // 自定义形状
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(0),
-        ),
+  return navigator.push(PageRouteBuilder<void>(
+    fullscreenDialog: true,
+    pageBuilder: (_, __, ___) => AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light.copyWith(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarContrastEnforced: false,
       ),
-      // 设置背景颜色
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      // 设置弹框的约束条件
-      constraints: BoxConstraints(
-        minWidth: MediaQuery.of(context).size.width,
-        maxWidth: MediaQuery.of(context).size.width,
-      ),
-      builder: (context) {
-        return const PlayerCard();
-      },
-    ));
-  } else {
-    return navigator.push(ModalBottomSheetRoute(
-      isScrollControlled: true,
-      builder: (context) {
-        return const PlayerCard();
-      },
-    ));
-  }
+      child: const PlayerCard(),
+    ),
+    transitionDuration: const Duration(milliseconds: 260),
+    reverseTransitionDuration: const Duration(milliseconds: 200),
+    transitionsBuilder: (_, animation, __, child) => SlideTransition(
+      position: Tween(begin: const Offset(0, 1), end: Offset.zero)
+          .chain(CurveTween(curve: Curves.easeOutCubic))
+          .animate(animation),
+      child: child,
+    ),
+  ));
 }
