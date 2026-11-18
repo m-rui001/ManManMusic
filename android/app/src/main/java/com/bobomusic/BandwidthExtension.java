@@ -2,23 +2,26 @@ package com.bobomusic;
 
 /** Conservative, additive bandwidth extension for markedly band-limited PCM. */
 final class BandwidthExtension {
-    static final int FRAMES = 1024;
+    static final int FRAMES = AudioFft.SIZE;
     private final int rate;
     private final int channels;
     private final double[] real = new double[FRAMES];
     private final double[] imaginary = new double[FRAMES];
     private final double[] window = new double[FRAMES];
-    private final double[] cosine = new double[FRAMES / 2];
-    private final double[] sine = new double[FRAMES / 2];
+    private final AudioFft fft = new AudioFft();
     private final double[] power = new double[FRAMES / 2];
     private final Biquad[][] filters;
+    private final double rampStep;
     private double mix;
     private int consecutive;
     private int repairedBlocks;
+    private int broadBlocks;
+    private int analyzedBlocks;
 
     BandwidthExtension(int rate, int channels) {
         this.rate = rate;
         this.channels = channels;
+        rampStep = 1.0 / (rate * .015);
         filters = new Biquad[channels][];
         for (int channel = 0; channel < channels; channel++) {
             filters[channel] = new Biquad[]{
@@ -31,10 +34,6 @@ final class BandwidthExtension {
         }
         for (int i = 0; i < FRAMES; i++) {
             window[i] = .5 - .5 * Math.cos(2 * Math.PI * i / (FRAMES - 1));
-            if (i < cosine.length) {
-                cosine[i] = Math.cos(2 * Math.PI * i / FRAMES);
-                sine[i] = -Math.sin(2 * Math.PI * i / FRAMES);
-            }
         }
     }
 
@@ -46,9 +45,9 @@ final class BandwidthExtension {
         }
         boolean extending = consecutive >= 3;
         if (extending) repairedBlocks++;
-        final double step = 1.0 / (rate * .015);
+        if (!extending && mix == 0) return;
         for (int frame = 0; frame < frames; frame++) {
-            mix = extending ? Math.min(1, mix + step) : Math.max(0, mix - step);
+            mix = extending ? Math.min(1, mix + rampStep) : Math.max(0, mix - rampStep);
             for (int c = 0; c < channels; c++) {
                 int i = frame * channels + c;
                 double dry = pcm[i];
@@ -63,47 +62,46 @@ final class BandwidthExtension {
                 pcm[i] = (short) Math.round(dry + correction);
             }
         }
+        if (mix == 0) {
+            for (Biquad[] channel : filters) {
+                for (Biquad filter : channel) filter.reset();
+            }
+        }
     }
 
     boolean hasUsefulOutput() {
         return repairedBlocks >= 15;
     }
 
+    boolean hasBroadSpectrum() {
+        return broadBlocks >= 24;
+    }
+
+    boolean shouldStopProbing() {
+        return hasBroadSpectrum() || (analyzedBlocks >= 30 * rate / FRAMES && !hasUsefulOutput());
+    }
+
     private boolean hasStrongCutoff(short[] samples) {
+        analyzedBlocks++;
         java.util.Arrays.fill(power, 0);
         for (int c = 0; c < channels; c++) {
             for (int i = 0; i < FRAMES; i++) {
-                int reversed = Integer.reverse(i) >>> 22;
-                real[reversed] = samples[i * channels + c] * window[i];
-                imaginary[reversed] = 0;
+                real[i] = samples[i * channels + c] * window[i];
+                imaginary[i] = 0;
             }
-            for (int span = 2; span <= FRAMES; span *= 2) {
-                int half = span / 2;
-                int stride = FRAMES / span;
-                for (int start = 0; start < FRAMES; start += span) {
-                    for (int j = 0; j < half; j++) {
-                        int a = start + j;
-                        int b = a + half;
-                        int k = j * stride;
-                        double r = real[b] * cosine[k] - imaginary[b] * sine[k];
-                        double im = real[b] * sine[k] + imaginary[b] * cosine[k];
-                        real[b] = real[a] - r;
-                        imaginary[b] = imaginary[a] - im;
-                        real[a] += r;
-                        imaginary[a] += im;
-                    }
-                }
-            }
-            for (int i = 0; i < power.length; i++) {
+            fft.transform(real, imaginary, false);
+            for (int i = 5500 * FRAMES / rate; i < 18500 * FRAMES / rate; i++) {
                 power[i] += real[i] * real[i] + imaginary[i] * imaginary[i];
             }
         }
         double donor = energy(5500, 8200);
         double reference = energy(8200, 11800);
         double high = energy(12200, 18500);
+        if (high > 1.0e9 && high > .02 * reference) broadBlocks++;
         return donor > 1.0e9
             && reference > donor * .015
-            && high < reference * .0025;
+            && high < reference * .0025
+            && energy(12400, 14400) < energy(10000, 11800) * .004;
     }
 
     private double energy(int low, int high) {
@@ -141,6 +139,11 @@ final class BandwidthExtension {
             z1 = b1 * input - a1 * output + z2;
             z2 = b2 * input - a2 * output;
             return output;
+        }
+
+        void reset() {
+            z1 = 0;
+            z2 = 0;
         }
     }
 }

@@ -12,11 +12,21 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.ShortBuffer;
 
 final class AudioRestoration {
     private static final int MAX_PCM_BYTES = 384 * 1024 * 1024;
 
-    static File render(File input, File directory) throws IOException {
+    interface Cancellation {
+        boolean isCancelled();
+    }
+
+    static File render(File input, File directory, String mode, Cancellation cancellation)
+            throws IOException {
+        if (!"bandwidth".equals(mode) && !"noise".equals(mode) && !"space".equals(mode)) {
+            throw failure("format");
+        }
+        if (cancellation.isCancelled()) throw failure("cancelled");
         if (!directory.isDirectory() && !directory.mkdirs()) throw failure("storage");
         File[] previous = directory.listFiles();
         if (previous != null) {
@@ -28,7 +38,7 @@ final class AudioRestoration {
         File output = File.createTempFile("repair-", ".wav", directory);
         boolean complete = false;
         try {
-            decode(input, output);
+            decode(input, output, mode, cancellation);
             complete = true;
             return output;
         } finally {
@@ -36,19 +46,21 @@ final class AudioRestoration {
         }
     }
 
-    private static void decode(File input, File output) throws IOException {
+    private static void decode(File input, File output, String mode, Cancellation cancellation)
+            throws IOException {
         MediaExtractor extractor = new MediaExtractor();
         MediaCodec decoder = null;
         try (RandomAccessFile wav = new RandomAccessFile(output, "rw")) {
             extractor.setDataSource(input.getAbsolutePath());
-            MediaFormat format = selectTrack(extractor);
+            MediaFormat format = selectTrack(extractor, mode);
             int rate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE);
             int channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
             String mime = format.getString(MediaFormat.KEY_MIME);
             if ((rate != 44100 && rate != 48000) || channels < 1 || channels > 2) {
                 throw failure("format");
             }
-            long bytesPerSecond = 2L * channels * rate;
+            int outputChannels = "space".equals(mode) ? 2 : channels;
+            long bytesPerSecond = 2L * outputChannels * rate;
             if (format.containsKey(MediaFormat.KEY_DURATION)) {
                 long estimatedBytes =
                     format.getLong(MediaFormat.KEY_DURATION) / 1000 * bytesPerSecond / 1000;
@@ -63,12 +75,13 @@ final class AudioRestoration {
             decoder = MediaCodec.createDecoderByType(mime);
             decoder.configure(format, null, null, 0);
             decoder.start();
-            WavWriter writer = new WavWriter(wav, rate, channels);
+            WavWriter writer = new WavWriter(wav, rate, channels, outputChannels, mode);
             MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
             boolean inputEnded = false;
             boolean outputEnded = false;
             long deadline = SystemClock.elapsedRealtime() + 180_000;
             while (!outputEnded) {
+                if (cancellation.isCancelled()) throw failure("cancelled");
                 if (SystemClock.elapsedRealtime() >= deadline) throw failure("timeout");
                 if (!inputEnded) {
                     int index = decoder.dequeueInputBuffer(5000);
@@ -109,11 +122,13 @@ final class AudioRestoration {
         }
     }
 
-    private static MediaFormat selectTrack(MediaExtractor extractor) throws IOException {
+    private static MediaFormat selectTrack(MediaExtractor extractor, String mode)
+            throws IOException {
         for (int index = 0; index < extractor.getTrackCount(); index++) {
             MediaFormat format = extractor.getTrackFormat(index);
             String mime = format.getString(MediaFormat.KEY_MIME);
-            if ("audio/mp4a-latm".equals(mime) || "audio/mpeg".equals(mime)) {
+            if ("audio/mp4a-latm".equals(mime) || "audio/mpeg".equals(mime)
+                    || (!"bandwidth".equals(mode) && "audio/flac".equals(mime))) {
                 extractor.selectTrack(index);
                 return format;
             }
@@ -141,50 +156,94 @@ final class AudioRestoration {
         private final RandomAccessFile file;
         private final int rate;
         private final int channels;
+        private final int outputChannels;
         private final BandwidthExtension extension;
+        private final NoiseReduction noise;
+        private final HeadphoneSpace space;
         private final short[] samples;
+        private final short[] processed;
         private final ByteBuffer encoded;
         private int length;
         private int pcmBytes;
+        private int previousFrames;
 
-        WavWriter(RandomAccessFile file, int rate, int channels) throws IOException {
+        WavWriter(RandomAccessFile file, int rate, int channels, int outputChannels,
+                String mode) throws IOException {
             this.file = file;
             this.rate = rate;
             this.channels = channels;
-            extension = new BandwidthExtension(rate, channels);
-            samples = new short[BandwidthExtension.FRAMES * channels];
-            encoded = ByteBuffer.allocate(samples.length * 2).order(ByteOrder.LITTLE_ENDIAN);
+            this.outputChannels = outputChannels;
+            extension = "bandwidth".equals(mode) ? new BandwidthExtension(rate, channels) : null;
+            noise = "noise".equals(mode) ? new NoiseReduction(rate, channels) : null;
+            space = "space".equals(mode) ? new HeadphoneSpace(rate, channels) : null;
+            int frames = noise != null ? NoiseReduction.HOP : BandwidthExtension.FRAMES;
+            samples = new short[frames * channels];
+            processed = extension != null ? samples : new short[frames * outputChannels];
+            encoded = ByteBuffer.allocate(64 * 1024).order(ByteOrder.LITTLE_ENDIAN);
             file.seek(44);
         }
 
         void write(ByteBuffer decoded) throws IOException {
             if ((decoded.remaining() & 1) != 0) throw failure("decode");
-            while (decoded.hasRemaining()) {
-                samples[length++] = decoded.getShort();
+            ShortBuffer shorts = decoded.asShortBuffer();
+            while (shorts.hasRemaining()) {
+                int count = Math.min(samples.length - length, shorts.remaining());
+                shorts.get(samples, length, count);
+                length += count;
                 if (length == samples.length) flush();
             }
         }
 
         private void flush() throws IOException {
             if (length % channels != 0) throw failure("decode");
-            int bytes = length * 2;
-            if (pcmBytes + bytes > MAX_PCM_BYTES) throw failure("size");
-            extension.process(samples, length / channels);
-            encoded.clear();
-            for (int i = 0; i < length; i++) encoded.putShort(samples[i]);
-            file.write(encoded.array(), 0, bytes);
-            pcmBytes += bytes;
+            int frames = length / channels;
+            if (extension != null) {
+                extension.process(samples, frames);
+                if (extension.shouldStopProbing()) throw failure("bandwidth");
+                writeFrames(frames);
+            } else if (noise != null) {
+                java.util.Arrays.fill(samples, length, samples.length, (short) 0);
+                noise.advance(samples, processed);
+                writeFrames(previousFrames);
+                previousFrames = frames;
+            } else if (space != null) {
+                space.process(samples, frames, processed);
+                writeFrames(frames);
+            }
             length = 0;
+        }
+
+        private void writeFrames(int frames) throws IOException {
+            int count = frames * outputChannels;
+            int bytes = count * 2;
+            if (pcmBytes + bytes > MAX_PCM_BYTES) throw failure("size");
+            if (bytes > encoded.remaining()) writeBuffer();
+            encoded.asShortBuffer().put(processed, 0, count);
+            encoded.position(encoded.position() + bytes);
+            pcmBytes += bytes;
+        }
+
+        private void writeBuffer() throws IOException {
+            file.write(encoded.array(), 0, encoded.position());
+            encoded.clear();
         }
 
         void finish() throws IOException {
             if (length > 0) flush();
-            if (!extension.hasUsefulOutput()) throw failure("bandwidth");
+            if (extension != null && !extension.hasUsefulOutput()) throw failure("bandwidth");
+            if (noise != null) {
+                if (!noise.hasUsefulOutput()) throw failure("noise");
+                java.util.Arrays.fill(samples, (short) 0);
+                noise.advance(samples, processed);
+                writeFrames(previousFrames);
+            }
+            if (pcmBytes == 0) throw failure("decode");
+            writeBuffer();
             ByteBuffer header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN);
             header.putInt(0x46464952).putInt(36 + pcmBytes).putInt(0x45564157);
             header.putInt(0x20746D66).putInt(16).putShort((short) 1);
-            header.putShort((short) channels).putInt(rate).putInt(rate * channels * 2);
-            header.putShort((short) (channels * 2)).putShort((short) 16);
+            header.putShort((short) outputChannels).putInt(rate).putInt(rate * outputChannels * 2);
+            header.putShort((short) (outputChannels * 2)).putShort((short) 16);
             header.putInt(0x61746164).putInt(pcmBytes);
             file.seek(0);
             file.write(header.array());

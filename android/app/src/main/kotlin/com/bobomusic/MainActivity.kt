@@ -8,7 +8,7 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * 继承 AudioServiceActivity 以保持后台播放能力，
@@ -44,37 +44,45 @@ class MainActivity : AudioServiceActivity() {
                         call.argument<Int>("session"),
                         call.argument<String>("preset")
                     ))
-                    "restoreBandwidth" -> {
+                    "renderAudio" -> {
                         val path = call.argument<String>("path")
-                        if (path.isNullOrEmpty()) {
+                        val mode = call.argument<String>("mode")
+                        val request = call.argument<Int>("request")
+                        if (path.isNullOrEmpty() || mode == null || request == null) {
                             result.error("format", null, null)
                         } else {
-                            restoreBandwidth(path, result)
+                            renderAudio(path, mode, request, result)
                         }
+                    }
+                    "cancelAudioRender" -> {
+                        val request = call.argument<Int>("request")
+                        audioRender.get()?.takeIf { it.request == request }?.cancelled = true
+                        result.success(null)
                     }
                     else -> result.notImplemented()
                 }
             }
     }
 
-    private fun restoreBandwidth(path: String, result: MethodChannel.Result) {
-        if (!restoringAudio.compareAndSet(false, true)) {
+    private fun renderAudio(path: String, mode: String, request: Int, result: MethodChannel.Result) {
+        val job = AudioRender(request)
+        if (!audioRender.compareAndSet(null, job)) {
             result.error("busy", null, null)
             return
         }
         val directory = File(cacheDir, "audio-repair")
         audioWorker.execute {
             try {
-                val output = AudioRestoration.render(File(path), directory)
+                val output = AudioRestoration.render(File(path), directory, mode) { job.cancelled }
                 runOnUiThread { result.success(output.absolutePath) }
             } catch (error: IOException) {
-                val known = setOf("format", "storage", "size", "decode", "timeout", "bandwidth")
+                val known = setOf("format", "storage", "size", "decode", "timeout", "bandwidth", "noise", "cancelled")
                 val code = error.message?.takeIf { it in known } ?: "decode"
                 runOnUiThread { result.error(code, null, null) }
             } catch (_: RuntimeException) {
                 runOnUiThread { result.error("decode", null, null) }
             } finally {
-                restoringAudio.set(false)
+                audioRender.compareAndSet(job, null)
             }
         }
     }
@@ -101,9 +109,13 @@ class MainActivity : AudioServiceActivity() {
         }
     }
 
+    private class AudioRender(val request: Int) {
+        @Volatile var cancelled: Boolean = false
+    }
+
     companion object {
         private const val CHANNEL = "manman/share"
-        private val restoringAudio = AtomicBoolean()
+        private val audioRender = AtomicReference<AudioRender?>()
         private val audioWorker = Executors.newSingleThreadExecutor()
     }
 }

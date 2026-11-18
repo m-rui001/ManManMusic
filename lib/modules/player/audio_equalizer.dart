@@ -5,6 +5,17 @@ import "package:flutter/services.dart";
 import "package:just_audio/just_audio.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
+enum AudioPreviewMode {
+  original("原轨", "播放未处理的音轨"),
+  bandwidth("高频补偿", "轻度补偿明显截断的高频"),
+  noise("底噪减弱", "轻度减弱稳定的嘶声，保留原有声道"),
+  space("耳机空间", "拓宽立体声，单声道模拟少量早期反射");
+
+  const AudioPreviewMode(this.label, this.description);
+  final String label;
+  final String description;
+}
+
 enum AudioPreset {
   original("原声", "使用音轨原有的动态和频响"),
   warm("柔和高频", "减弱刺耳的高频"),

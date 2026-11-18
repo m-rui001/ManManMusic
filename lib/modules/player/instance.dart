@@ -41,13 +41,13 @@ class BBPlayer {
   String? _loadedTrack;
   String sourceDescription = "";
   bool repairingAudio = false;
-  bool repairActive = false;
+  AudioPreviewMode audioPreviewMode = AudioPreviewMode.original;
   static const _autoRepairKey = "automatic_bandwidth_extension";
   bool automaticAudioRepair = true;
   bool _checkingRepair = false;
   int? _autoRepairAttempt;
-  ({File original, File repaired})? _repairPreview;
-  bool get hasRepairPreview => _repairPreview != null;
+  ({File original, File processed, AudioPreviewMode mode})? _repairPreview;
+  static const _audioChannel = MethodChannel("manman/audio");
   static String _track(MusicItem item) => "${item.origin.value}:${item.id}";
   PlayerMode playerMode = PlayerMode.listLoop;
 
@@ -80,13 +80,13 @@ class BBPlayer {
   }
 
   void dispose() {
-    _loadRequest++;
+    _invalidateAudioRender();
     for (var sub in _subscriptions) {
       sub?.cancel();
     }
     equalizer.dispose();
     final preview = _repairPreview;
-    if (preview != null) unawaited(_removeRepairFile(preview.repaired));
+    if (preview != null) unawaited(_removeRepairFile(preview.processed));
     audio.dispose();
     _timer?.cancel();
     autoClose.cancel();
@@ -358,7 +358,10 @@ class BBPlayer {
       unawaited(_tryAutomaticRepair());
       return null;
     }
-    return setAudioRepair(false);
+    if (audioPreviewMode == AudioPreviewMode.bandwidth) {
+      return setAudioRepair(AudioPreviewMode.original);
+    }
+    return null;
   }
 
   Future<File?> _repairInput(AudioSource? source) async {
@@ -372,15 +375,18 @@ class BBPlayer {
   }
 
   Future<void> _tryAutomaticRepair() async {
+    final duration = audio.duration;
     if (!AudioEqualizer.supported ||
         !automaticAudioRepair ||
         _checkingRepair ||
         repairingAudio ||
-        repairActive ||
+        audioPreviewMode != AudioPreviewMode.original ||
         _autoRepairAttempt == _loadRequest ||
         !isPlaying ||
         isLoading ||
         current == null ||
+        (duration != null &&
+            duration - audio.position < const Duration(seconds: 3)) ||
         PartyService.instance.role != PartyRole.none ||
         sourceDescription.startsWith("FLAC") ||
         sourceDescription.startsWith("杜比")) {
@@ -397,7 +403,7 @@ class BBPlayer {
           _autoRepairAttempt == request) {
         return;
       }
-      await setAudioRepair(true, automatic: true);
+      await setAudioRepair(AudioPreviewMode.bandwidth, automatic: true);
     } on FileSystemException {
       // A pending or evicted cache is checked again on the next position tick.
     } finally {
@@ -405,41 +411,41 @@ class BBPlayer {
     }
   }
 
-  Future<String?> setAudioRepair(bool enabled, {bool automatic = false}) async {
+  Future<String?> setAudioRepair(
+    AudioPreviewMode mode, {
+    bool automatic = false,
+  }) async {
+    final enabled = mode != AudioPreviewMode.original;
     if (!automatic) _autoRepairAttempt = _loadRequest;
-    if (repairingAudio || isLoading || enabled == repairActive) return null;
+    if (repairingAudio || isLoading || mode == audioPreviewMode) return null;
     final track = current;
     final source = audio.audioSource;
     if (track == null || source == null) return "先播放一首曲目";
     if (enabled && PartyService.instance.role != PartyRole.none) {
-      return "退出一起听后可以试听修复";
+      return "退出一起听后可以试听本机处理效果";
     }
 
     final request = _loadRequest;
     bool sameTrack() => request == _loadRequest && identical(current, track);
     if (enabled) _autoRepairAttempt = request;
     final tag = source is IndexedAudioSource ? source.tag : null;
+    final previous = _repairPreview;
+    File? rendered;
     repairingAudio = true;
     eventBus.fire(RefreshAudioOptions());
     try {
-      var preview = _repairPreview;
-      if (preview == null) {
-        final input = await _repairInput(source);
+      var preview = previous;
+      if (enabled && preview?.mode != mode) {
+        final input = preview?.original ?? await _repairInput(source);
         if (input == null) return "音轨尚未完整缓存，可以下载后从本地播放";
         if (!sameTrack()) return null;
-        const channel = MethodChannel("manman/audio");
-        final path = await channel.invokeMethod<String>(
-          "restoreBandwidth",
-          {"path": input.path},
+        final path = await _audioChannel.invokeMethod<String>(
+          "renderAudio",
+          {"path": input.path, "mode": mode.name, "request": request},
         );
-        if (path == null) return "未能生成修复试听";
-        final rendered = File(path);
-        if (!sameTrack() || PartyService.instance.role != PartyRole.none) {
-          unawaited(_removeRepairFile(rendered));
-          return null;
-        }
-        preview = (original: input, repaired: rendered);
-        _repairPreview = preview;
+        if (path == null) return "未能生成试听音轨";
+        rendered = File(path);
+        preview = (original: input, processed: rendered, mode: mode);
       }
 
       if (!sameTrack() ||
@@ -454,7 +460,8 @@ class BBPlayer {
         }
         return null;
       }
-      final target = enabled ? preview.repaired : preview.original;
+      if (preview == null) return null;
+      final target = enabled ? preview.processed : preview.original;
       final position = audio.position;
       try {
         await audio.setAudioSource(
@@ -465,28 +472,34 @@ class BBPlayer {
         return null;
       } on PlayerException {
         if (sameTrack()) {
-          final previous = repairActive ? preview.repaired : preview.original;
-          await audio.setAudioSource(
-            AudioSource.file(previous.path, tag: tag),
-            initialPosition: position,
-          );
+          await audio.setAudioSource(source, initialPosition: position);
         }
         return "切换音轨失败";
       }
-      if (sameTrack()) repairActive = enabled;
+      if (sameTrack()) {
+        _repairPreview = preview;
+        audioPreviewMode = mode;
+        rendered = null;
+        if (previous != null && previous.processed != preview.processed) {
+          unawaited(_removeRepairFile(previous.processed));
+        }
+      }
       return null;
     } on PlatformException catch (error) {
       return switch (error.code) {
+        "cancelled" => null,
         "bandwidth" => "未检测到适合补偿的高频截断",
-        "format" => "适用于 44.1 或 48 kHz 的 AAC、MP3 音轨",
+        "noise" => "未检测到可以稳定减弱的底噪",
+        "format" => "适用于 44.1 或 48 kHz 的单声道或双声道音轨",
         "storage" => "本机存储空间不足",
         "size" => "该曲目超过本机修复的长度上限",
         "timeout" => "本机处理超时",
-        _ => "当前音轨无法生成修复试听",
+        _ => "当前音轨无法生成试听",
       };
     } catch (_) {
-      return "当前音轨无法生成修复试听";
+      return "当前音轨无法生成试听";
     } finally {
+      if (rendered != null) unawaited(_removeRepairFile(rendered));
       repairingAudio = false;
       eventBus.fire(RefreshAudioOptions());
     }
@@ -500,8 +513,18 @@ class BBPlayer {
     }
   }
 
+  int _invalidateAudioRender() {
+    final previous = _loadRequest++;
+    if (repairingAudio) {
+      unawaited(_audioChannel.invokeMethod<void>("cancelAudioRender", {
+        "request": previous,
+      }).onError<Object>((_, __) {}));
+    }
+    return _loadRequest;
+  }
+
   Future<void> _load(MusicItem music, {bool Function()? isCurrent}) async {
-    final request = ++_loadRequest;
+    final request = _invalidateAudioRender();
     bool canLoad() => request == _loadRequest && (isCurrent?.call() ?? true);
     isLoading = true;
     try {
@@ -523,9 +546,9 @@ class BBPlayer {
         if (!canLoad()) throw PlayerInterruptedException("歌曲已切换");
         final previousRepair = _repairPreview;
         _repairPreview = null;
-        repairActive = false;
+        audioPreviewMode = AudioPreviewMode.original;
         if (previousRepair != null) {
-          unawaited(_removeRepairFile(previousRepair.repaired));
+          unawaited(_removeRepairFile(previousRepair.processed));
         }
         _loadedTrack = _track(music);
         sourceDescription = source.description;

@@ -79,8 +79,8 @@ class PlayerModel extends ChangeNotifier {
   AudioEqualizer? get equalizer => _playerHandler?.player.equalizer;
 
   bool get repairingAudio => _playerHandler?.player.repairingAudio ?? false;
-  bool get repairActive => _playerHandler?.player.repairActive ?? false;
-  bool get hasRepairPreview => _playerHandler?.player.hasRepairPreview ?? false;
+  AudioPreviewMode get audioPreviewMode =>
+      _playerHandler?.player.audioPreviewMode ?? AudioPreviewMode.original;
   bool get automaticAudioRepair =>
       _playerHandler?.player.automaticAudioRepair ?? true;
 
@@ -94,8 +94,8 @@ class PlayerModel extends ChangeNotifier {
     }
   }
 
-  Future<String?> setAudioRepair(bool enabled) async {
-    final work = _playerHandler?.player.setAudioRepair(enabled);
+  Future<String?> setAudioRepair(AudioPreviewMode mode) async {
+    final work = _playerHandler?.player.setAudioRepair(mode);
     notifyListeners();
     try {
       return await work;

@@ -44,7 +44,7 @@ class _AudioOptionsState extends State<_AudioOptions> {
             if (AudioEqualizer.supported)
               SwitchListTile(
                 secondary: const Icon(Icons.auto_awesome_outlined),
-                title: const Text("自动高频修复"),
+                title: const Text("自动高频补偿"),
                 subtitle: const Text("在本机检测已缓存音轨，只补偿明显缺失的高频。"),
                 value: player.automaticAudioRepair,
                 onChanged: (enabled) async {
@@ -57,30 +57,41 @@ class _AudioOptionsState extends State<_AudioOptions> {
                   }
                 },
               ),
-            if (AudioEqualizer.supported && player.current != null)
-              SwitchListTile(
-                secondary: player.repairingAudio
+            if (AudioEqualizer.supported && player.current != null) ...[
+              const Divider(height: 1),
+              ListTile(
+                leading: player.repairingAudio
                     ? const SizedBox.square(
                         dimension: 22,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.multitrack_audio_rounded),
-                title: const Text("高频修复试听"),
+                title: const Text("当前曲目试听"),
                 subtitle: Text(player.repairingAudio
-                    ? "正在本机处理，当前音轨会继续播放"
-                    : _repairMessage ??
-                        (player.hasRepairPreview
-                            ? "切换原声和修复版会保留当前位置"
-                            : "实验功能。尝试为明显缺高频的本机缓存音轨补偿泛音。")),
-                value: player.repairActive,
-                onChanged: player.repairingAudio || player.isLoading
-                    ? null
-                    : (enabled) async {
-                        setState(() => _repairMessage = null);
-                        final message = await player.setAudioRepair(enabled);
-                        if (mounted) setState(() => _repairMessage = message);
-                      },
+                    ? "正在本机处理，当前播放会继续"
+                    : _repairMessage ?? "选择一种处理效果，切换时保留播放位置"),
               ),
+              for (final mode in AudioPreviewMode.values)
+                ListTile(
+                  contentPadding: const EdgeInsetsDirectional.only(
+                    start: 56,
+                    end: 16,
+                  ),
+                  title: Text(mode.label),
+                  subtitle: Text(mode.description),
+                  selected: mode == player.audioPreviewMode,
+                  trailing: mode == player.audioPreviewMode
+                      ? const Icon(Icons.check_rounded)
+                      : null,
+                  onTap: player.repairingAudio || player.isLoading
+                      ? null
+                      : () async {
+                          setState(() => _repairMessage = null);
+                          final message = await player.setAudioRepair(mode);
+                          if (mounted) setState(() => _repairMessage = message);
+                        },
+                ),
+            ],
             if (AudioEqualizer.supported && equalizer != null) ...[
               const Divider(height: 1),
               for (final preset in AudioPreset.values)
