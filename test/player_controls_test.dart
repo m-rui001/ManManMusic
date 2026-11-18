@@ -1,7 +1,12 @@
+import "dart:async";
+
 import "package:bobomusic/modules/player/const.dart";
 import "package:bobomusic/modules/player/model.dart";
+import "package:bobomusic/modules/player/lyrics_card/lyric_scroller.dart";
 import "package:bobomusic/modules/player/player_card/progress.dart";
+import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:flutter/material.dart";
+import "package:flutter_lyric/lyrics_reader_widget.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:provider/provider.dart";
 
@@ -84,4 +89,46 @@ void main() {
     expect(tester.widget<Slider>(slider).onChanged, isNull);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets("歌词在暂停时跟随真实跳转位置", (tester) async {
+    final positions = StreamController<Duration>();
+    final player = LyricTestPlayer(positions.stream);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<PlayerModel>.value(
+        value: player,
+        child: const MaterialApp(home: Scaffold(body: LyricsScroller())),
+      ),
+    );
+
+    final reader = find.byType(LyricsReader);
+    expect(tester.widget<LyricsReader>(reader).position, 0);
+    positions.add(const Duration(seconds: 26));
+    await tester.pump();
+    expect(tester.widget<LyricsReader>(reader).position, 26000);
+    await tester.pump(const Duration(seconds: 1));
+    expect(tester.widget<LyricsReader>(reader).position, 26000);
+    await tester.pumpWidget(const SizedBox.shrink());
+    unawaited(positions.close());
+  });
+}
+
+class LyricTestPlayer extends PlayerModel {
+  LyricTestPlayer(this.positions);
+
+  @override
+  final Stream<Duration> positions;
+
+  @override
+  MusicItem get current => track;
+
+  final track = MusicItem(
+    id: "lyric_test",
+    cover: "",
+    name: "歌词测试",
+    duration: 100,
+    author: "",
+    origin: OriginType.bili,
+    lyric: "[00:00.00] 第一行\n[00:25.00] 第二行",
+  );
 }

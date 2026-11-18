@@ -93,6 +93,13 @@ class PlayerModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<bool> setLyrics(MusicItem music, String lyrics) async {
+    final updated =
+        await _playerHandler?.player.setLyrics(music, lyrics) ?? false;
+    if (updated) notifyListeners();
+    return updated;
+  }
+
   // 播放
   Future<void> play({MusicItem? music, List<MusicItem>? collection}) async {
     if (PartyControl.blocked()) return;

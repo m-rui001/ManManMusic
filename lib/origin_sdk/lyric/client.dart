@@ -1,6 +1,3 @@
-
-
-
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:dio/dio.dart";
@@ -38,7 +35,9 @@ class SongData {
   factory SongData.fromJson(Map<String, dynamic> json) {
     return SongData(
       total: json["total"],
-      list: (json["list"] as List).map((item) => SongItem.fromJson(item)).toList(),
+      list: ((json["list"] as List?) ?? const [])
+          .map((item) => SongItem.fromJson(item))
+          .toList(),
     );
   }
 }
@@ -69,7 +68,9 @@ class SongItem {
       songmid: json["songmid"],
       songname: json["songname"],
       interval: json["interval"],
-      singer: (json["singer"] as List).map((item) => Singer.fromJson(item)).toList(),
+      singer: (json["singer"] as List)
+          .map((item) => Singer.fromJson(item))
+          .toList(),
       albumcover: json["albumcover"],
       albumname: json["albumname"],
       albumdesc: json["albumdesc"],
@@ -133,66 +134,43 @@ class LyricData {
 }
 
 class LyricClient {
-  final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 10)));
-  final String baseURL = "https://api.timelessq.com/music/tencent/";
+  final dio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 10),
+  ));
+  final String baseURL = "https://api.timelessq.com/music/tencent";
 
-  Future<SongData?> searchMusic(SearchParams seachParams, {bool silent = false}) async {
+  Future<SongData?> searchMusic(SearchParams params,
+      {bool silent = false}) async {
+    if (!silent) EasyLoading.show(maskType: EasyLoadingMaskType.black);
     try {
-      if(!silent) {
-        EasyLoading.show(maskType: EasyLoadingMaskType.black);
-      }
-
-      final response = await dio.get("$baseURL/search?keyword=${seachParams.keyword}&page=${seachParams.page}&pageSize=${seachParams.pageSize}");
-
-      if (response.statusCode == 200) {
-        EasyLoading.dismiss();
-        final data = response.data["data"];
-
-        if(data["total"] == 0 && !silent) {
-          BotToast.showText(text: "没有歌曲，歌词服务商可能出错了");
-          return null;
-        } else {
-          return SongData.fromJson(data);
-        }
-      } else {
-        EasyLoading.dismiss();
-
-        if(!silent) {
-          BotToast.showText(text: "歌曲信息查询失败，请检查网络");
-        }
-
-        return null;
-      }
-    } catch (error) {
-      EasyLoading.dismiss();
-
-      if(!silent) {
-        BotToast.showText(text: "歌曲信息查询失败，请检查网络");
-      }
-
+      final response = await dio.get("$baseURL/search", queryParameters: {
+        "keyword": params.keyword,
+        "page": params.page,
+        "pageSize": params.pageSize,
+      });
+      final data = response.data["data"];
+      return SongData.fromJson(data);
+    } catch (_) {
+      if (!silent) BotToast.showText(text: "歌曲信息查询失败，请检查网络");
       return null;
+    } finally {
+      if (!silent) EasyLoading.dismiss();
     }
   }
 
-  Future<LyricData?> searchLyric(String songmid) async {
+  Future<LyricData?> searchLyric(String songmid, {bool silent = false}) async {
+    if (!silent) EasyLoading.show(maskType: EasyLoadingMaskType.black);
     try {
-      EasyLoading.show(maskType: EasyLoadingMaskType.black);
-
-      final response = await dio.get("$baseURL/lyric?songmid=$songmid");
-
-      if (response.statusCode == 200) {
-        EasyLoading.dismiss();
-        final data = response.data["data"];
-        return LyricData.fromJson(data);
-      } else {
-        EasyLoading.dismiss();
-        BotToast.showText(text: "歌词预览失败，请检查网络");
-        return null;
-      }
-    } catch (e) {
-      EasyLoading.dismiss();
-      BotToast.showText(text: "歌词预览失败，请检查网络");
+      final response = await dio
+          .get("$baseURL/lyric", queryParameters: {"songmid": songmid});
+      final data = response.data["data"];
+      return LyricData.fromJson(data);
+    } catch (_) {
+      if (!silent) BotToast.showText(text: "歌词预览失败，请检查网络");
       return null;
+    } finally {
+      if (!silent) EasyLoading.dismiss();
     }
   }
 }

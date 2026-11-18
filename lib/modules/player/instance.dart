@@ -155,6 +155,18 @@ class BBPlayer {
     _updateLocalStorage();
   }
 
+  Future<bool> setLyrics(MusicItem music, String lyrics) async {
+    if (!identical(current, music)) return false;
+    if (music.orderName.isNotEmpty) {
+      await db.update(
+          music.orderName, musicItem2Row(music: music.copyWith(lyric: lyrics)));
+    }
+    music.lyric = lyrics;
+    if (!identical(current, music)) return false;
+    _updateLocalStorage();
+    return true;
+  }
+
   Future<void> seek(Duration position) async {
     await audio.seek(position);
     await _cachePosition();

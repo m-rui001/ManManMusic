@@ -33,7 +33,6 @@ import "package:url_launcher/url_launcher.dart";
 import "package:uuid/uuid.dart";
 
 const uuid = Uuid();
-final DBOrder db = DBOrder();
 
 class PlayerCard extends StatefulWidget {
   const PlayerCard({super.key});
@@ -75,7 +74,9 @@ class PlayerCardState extends State<PlayerCard> {
     if (current == null) return;
 
     final liked = await FavSyncService.isInMyMusic(current.id);
-    if (!mounted) return;
+    if (!mounted || !identical(current, context.read<PlayerModel>().current)) {
+      return;
+    }
     setState(() => isLike = liked);
   }
 
@@ -112,14 +113,14 @@ class PlayerCardState extends State<PlayerCard> {
       if (!onlyLyrics && _imageInfo == null) {
         _loadImage(musicArtwork(match.albumcover));
       }
-      if (current.lyric.isNotEmpty || current.orderName.isEmpty) return;
-      final lyric = await lyricService.searchLyric(match.songmid);
+      if (current.lyric.isNotEmpty) return;
+      final lyric = await lyricService.searchLyric(match.songmid, silent: true);
       if (!mounted || !identical(_artworkTrack, current) || lyric == null) {
         return;
       }
-      final id = await db.update(current.orderName,
-          musicItem2Row(music: current.copyWith(lyric: lyric.lyric)));
-      if (id > -1) eventBus.fire(ScrollLyric());
+      if (current.lyric.isEmpty) {
+        await context.read<PlayerModel>().setLyrics(current, lyric.lyric);
+      }
     } catch (_) {
       // 保留原封面。找不到匹配时使用内置占位图。
     }
@@ -477,7 +478,10 @@ class PlayerCardState extends State<PlayerCard> {
                     controller: _pageController,
                     onPageChanged: (index) =>
                         setState(() => _currentPage = index),
-                    children: [_buildRecordWidget(), const LyricsScroller()],
+                    children: [
+                      _buildRecordWidget(),
+                      LyricsScroller(key: ValueKey(music.id))
+                    ],
                   ),
                 ),
               ],

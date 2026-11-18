@@ -14,7 +14,8 @@ import "package:uuid/uuid.dart";
 const uuid = Uuid();
 
 class SearchLyricMusicView extends StatefulWidget {
-  const SearchLyricMusicView({super.key});
+  const SearchLyricMusicView({super.key, required this.track});
+  final MusicItem track;
 
   @override
   State<SearchLyricMusicView> createState() => SearchLyricMusicViewState();
@@ -25,13 +26,17 @@ class SearchLyricMusicViewState extends State<SearchLyricMusicView> {
   final _keywordController = TextEditingController(text: "");
   final _focusNode = FocusNode();
   int _current = 1;
+  int _generation = 0;
   bool _loading = false;
   final List<SongItem> _searchItemList = [];
   List<String> _searchHistory = [];
 
   // 搜索事件
   void _searchHandler(bool clean) async {
-    var keyword = _keywordController.text;
+    if (!clean && _loading) return;
+    final generation = clean ? ++_generation : _generation;
+    if (clean) _current = 1;
+    var keyword = _keywordController.text.trim();
     if (keyword.isEmpty) {
       setState(() {
         _searchItemList.clear();
@@ -45,7 +50,8 @@ class SearchLyricMusicViewState extends State<SearchLyricMusicView> {
       _loading = true;
     });
     lyricService.searchMusic(p).then((value) {
-      updateSearchHistory(keyword);
+      if (!mounted || generation != _generation) return;
+      if (clean) updateSearchHistory(keyword);
       setState(() {
         if (clean) {
           _searchItemList.clear();
@@ -59,9 +65,11 @@ class SearchLyricMusicViewState extends State<SearchLyricMusicView> {
   @override
   void initState() {
     super.initState();
+    _keywordController.text = widget.track.name;
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels ==
-          _scrollController.position.maxScrollExtent) {
+      if (!_loading &&
+          _scrollController.position.pixels ==
+              _scrollController.position.maxScrollExtent) {
         _current += 1;
         _searchHandler(false);
       }
@@ -73,6 +81,7 @@ class SearchLyricMusicViewState extends State<SearchLyricMusicView> {
 
   getSearchHistory() async {
     final list = await getSearchHistoryData();
+    if (!mounted) return;
 
     setState(() {
       _searchHistory = list;
@@ -81,7 +90,8 @@ class SearchLyricMusicViewState extends State<SearchLyricMusicView> {
 
   updateSearchHistory(String keyword, {bool isDelete = false}) async {
     final localStorage = await SharedPreferences.getInstance();
-    final list = localStorage.getStringList(CacheKey.searchLyricMusicHistory) ?? [];
+    final list =
+        localStorage.getStringList(CacheKey.searchLyricMusicHistory) ?? [];
     if (list.contains(keyword)) {
       list.remove(keyword);
     }
@@ -94,6 +104,7 @@ class SearchLyricMusicViewState extends State<SearchLyricMusicView> {
       }
     }
     await localStorage.setStringList(CacheKey.searchLyricMusicHistory, list);
+    if (!mounted) return;
     setState(() {
       _searchHistory = list;
     });
@@ -101,6 +112,8 @@ class SearchLyricMusicViewState extends State<SearchLyricMusicView> {
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
+    _scrollController.dispose();
     _keywordController.dispose();
     _focusNode.unfocus();
     _focusNode.dispose();
@@ -115,40 +128,44 @@ class SearchLyricMusicViewState extends State<SearchLyricMusicView> {
 
   Widget buildSearchHistory() {
     return Container(
-      padding: const EdgeInsets.only(left: 10, right: 10),
-      width: double.infinity,
-      child: ListView(
-        children: _searchHistory.map((keyword) {
-          return InkWell(
-            borderRadius: const BorderRadius.all(Radius.circular(4)),
-            onTap: () {
-              _keywordController.text = keyword;
-              _searchHandler(true);
-            },
-            child: Container(
-              padding: const EdgeInsets.only(
-                top: 6,
-                bottom: 6,
-                left: 18,
-                right: 12,
+        padding: const EdgeInsets.only(left: 10, right: 10),
+        width: double.infinity,
+        child: ListView(
+          children: _searchHistory.map((keyword) {
+            return InkWell(
+              borderRadius: const BorderRadius.all(Radius.circular(4)),
+              onTap: () {
+                _keywordController.text = keyword;
+                _searchHandler(true);
+              },
+              child: Container(
+                padding: const EdgeInsets.only(
+                  top: 6,
+                  bottom: 6,
+                  left: 18,
+                  right: 12,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(keyword,
+                        style: const TextStyle(
+                            fontSize: 16,
+                            color: Color.fromARGB(255, 146, 146, 145),
+                            overflow: TextOverflow.ellipsis)),
+                    InkWell(
+                      child: const Icon(Icons.delete_forever,
+                          size: 16, color: Color.fromARGB(255, 146, 146, 145)),
+                      onTap: () {
+                        updateSearchHistory(keyword, isDelete: true);
+                      },
+                    )
+                  ],
+                ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(keyword, style: const TextStyle(fontSize: 16, color: Color.fromARGB(255, 146, 146, 145), overflow: TextOverflow.ellipsis)),
-                  InkWell(
-                    child: const Icon(Icons.delete_forever, size: 16, color: Color.fromARGB(255, 146, 146, 145)),
-                    onTap: () {
-                      updateSearchHistory(keyword, isDelete: true);
-                    },
-                  )
-                ],
-              ),
-            ),
-          );
-        }).toList(),
-      )
-    );
+            );
+          }).toList(),
+        ));
   }
 
   Widget buildBody(BuildContext context) {
@@ -175,43 +192,51 @@ class SearchLyricMusicViewState extends State<SearchLyricMusicView> {
         final item = _searchItemList[index];
         String cover = item.albumcover.isNotEmpty ? item.albumcover : "";
         String name = item.songname;
-        final List<String> tags = [...item.singer.map((s) {
-          return s.name;
-        })];
+        final List<String> tags = [
+          ...item.singer.map((s) {
+            return s.name;
+          })
+        ];
 
         return ListTile(
-          leading: cover.startsWith("http") ? ClipRRect(
-            borderRadius: BorderRadius.circular(4.0),
-            child:  CachedNetworkImage(
-              imageUrl: cover,
-              width: 50,
-              height: 50,
-              fit: BoxFit.cover,
-            )
-          ) : Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey),
-              borderRadius: BorderRadius.circular(4)
-            ),
-            child: const Center(child: Text("无", style: TextStyle(fontSize: 12, color: Colors.grey)))
-          ),
+          leading: cover.startsWith("http")
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(4.0),
+                  child: CachedNetworkImage(
+                    imageUrl: cover,
+                    width: 50,
+                    height: 50,
+                    fit: BoxFit.cover,
+                  ))
+              : Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(4)),
+                  child: const Center(
+                      child: Text("无",
+                          style: TextStyle(fontSize: 12, color: Colors.grey)))),
           title: Text(
             name,
             overflow: TextOverflow.ellipsis,
             maxLines: 1,
           ),
-          subtitle: Text(tags.join("、"), style: const TextStyle(overflow: TextOverflow.ellipsis, fontSize: 10, color: Colors.grey)),
+          subtitle: Text(tags.join("、"),
+              style: const TextStyle(
+                  overflow: TextOverflow.ellipsis,
+                  fontSize: 10,
+                  color: Colors.grey)),
           onTap: () async {
             final lyric = await lyricService.searchLyric(item.songmid);
 
             if (lyric != null && context.mounted) {
-              final NavigatorState navigator = Navigator.of(context, rootNavigator: false);
+              final NavigatorState navigator =
+                  Navigator.of(context, rootNavigator: false);
               navigator.push(ModalBottomSheetRoute(
                 isScrollControlled: true,
                 builder: (context) {
-                  return LyricPreview(lyric: lyric.lyric);
+                  return LyricPreview(lyric: lyric.lyric, track: widget.track);
                 },
               ));
             }

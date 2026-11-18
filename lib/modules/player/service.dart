@@ -124,8 +124,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   void _broadcastState() {
-    eventBus.fire(ScrollLyric());
-
     final controls = [
       const MediaControl(
         action: MediaAction.skipToPrevious,

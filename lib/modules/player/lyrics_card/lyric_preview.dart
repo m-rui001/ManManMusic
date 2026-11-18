@@ -1,17 +1,15 @@
-import "package:bobomusic/db/db.dart";
-import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/player/utils.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
 import "package:bobomusic/modules/player/model.dart";
-import "package:flutter_easyloading/flutter_easyloading.dart";
 import "package:provider/provider.dart";
 
-final db = DBOrder();
+import "package:bobomusic/origin_sdk/origin_types.dart";
 
 class LyricPreview extends StatefulWidget {
   final String lyric;
-  const LyricPreview({super.key, required this.lyric});
+  final MusicItem track;
+  const LyricPreview({super.key, required this.lyric, required this.track});
 
   @override
   LyricPreviewState createState() => LyricPreviewState();
@@ -39,7 +37,8 @@ class LyricPreviewState extends State<LyricPreview> {
     );
   }
 
-  Widget _buildList(BuildContext context, PlayerModel player, double listHeight) {
+  Widget _buildList(
+      BuildContext context, PlayerModel player, double listHeight) {
     List<Map<String, dynamic>> parsedLyrics = parseLyrics(widget.lyric);
     return Expanded(
       child: Container(
@@ -64,7 +63,8 @@ class LyricPreviewState extends State<LyricPreview> {
     );
   }
 
-  Widget _buildTopBar(BuildContext context, PlayerModel player, double topHeight) {
+  Widget _buildTopBar(
+      BuildContext context, PlayerModel player, double topHeight) {
     return Container(
       height: topHeight,
       padding: const EdgeInsets.only(
@@ -90,30 +90,24 @@ class LyricPreviewState extends State<LyricPreview> {
           ),
           TextButton(
             onPressed: () async {
-              EasyLoading.show(maskType: EasyLoadingMaskType.black);
-
               try {
-                if (player.current!.orderName.isNotEmpty) {
-                  final musicItem = player.current!.copyWith(lyric: widget.lyric);
-                  final id = await db.update(player.current!.orderName, musicItem2Row(music: musicItem));
-
-                  if (id > -1) {
-                    if (context.mounted) {
-                      Navigator.of(context).pop();
-                      Navigator.of(context).pop();
-                    }
-                    player.current = musicItem;
-                    EasyLoading.dismiss();
-                    eventBus.fire(ScrollLyric());
-                    BotToast.showText(text: "应用成功");
-                  }
+                final applied =
+                    await player.setLyrics(widget.track, widget.lyric);
+                if (!context.mounted) return;
+                if (!applied) {
+                  BotToast.showText(text: "歌曲已切换，请重新匹配");
+                  return;
                 }
-              } catch(error) {
-                EasyLoading.dismiss();
-                print("$error");
+                final navigator = Navigator.of(context);
+                navigator.pop();
+                navigator.pop();
+                BotToast.showText(text: "歌词已应用");
+              } catch (_) {
+                if (context.mounted) BotToast.showText(text: "歌词应用失败");
               }
             },
-            child: Text("应用歌词", style: TextStyle(color: Theme.of(context).primaryColor)),
+            child: Text("应用歌词",
+                style: TextStyle(color: Theme.of(context).primaryColor)),
           )
         ],
       ),
