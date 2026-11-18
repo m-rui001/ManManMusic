@@ -36,37 +36,63 @@ class SearchViewState extends State<SearchView> {
   final ScrollController _scrollController = ScrollController();
   final _keywordController = TextEditingController(text: "");
   final _focusNode = FocusNode();
-  int _current = 1;
+  int _current = 0;
+  int _generation = 0;
+  String _query = "";
+  bool _hasMore = true;
   bool _loading = false;
   final List<SearchItem> _searchItemList = [];
   List<String> _searchHistory = [];
   List<SearchSuggestItem> _searchSuggest = [];
 
-  // 搜索事件
-  void _searchHandler(bool clean) async {
-    var keyword = _keywordController.text;
+  Future<void> _searchHandler(bool clean) async {
+    if (!clean && (_loading || !_hasMore || _query.isEmpty)) return;
+    final generation = clean ? ++_generation : _generation;
+    final keyword = clean ? _keywordController.text.trim() : _query;
+    if (clean) {
+      _debounceTimer?.cancel();
+      _focusNode.unfocus();
+      _query = keyword;
+      _current = 0;
+      _hasMore = true;
+    }
     if (keyword.isEmpty) {
       setState(() {
         _searchItemList.clear();
+        _searchSuggest.clear();
         _loading = false;
       });
       return;
     }
 
-    final p = SearchParams(keyword: keyword, page: _current);
+    final page = _current + 1;
     setState(() {
       _loading = true;
+      if (clean) _searchItemList.clear();
     });
-    service.search(p).then((value) {
-      updateSearchHistory(keyword);
+    try {
+      final result =
+          await service.search(SearchParams(keyword: keyword, page: page));
+      if (!mounted || generation != _generation) return;
       setState(() {
-        if (clean) {
-          _searchItemList.clear();
-        }
-        _searchItemList.addAll(value.data);
-        _loading = false;
+        _searchItemList.addAll(result.data);
+        _current = page;
+        _hasMore = result.data.isNotEmpty &&
+            result.pageSize > 0 &&
+            page * result.pageSize < result.total;
       });
-    });
+      if (clean && result.data.isNotEmpty) {
+        unawaited(updateSearchHistory(keyword));
+      }
+    } catch (_) {
+      if (mounted && generation == _generation) {
+        BotToast.showText(text: "搜索暂时失败，请再试一次");
+      }
+    } finally {
+      if (mounted && generation == _generation) {
+        setState(() => _loading = false);
+      }
+    }
   }
 
   // 单个歌曲点击
@@ -101,7 +127,8 @@ class SearchViewState extends State<SearchView> {
         title: const Text("下载"),
         onPressed: () {
           checkMusicLocalRepeat(context, music, () {
-            final downloadModel = Provider.of<DownloadModel>(context, listen: false);
+            final downloadModel =
+                Provider.of<DownloadModel>(context, listen: false);
             downloadModel.download([music]);
           });
         },
@@ -118,7 +145,7 @@ class SearchViewState extends State<SearchView> {
           player.addPlayerList([music]);
         },
       ),
-      if(detail.isSeasonDisplay)
+      if (detail.isSeasonDisplay)
         SheetItem(
           title: const Text("查看所在合集"),
           onPressed: () async {
@@ -126,7 +153,7 @@ class SearchViewState extends State<SearchView> {
             viewCollectionList(result);
           },
         ),
-      if(detail.isSeasonDisplay)
+      if (detail.isSeasonDisplay)
         SheetItem(
           title: const Text("收藏所在合集"),
           onPressed: () async {
@@ -167,17 +194,17 @@ class SearchViewState extends State<SearchView> {
 
   /// 获取视频所在合集
   Future<SearchItem> getVideoDetail(SearchItem detail) async {
-    final collection = await service.searchSeason(detail.ugcSeason!.mid, detail.ugcSeason!.seasonId);
+    final collection = await service.searchSeason(
+        detail.ugcSeason!.mid, detail.ugcSeason!.seasonId);
     final result = SearchItem(
-      id: "${collection!.meta.seasonId}",
-      cover: collection.meta.cover,
-      name: collection.meta.name,
-      duration: 0,
-      author: "",
-      origin: OriginType.bili,
-      isSeasonDisplay: false,
-      musicList: collection.musicList
-    );
+        id: "${collection!.meta.seasonId}",
+        cover: collection.meta.cover,
+        name: collection.meta.name,
+        duration: 0,
+        author: "",
+        origin: OriginType.bili,
+        isSeasonDisplay: false,
+        musicList: collection.musicList);
 
     return result;
   }
@@ -230,10 +257,8 @@ class SearchViewState extends State<SearchView> {
   void initState() {
     super.initState();
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels ==
-          _scrollController.position.maxScrollExtent) {
-        _current += 1;
-        _searchHandler(false);
+      if (_scrollController.position.extentAfter < 160) {
+        unawaited(_searchHandler(false));
       }
     });
     getSearchHistory();
@@ -243,13 +268,14 @@ class SearchViewState extends State<SearchView> {
 
   getSearchHistory() async {
     final list = await getSearchHistoryData();
-
+    if (!mounted) return;
     setState(() {
       _searchHistory = list;
     });
   }
 
-  updateSearchHistory(String keyword, {bool isDelete = false}) async {
+  Future<void> updateSearchHistory(String keyword,
+      {bool isDelete = false}) async {
     final localStorage = await SharedPreferences.getInstance();
     final list = localStorage.getStringList(CacheKey.searchHistory) ?? [];
     if (list.contains(keyword)) {
@@ -264,6 +290,7 @@ class SearchViewState extends State<SearchView> {
       }
     }
     await localStorage.setStringList(CacheKey.searchHistory, list);
+    if (!mounted) return;
     setState(() {
       _searchHistory = list;
     });
@@ -271,6 +298,8 @@ class SearchViewState extends State<SearchView> {
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
+    _scrollController.dispose();
     _keywordController.dispose();
     _focusNode.unfocus();
     _focusNode.dispose();
@@ -278,54 +307,68 @@ class SearchViewState extends State<SearchView> {
   }
 
   Timer? _debounceTimer;
-  _onInputChange(String value) {
-    // 防抖
+  void _onInputChange(String value) {
     _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
-      service.searchSuggest(_keywordController.text).then((list) {
-        setState(() {
-          _searchSuggest = list;
-        });
-      });
+    final keyword = value.trim();
+    if (keyword.isEmpty) {
+      setState(() => _searchSuggest = []);
+      return;
+    }
+    _debounceTimer = Timer(const Duration(milliseconds: 400), () async {
+      try {
+        final results = await service.searchSuggest(keyword);
+        if (!mounted ||
+            !_focusNode.hasFocus ||
+            _keywordController.text.trim() != keyword) {
+          return;
+        }
+        setState(() => _searchSuggest = results);
+      } catch (_) {
+        // A failed suggestion request leaves manual search available.
+      }
     });
   }
 
   Widget buildSearchHistory() {
     return Container(
-      padding: const EdgeInsets.only(left: 10, right: 10),
-      width: double.infinity,
-      child: ListView(
-        children: _searchHistory.map((keyword) {
-          return InkWell(
-            borderRadius: const BorderRadius.all(Radius.circular(4)),
-            onTap: () {
-              _keywordController.text = keyword;
-              _searchHandler(true);
-            },
-            child: Container(
-              padding: const EdgeInsets.only(
-                top: 6,
-                bottom: 6,
-                left: 18,
-                right: 12,
+        padding: const EdgeInsets.only(left: 10, right: 10),
+        width: double.infinity,
+        child: ListView(
+          children: _searchHistory.map((keyword) {
+            return InkWell(
+              borderRadius: const BorderRadius.all(Radius.circular(4)),
+              onTap: () {
+                _keywordController.text = keyword;
+                _searchHandler(true);
+              },
+              child: Container(
+                padding: const EdgeInsets.only(
+                  top: 6,
+                  bottom: 6,
+                  left: 18,
+                  right: 12,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(keyword,
+                        style: const TextStyle(
+                            fontSize: 16,
+                            color: Color.fromARGB(255, 146, 146, 145),
+                            overflow: TextOverflow.ellipsis)),
+                    InkWell(
+                      child: const Icon(Icons.delete_forever,
+                          size: 16, color: Color.fromARGB(255, 146, 146, 145)),
+                      onTap: () {
+                        updateSearchHistory(keyword, isDelete: true);
+                      },
+                    )
+                  ],
+                ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(keyword, style: const TextStyle(fontSize: 16, color: Color.fromARGB(255, 146, 146, 145), overflow: TextOverflow.ellipsis)),
-                  InkWell(
-                    child: const Icon(Icons.delete_forever, size: 16, color: Color.fromARGB(255, 146, 146, 145)),
-                    onTap: () {
-                      updateSearchHistory(keyword, isDelete: true);
-                    },
-                  )
-                ],
-              ),
-            ),
-          );
-        }).toList(),
-      )
-    );
+            );
+          }).toList(),
+        ));
   }
 
   Widget buildSearchSuggest() {
@@ -349,6 +392,10 @@ class SearchViewState extends State<SearchView> {
       return buildSearchSuggest();
     }
     if (_searchItemList.isEmpty) {
+      if (_loading) return const Center(child: CircularProgressIndicator());
+      if (_query.isNotEmpty && !_focusNode.hasFocus) {
+        return const Center(child: Text("没有找到相关视频"));
+      }
       return buildSearchHistory();
     }
 
@@ -364,7 +411,11 @@ class SearchViewState extends State<SearchView> {
           return SizedBox(
             height: 40,
             child: Center(
-              child: _loading ? const Text("加载中") : const Text("到底了"),
+              child: _loading
+                  ? const CircularProgressIndicator(strokeWidth: 2)
+                  : !_hasMore
+                      ? const Text("到底了")
+                      : null,
             ),
           );
         }
@@ -393,11 +444,16 @@ class SearchViewState extends State<SearchView> {
           ),
           subtitle: TextTags(tags: tags),
           onTap: () async {
-            final detail = await service.searchDetail(item.id);
-            if (detail.type == SearchType.orderName) {
-              _onClickCollection(detail);
-            } else {
-              _onClickMusic(detail);
+            try {
+              final detail = await service.searchDetail(item.id);
+              if (!mounted) return;
+              if (detail.type == SearchType.orderName) {
+                _onClickCollection(detail);
+              } else {
+                _onClickMusic(detail);
+              }
+            } catch (_) {
+              if (mounted) BotToast.showText(text: "视频详情加载失败");
             }
           },
         );

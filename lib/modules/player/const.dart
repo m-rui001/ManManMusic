@@ -1,3 +1,5 @@
+import "dart:math";
+
 import "package:flutter/material.dart";
 
 /// 播放状态
@@ -44,4 +46,25 @@ enum PlayerMode {
   static PlayerMode getByValue(int value) {
     return values.firstWhere((element) => element.value == value);
   }
+}
+
+// Returns null when sequential playback reaches the edge of a queue.
+int? nextQueueIndex({
+  required int length,
+  required int current,
+  required int offset,
+  required PlayerMode mode,
+}) {
+  if (length < 1) return null;
+  if (mode == PlayerMode.random && offset > 0 && length > 1) {
+    if (current < 0) return Random().nextInt(length);
+    final candidate = Random().nextInt(length - 1);
+    return candidate < current ? candidate : candidate + 1;
+  }
+  if (current < 0) return offset > 0 ? 0 : null;
+  final next = current + offset;
+  if (mode == PlayerMode.listOrder && (next < 0 || next >= length)) {
+    return null;
+  }
+  return next % length;
 }

@@ -431,18 +431,24 @@ class BiliClient implements OriginService {
       final dash = data is Map ? data["dash"] : null;
       if (dash is! Map) throw StateError("该视频没有可播放的音轨");
 
-      String? url(Map track) {
-        for (final value in [track["baseUrl"], track["base_url"]]) {
-          if (value is String && value.isNotEmpty) return value;
-        }
-        for (final list in [track["backupUrl"], track["backup_url"]]) {
-          if (list is List) {
-            for (final value in list) {
-              if (value is String && value.isNotEmpty) return value;
-            }
+      Iterable<MusicUrl> urls(Map track, String format) sync* {
+        final backup = track["backupUrl"] ?? track["backup_url"];
+        final bitrate = (track["bandwidth"] as num?)?.toInt() ?? 0;
+        for (final value in [
+          track["baseUrl"] ?? track["base_url"],
+          if (backup is List && backup.isNotEmpty) backup.first,
+        ]) {
+          final uri = value is String ? Uri.tryParse(value) : null;
+          if (uri == null || !uri.hasAuthority || uri.scheme != "https") {
+            continue;
           }
+          yield MusicUrl(
+            url: value as String,
+            headers: {"Referer": _referer},
+            format: format,
+            bitrate: bitrate,
+          );
         }
-        return null;
       }
 
       final flac = dash["flac"];
@@ -453,16 +459,26 @@ class BiliClient implements OriginService {
       int bandwidth(Map item) => (item["bandwidth"] as num?)?.toInt() ?? 0;
       stereo.sort((a, b) => bandwidth(b).compareTo(bandwidth(a)));
       final candidates = [
-        if (lossless is Map) lossless,
-        ...stereo,
+        if (lossless is Map) ...urls(lossless, "FLAC"),
+        for (final track in stereo.take(2))
+          ...urls(
+              track, "${track["codecs"]}".contains("mp4a") ? "AAC" : "DASH"),
         if (dolby is Map && dolby["audio"] is List)
-          ...(dolby["audio"] as List).whereType<Map>(),
+          for (final track in (dolby["audio"] as List).whereType<Map>().take(1))
+            ...urls(track, "杜比音轨"),
       ];
-      for (final candidate in candidates) {
-        final src = url(candidate);
-        if (src != null) {
-          return MusicUrl(url: src, headers: {"Referer": _referer});
-        }
+      final seen = <String>{};
+      final usable =
+          candidates.where((candidate) => seen.add(candidate.url)).toList();
+      if (usable.isNotEmpty) {
+        final best = usable.first;
+        return MusicUrl(
+          url: best.url,
+          headers: best.headers,
+          format: best.format,
+          bitrate: best.bitrate,
+          alternatives: usable.skip(1).toList(),
+        );
       }
       throw StateError("获取音频地址失败：没有可用音轨");
     }

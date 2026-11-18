@@ -1,6 +1,7 @@
 import "dart:async";
 
 import "package:audio_service/audio_service.dart";
+import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/party/party_control.dart";
 import "package:bobomusic/modules/player/service.dart";
 import "package:bobomusic/modules/player/audio_equalizer.dart";
@@ -29,6 +30,9 @@ class PlayerModel extends ChangeNotifier {
 
   /// 当前播放进度
   Duration get currentPosition => _audio?.position ?? Duration.zero;
+  Duration get bufferedPosition => _audio?.bufferedPosition ?? Duration.zero;
+  Stream<Duration>? get positions => _audio?.positionStream;
+  Stream<Duration>? get bufferedPositions => _audio?.bufferedPositionStream;
 
   bool get isPlaying {
     return _playerHandler?.player.isPlaying ?? false;
@@ -48,10 +52,12 @@ class PlayerModel extends ChangeNotifier {
   }) async {
     _playerHandler = playerHandler;
     _playerService = playerService;
-    await playerHandler.player.init();
+    _subscriptions
+        .add(eventBus.on<RefreshPlayerCard>().listen((_) => notifyListeners()));
     _subscriptions.add(_audio?.playerStateStream.listen((event) {
       notifyListeners();
     }));
+    await playerHandler.player.init();
   }
 
   @override
@@ -64,6 +70,9 @@ class PlayerModel extends ChangeNotifier {
 
   List<MusicItem> get collectionQueue =>
       _playerHandler?.player.collectionQueue ?? const [];
+
+  String get sourceDescription =>
+      _playerHandler?.player.sourceDescription ?? "";
 
   AudioEqualizer? get equalizer => _playerHandler?.player.equalizer;
 
@@ -121,20 +130,20 @@ class PlayerModel extends ChangeNotifier {
   }
 
   // 添加到待播放列表中
-  void addPlayerList(List<MusicItem> musics, {bool? showToast}) {
-    _playerHandler?.player.addPlayerList(musics, showToast: showToast);
+  Future<void> addPlayerList(List<MusicItem> musics, {bool? showToast}) async {
+    await _playerHandler?.player.addPlayerList(musics, showToast: showToast);
     notifyListeners();
   }
 
   // 在待播放列表中移除
-  void removePlayerList(List<MusicItem> musics) {
-    _playerHandler?.player.removePlayerList(musics);
+  Future<void> removePlayerList(List<MusicItem> musics) async {
+    await _playerHandler?.player.removePlayerList(musics);
     notifyListeners();
   }
 
   // 清空播放列表
-  void clearPlayerList() {
-    _playerHandler?.player.clearPlayerList();
+  Future<void> clearPlayerList() async {
+    await _playerHandler?.player.clearPlayerList();
     notifyListeners();
   }
 

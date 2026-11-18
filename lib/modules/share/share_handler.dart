@@ -166,8 +166,8 @@ Future<void> openBiliShareText(BuildContext context, String text) async {
     },
   );
 
-  if (picked != null) {
-    await player.play(music: picked);
+  if (picked != null && context.mounted) {
+    await player.play(music: picked, collection: musics);
   }
 }
 

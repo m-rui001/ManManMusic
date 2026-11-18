@@ -6,12 +6,14 @@ import "package:just_audio/just_audio.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
 enum AudioPreset {
-  original("原声"),
-  clear("清晰人声"),
-  warm("柔和高频");
+  original("原声", "使用音轨原有的动态和频响"),
+  clear("清晰人声", "减弱低频和低中频的掩蔽"),
+  warm("柔和高频", "减弱刺耳的高频"),
+  night("夜间均衡", "压低突出的响声，让小音量时更容易听清");
 
-  const AudioPreset(this.label);
+  const AudioPreset(this.label, this.description);
   final String label;
+  final String description;
 }
 
 class AudioEqualizer {

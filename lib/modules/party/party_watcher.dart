@@ -97,7 +97,8 @@ class PartyWatcher with WidgetsBindingObserver {
   Future<void> _tick() async {
     if (!enabled || _busy) return;
     // 自己就在房间里，正在听歌，不用提醒
-    if (PartyService.instance.inRoom) return;
+    final party = PartyService.instance;
+    if (party.isGuest || party.members.isNotEmpty) return;
 
     await PartyRoster.instance.init();
     final all = PartyRoster.instance.members;

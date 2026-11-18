@@ -2,7 +2,6 @@ package com.bobomusic
 
 import android.content.Intent
 import android.os.Bundle
-import android.media.audiofx.Equalizer
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -12,9 +11,6 @@ import io.flutter.plugin.common.MethodChannel
  * 同时接管「分享到满满音乐」的文本 / 链接。
  */
 class MainActivity : AudioServiceActivity() {
-
-    private var equalizer: Equalizer? = null
-    private var effectSession: Int? = null
 
     private var pendingShare: String? = null
     private var channel: MethodChannel? = null
@@ -42,7 +38,7 @@ class MainActivity : AudioServiceActivity() {
                 if (call.method != "equalizer") {
                     result.notImplemented()
                 } else {
-                    result.success(applyEqualizer(
+                    result.success(PlaybackEffects.apply(
                         call.argument<Int>("session"),
                         call.argument<String>("preset")
                     ))
@@ -57,44 +53,6 @@ class MainActivity : AudioServiceActivity() {
         // 直接覆盖也是安全的：Dart 侧只消费一次
         pendingShare = text
         channel?.invokeMethod("onSharedText", text)
-    }
-
-    private fun applyEqualizer(session: Int?, preset: String?): Boolean {
-        return try {
-            if (session == null || session <= 0 || preset == "original") {
-                releaseEqualizer()
-            } else {
-                if (effectSession != session) {
-                    releaseEqualizer()
-                    equalizer = Equalizer(0, session)
-                    effectSession = session
-                }
-                val effect = checkNotNull(equalizer)
-                val range = effect.bandLevelRange
-                for (index in 0 until effect.numberOfBands.toInt()) {
-                    val band = index.toShort()
-                    val hz = effect.getCenterFreq(band) / 1000
-                    // Android uses millibels. Attenuation keeps headroom for loud masters.
-                    val level = when (preset) {
-                        "clear" -> if (hz < 200) -200 else if (hz < 700) -130 else 0
-                        "warm" -> if (hz > 5000) -230 else if (hz > 1800) -110 else 0
-                        else -> 0
-                    }
-                    effect.setBandLevel(band, level.coerceIn(range[0].toInt(), range[1].toInt()).toShort())
-                }
-                check(effect.setEnabled(true) == 0)
-            }
-            true
-        } catch (_: RuntimeException) {
-            releaseEqualizer()
-            false
-        }
-    }
-
-    private fun releaseEqualizer() {
-        equalizer?.release()
-        equalizer = null
-        effectSession = null
     }
 
     /** 从 ACTION_SEND / ACTION_VIEW 中取出文本或链接 */

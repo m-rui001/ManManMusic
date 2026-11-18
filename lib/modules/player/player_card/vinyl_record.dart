@@ -80,9 +80,11 @@ class VinylRecordWidgetState extends State<VinylRecordWidget>
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final screenSize = MediaQuery.of(context).size;
-        final isLandscape = screenSize.height < screenSize.width;
-        final containerSize = isLandscape ?constraints.maxWidth * 0.7 : constraints.maxWidth;
+        final containerSize = min(
+          min(constraints.maxWidth, constraints.maxHeight - 20),
+          440.0,
+        );
+        if (containerSize <= 0) return const SizedBox.shrink();
         final recordSize = containerSize * 0.9;
 
         return Stack(
@@ -105,14 +107,14 @@ class VinylRecordWidgetState extends State<VinylRecordWidget>
                     ],
                     borderRadius: const BorderRadius.all(Radius.circular(4)),
                     image: _imageInfo != null
-                      ? DecorationImage(
-                          image: _imageProvider!,
-                          fit: BoxFit.cover,
-                        )
-                      : DecorationImage(
-                          image: AssetImage(widget.errorCoverUrl),
-                          fit: BoxFit.cover,
-                        ),
+                        ? DecorationImage(
+                            image: _imageProvider!,
+                            fit: BoxFit.cover,
+                          )
+                        : DecorationImage(
+                            image: AssetImage(widget.errorCoverUrl),
+                            fit: BoxFit.cover,
+                          ),
                   ),
                 ),
                 ClipRect(
@@ -189,7 +191,8 @@ class VinylRecordPainter extends CustomPainter {
       for (int i = 0; i < 8; i++) {
         if (random.nextDouble() > 0.6) continue; // 40%概率跳过
 
-        final angle = baseAngle + i * angleStep + random.nextDouble() * 0.2 - 0.1;
+        final angle =
+            baseAngle + i * angleStep + random.nextDouble() * 0.2 - 0.1;
         final dotRadius = r + random.nextDouble() * 4 - 2;
         final position = Offset(
           center.dx + dotRadius * cos(angle),
@@ -223,7 +226,8 @@ class VinylRecordPainter extends CustomPainter {
         targetImage.image.height.toDouble(),
       );
       final fitted = applyBoxFit(BoxFit.cover, sourceSize, coverRect.size);
-      final sourceRect = Alignment.center.inscribe(fitted.source, Offset.zero & sourceSize);
+      final sourceRect =
+          Alignment.center.inscribe(fitted.source, Offset.zero & sourceSize);
       final destRect = Alignment.center.inscribe(fitted.destination, coverRect);
 
       canvas.drawImageRect(targetImage.image, sourceRect, destRect, Paint());

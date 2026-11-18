@@ -2,9 +2,7 @@ import "dart:async";
 
 import "package:bobomusic/modules/party/party_control.dart";
 import "package:bobomusic/modules/party/party_page.dart";
-import "package:bobomusic/modules/player/const.dart";
 import "package:bobomusic/modules/player/artwork.dart";
-import "package:bobomusic/modules/player/player_card/current_list.dart";
 import "package:bobomusic/utils/color.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
@@ -12,7 +10,6 @@ import "package:bobomusic/modules/player/player_card/card.dart";
 import "package:bobomusic/modules/player/list.dart";
 import "package:bobomusic/modules/player/model.dart";
 import "package:provider/provider.dart";
-
 
 class PlayerView extends StatelessWidget {
   final bool cancelMargin;
@@ -166,8 +163,8 @@ class PlayButton extends StatelessWidget {
           iconSize: size,
           padding: const EdgeInsets.only(bottom: 0),
           icon: player.isPlaying
-            ? const Icon(Icons.pause_circle_filled)
-            : const Icon(Icons.play_circle_filled),
+              ? const Icon(Icons.pause_circle_filled)
+              : const Icon(Icons.play_circle_filled),
           onPressed: () {
             if (PartyControl.blocked()) return;
             if (player.isPlaying) {
@@ -182,106 +179,43 @@ class PlayButton extends StatelessWidget {
   }
 }
 
-/// 上一首
-class PrevButton extends StatefulWidget {
+class PrevButton extends StatelessWidget {
   final double? size;
   final Color? color;
-
-  const PrevButton({super.key, this.size = 30.0, this.color});
-
-  @override
-  PrevButtonState createState() => PrevButtonState();
-}
-
-class PrevButtonState extends State<PrevButton> {
-  bool isLoading = false;
+  const PrevButton({super.key, this.size = 30, this.color});
 
   @override
   Widget build(BuildContext context) {
-    Color primaryColor = Theme.of(context).primaryColor;
-
-    return Consumer<PlayerModel>(
-      builder: (context, player, child) {
-        final disabled = player.collectionQueue.isEmpty && (player.current?.prev.isEmpty ?? true);
-
-        return IconButton(
-          color: widget.color ?? primaryColor,
-          iconSize: widget.size,
-          onPressed: () {
-            if (PartyControl.blocked()) return;
-            if (player.current == null) {
-              BotToast.showText(text: "没有正在听的歌曲，无法播放下一曲");
-              return;
-            }
-
-            if (player.playerMode == PlayerMode.signalLoop) {
-              BotToast.showText(text: "单曲循环中，重新播放");
-              player.prev();
-              return;
-            }
-
-            if (disabled) {
-              BotToast.showText(text: "网络歌曲不支持此操作，请先收藏到歌单或收藏合集或添加整个合集到待播放列表", duration: const Duration(seconds: 8));
-              return;
-            }
-
-            player.prev();
-          },
-          icon: const Icon(Icons.skip_previous),
-        );
-      },
+    final player = context.watch<PlayerModel>();
+    return IconButton(
+      tooltip: "上一首",
+      color: color ?? Theme.of(context).primaryColor,
+      iconSize: size,
+      onPressed: player.current == null ? null : player.prev,
+      icon: const Icon(Icons.skip_previous_rounded),
     );
   }
 }
 
-/// 下一首
-class NextButton extends StatefulWidget {
+class NextButton extends StatelessWidget {
   final double? size;
   final Color? color;
-
-  const NextButton({super.key, this.size = 30.0, this.color});
-
-  @override
-  NextButtonState createState() => NextButtonState();
-}
-
-class NextButtonState extends State<NextButton> {
-  bool isLoading = false;
+  const NextButton({super.key, this.size = 30, this.color});
 
   @override
   Widget build(BuildContext context) {
-    Color primaryColor = Theme.of(context).primaryColor;
-
-    return Consumer<PlayerModel>(
-      builder: (context, player, child) {
-        final disabled = player.collectionQueue.isEmpty && (player.current?.next.isEmpty ?? true);
-
-        return IconButton(
-          color: widget.color ?? primaryColor,
-          iconSize: widget.size,
-          onPressed: () {
-            if (PartyControl.blocked()) return;
-            if (player.current == null) {
-              BotToast.showText(text: "没有正在听的歌曲，无法播放下一曲");
-              return;
-            }
-
-            if (player.playerMode == PlayerMode.signalLoop) {
-              BotToast.showText(text: "单曲循环中，重新播放");
-              player.next();
-              return;
-            }
-
-            if (disabled) {
-              BotToast.showText(text: "网络歌曲不支持此操作，请先收藏到歌单或收藏合集或添加整个合集到待播放列表", duration: const Duration(seconds: 8));
-              return;
-            }
-
-            player.next();
-          },
-          icon: const Icon(Icons.skip_next),
-        );
-      },
+    final player = context.watch<PlayerModel>();
+    final music = player.current;
+    final canSkip = music != null &&
+        (music.orderName.isNotEmpty ||
+            player.collectionQueue.isNotEmpty ||
+            player.playerList.isNotEmpty);
+    return IconButton(
+      tooltip: "下一首",
+      color: color ?? Theme.of(context).primaryColor,
+      iconSize: size,
+      onPressed: canSkip ? player.next : null,
+      icon: const Icon(Icons.skip_next_rounded),
     );
   }
 }
@@ -302,6 +236,7 @@ class PlayerListButton extends StatelessWidget {
         return IconButton(
           color: color ?? primaryColor,
           iconSize: size,
+          tooltip: "播放队列",
           onPressed: () {
             showPlayerList(context);
           },
@@ -330,6 +265,7 @@ class ModeButton extends StatelessWidget {
         return IconButton(
           color: color ?? primaryColor,
           iconSize: size,
+          tooltip: player.playerMode.name,
           onPressed: () {
             player.togglePlayerMode();
             BotToast.showText(text: "${player.playerMode.name}模式");
@@ -344,18 +280,13 @@ class ModeButton extends StatelessWidget {
 }
 
 /// 显示待播放列表
-Future showPlayerList(BuildContext context) {
-  final collection = context.read<PlayerModel>().collectionQueue;
-  final NavigatorState navigator = Navigator.of(context, rootNavigator: false);
-  return navigator.push(ModalBottomSheetRoute(
-    isScrollControlled: true,
-    showDragHandle: true,
-    useSafeArea: true,
-    builder: (context) {
-      return collection.isEmpty ? const PlayerList() : CurrentList(musicList: collection);
-    },
-  ));
-}
+Future<void> showPlayerList(BuildContext context) => showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (context) => const PlayerList(),
+    );
 
 /// 显示播放卡片
 Future<void>? showPlayerCard(BuildContext context) {

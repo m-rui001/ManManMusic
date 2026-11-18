@@ -10,7 +10,8 @@ import "package:provider/provider.dart";
 
 class CurrentList extends StatefulWidget {
   final List<MusicItem> musicList;
-  const CurrentList({super.key, required this.musicList});
+  final bool waiting;
+  const CurrentList({super.key, required this.musicList, this.waiting = false});
 
   @override
   State<CurrentList> createState() => CurrentListState();
@@ -38,117 +39,71 @@ class CurrentListState extends State<CurrentList> {
     final player = Provider.of<PlayerModel>(context, listen: false);
     if (player.current == null) return;
 
-    // 找到当前播放歌曲在列表中的索引
-    int? targetIndex;
-    for (int i = 0; i < widget.musicList.length; i++) {
-      final item = widget.musicList[i];
-      // 优先通过 playId 匹配，再通过 id 匹配
-      if (item.playId.isNotEmpty && player.current!.playId.isNotEmpty && item.playId == player.current!.playId) {
-        targetIndex = i;
-        break;
-      } else if (item.id == player.current!.id) {
-        targetIndex = i;
-        break;
-      }
-    }
+    final index =
+        widget.musicList.indexWhere((item) => _isCurrent(item, player.current));
+    if (index < 0 || !_scrollController.hasClients) return;
+    _scrollController.jumpTo(
+      (index * 64.0).clamp(0, _scrollController.position.maxScrollExtent),
+    );
+  }
 
-    // 如果找到目标索引，则滚动到该位置
-    if (targetIndex != null && _scrollController.hasClients) {
-      // 每首歌大约 60 像素高度（估算），如果更准确的话可以通过 GlobalKey 计算
-      const double itemHeight = 64;
-      final double scrollOffset = targetIndex * itemHeight;
-
-      // 滚动到目标位置
-      _scrollController.animateTo(
-        scrollOffset.clamp(0, _scrollController.position.maxScrollExtent),
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
-    }
+  bool _isCurrent(MusicItem item, MusicItem? current) {
+    if (current == null) return false;
+    if (item.playId.isNotEmpty) return item.playId == current.playId;
+    return item.id == current.id && item.orderName == current.orderName;
   }
 
   @override
   Widget build(BuildContext context) {
-    double height = MediaQuery.of(context).size.height * 0.6;
-    double topHeight = 56;
-    return Consumer<PlayerModel>(
-      builder: (context, player, child) {
-        return SizedBox(
-          height: height,
-          width: MediaQuery.of(context).size.width,
-          child: Flex(
-            direction: Axis.vertical,
+    final player = context.watch<PlayerModel>();
+    final selectedColor = Theme.of(context).colorScheme.primaryContainer;
+    final items = widget.musicList;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
             children: [
-              _buildTopBar(context, player, topHeight),
-              _buildList(context, player, height - topHeight)
+              Expanded(
+                  child: Text(
+                "${items.length} 首",
+                style: Theme.of(context).textTheme.labelMedium,
+              )),
+              if (widget.waiting)
+                TextButton(
+                  onPressed: items.isEmpty ? null : player.clearPlayerList,
+                  child: const Text("清空"),
+                ),
             ],
           ),
-        );
-      },
-    );
-  }
-
-  Widget _buildTopBar(BuildContext context, PlayerModel player, double topHeight) {
-    return Container(
-      height: topHeight,
-      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
-      child: Row(
-        children: [
-          Expanded(
-            child: Row(
-              children: [
-                const Text(
-                  "当前播放列表",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        Expanded(
+          child: items.isEmpty
+              ? Center(child: Text(widget.waiting ? "待播放列表为空" : "还没有正在播放的歌曲"))
+              : ListView.builder(
+                  controller: _scrollController,
+                  itemExtent: 64,
+                  padding: const EdgeInsets.only(bottom: 8),
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    return ColoredBox(
+                      key: ValueKey(item.playId.isEmpty
+                          ? "$index:${item.id}"
+                          : item.playId),
+                      color: _isCurrent(item, player.current)
+                          ? selectedColor
+                          : Colors.transparent,
+                      child: MusicListTile(
+                        item,
+                        showAddIcon: false,
+                        onMore: () => showItemSheet(context, item, player),
+                      ),
+                    );
+                  },
                 ),
-                const SizedBox(width: 10),
-                Text(
-                  "${widget.musicList.length}首歌曲",
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).disabledColor,
-                  ),
-                )
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildList(BuildContext context, PlayerModel player, double h) {
-    if (widget.musicList.isEmpty) {
-      return const Center(child: Text("没有歌曲"));
-    }
-
-    return SizedBox(
-      height: h,
-      child: ListView.builder(
-        controller: _scrollController,
-        itemExtent: 64,
-        padding: const EdgeInsets.only(bottom: 20),
-        itemCount: widget.musicList.length,
-        itemBuilder: (context, index) {
-          final item = widget.musicList[index];
-          // 检查是否是当前播放的歌曲
-          final isCurrentPlaying = (item.playId.isNotEmpty && player.current?.playId.isNotEmpty == true && item.playId == player.current?.playId) ||
-              (item.id == player.current?.id);
-
-          return Container(
-            decoration: isCurrentPlaying
-                ? BoxDecoration(
-                    color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
-                  )
-                : null,
-            child: MusicListTile(
-              item,
-              showAddIcon: false,
-              onMore: () => showItemSheet(context, item, player),
-            ),
-          );
-        },
-      ),
+        ),
+      ],
     );
   }
 
@@ -170,17 +125,25 @@ class CurrentListState extends State<CurrentList> {
       ),
       SheetItem(
         title: const Text("添加到歌单"),
-        onPressed: () => collectToMusicOrder(context: context, musicList: [data]),
+        onPressed: () =>
+            collectToMusicOrder(context: context, musicList: [data]),
       ),
-      SheetItem(
-        title: const Text("添加到待播放列表"),
-        onPressed: () => player.addPlayerList([data], showToast: true),
-      ),
+      if (widget.waiting)
+        SheetItem(
+          title: const Text("移出待播放列表"),
+          onPressed: () => player.removePlayerList([data]),
+        )
+      else
+        SheetItem(
+          title: const Text("添加到待播放列表"),
+          onPressed: () => player.addPlayerList([data], showToast: true),
+        ),
       SheetItem(
         title: const Text("下载"),
         onPressed: () {
           checkMusicLocalRepeat(context, data, () {
-            final downloadModel = Provider.of<DownloadModel>(context, listen: false);
+            final downloadModel =
+                Provider.of<DownloadModel>(context, listen: false);
             downloadModel.download([data]);
           });
         },

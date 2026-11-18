@@ -23,7 +23,8 @@ class PartyTabView extends StatefulWidget {
   State<PartyTabView> createState() => PartyTabViewState();
 }
 
-class PartyTabViewState extends State<PartyTabView> with WidgetsBindingObserver {
+class PartyTabViewState extends State<PartyTabView>
+    with WidgetsBindingObserver {
   final PartySession session = PartySession.instance;
   final BiliAuth auth = BiliAuth.instance;
   final PartyRoster roster = PartyRoster.instance;
@@ -60,7 +61,8 @@ class PartyTabViewState extends State<PartyTabView> with WidgetsBindingObserver 
 
   void _startProbing() {
     _probeTimer?.cancel();
-    _probeTimer = Timer.periodic(const Duration(seconds: 45), (_) => _probeAll());
+    _probeTimer =
+        Timer.periodic(const Duration(seconds: 45), (_) => _probeAll());
   }
 
   @override
@@ -106,7 +108,7 @@ class PartyTabViewState extends State<PartyTabView> with WidgetsBindingObserver 
   }
 
   /// 只探测名单里的人
-  Future<void> _probeAll() async {
+  Future<void> _probeAll({bool force = false}) async {
     if (!mounted || _probing) return;
     if (roster.members.isEmpty) {
       if (mounted) setState(() => probes = {});
@@ -119,7 +121,8 @@ class PartyTabViewState extends State<PartyTabView> with WidgetsBindingObserver 
     final errors = <int>{};
     await PartyService.forEachLimited(roster.members, (member) async {
       try {
-        result[member.mid] = await PartyService.instance.probeRoom(member.roomId);
+        result[member.mid] =
+            await PartyService.instance.probeRoom(member.roomId, force: force);
       } catch (_) {
         errors.add(member.mid);
         if (probes[member.mid]?.isFresh == true) {
@@ -201,7 +204,8 @@ class PartyTabViewState extends State<PartyTabView> with WidgetsBindingObserver 
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).primaryColor;
     final members = roster.members;
-    final listeningCount = probes.values.where((e) => e?.isFresh == true).length;
+    final listeningCount =
+        probes.values.where((e) => e?.isFresh == true).length;
 
     return Scaffold(
       appBar: AppBar(
@@ -217,7 +221,7 @@ class PartyTabViewState extends State<PartyTabView> with WidgetsBindingObserver 
                     if (session.inRoom && !session.connected) {
                       await session.retryConnection();
                     }
-                    await _probeAll();
+                    await _probeAll(force: true);
                   },
           ),
           const SizedBox(width: 4),
@@ -228,7 +232,7 @@ class PartyTabViewState extends State<PartyTabView> with WidgetsBindingObserver 
         child: Container(
           color: const Color.fromARGB(255, 245, 245, 245),
           child: RefreshIndicator(
-            onRefresh: _probeAll,
+            onRefresh: () => _probeAll(force: true),
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
@@ -294,7 +298,8 @@ class PartyTabViewState extends State<PartyTabView> with WidgetsBindingObserver 
                   ...members.map(
                     (m) => PartyRosterTile(
                       member: m,
-                      probe: probes[m.mid]?.isFresh == true ? probes[m.mid] : null,
+                      probe:
+                          probes[m.mid]?.isFresh == true ? probes[m.mid] : null,
                       statusUnavailable: !probes.containsKey(m.mid) ||
                           _probeErrors.contains(m.mid),
                       onTap: _busy ? () {} : () => _join(m),
@@ -354,9 +359,7 @@ class PartyTabViewState extends State<PartyTabView> with WidgetsBindingObserver 
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              locked
-                  ? "正在跟房主一起听：只能听，想自己点歌请先退出"
-                  : "你在这个房间有共管权限，可以一起换歌、拖进度",
+              locked ? "正在跟房主一起听：只能听，想自己点歌请先退出" : "你在这个房间有共管权限，可以一起换歌、拖进度",
               style: TextStyle(
                 fontSize: 10,
                 height: 1.6,

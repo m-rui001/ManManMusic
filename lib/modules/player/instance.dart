@@ -10,9 +10,7 @@ import "package:bobomusic/modules/player/const.dart";
 import "package:bobomusic/modules/player/audio_equalizer.dart";
 import "package:bobomusic/modules/player/source.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
-import "package:bobomusic/utils/throttle.dart";
 import "package:bot_toast/bot_toast.dart";
-import "package:flutter_easyloading/flutter_easyloading.dart";
 import "package:just_audio/just_audio.dart";
 import "package:shared_preferences/shared_preferences.dart";
 import "package:uuid/uuid.dart";
@@ -39,6 +37,7 @@ class BBPlayer {
   final List<MusicItem> playerList = [];
   List<MusicItem> collectionQueue = const [];
   String? _loadedTrack;
+  String sourceDescription = "";
   static String _track(MusicItem item) => "${item.origin.value}:${item.id}";
   PlayerMode playerMode = PlayerMode.listLoop;
 
@@ -52,24 +51,9 @@ class BBPlayer {
       pause();
     });
     unawaited(equalizer.init());
-    var throttleEndNext = Throttle(const Duration(seconds: 1));
-
     _subscriptions.add(audio.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.loading) {
-        isLoading = true;
-      }
-      if (state.processingState == ProcessingState.ready) {
-        isLoading = false;
-      }
-      if (state.processingState == ProcessingState.completed) {
-        throttleEndNext.call(() {
-          if (PartyService.instance.isGuest) return pause();
-          if (autoClose.isPlayDoneAutoClose) {
-            autoClose.isPlayDoneAutoClose = false;
-            return pause();
-          }
-          return endNext();
-        });
+      if (state.processingState == ProcessingState.completed && state.playing) {
+        unawaited(_completeTrack());
       }
     }));
 
@@ -153,32 +137,6 @@ class BBPlayer {
     if (isCurrent() && playing && !audio.playing) _startPlayback();
   }
 
-  Future<void> _stepCollection(int offset) async {
-    final index = collectionQueue.indexWhere((entry) => entry == current);
-    if (index < 0) return;
-    var nextIndex = index + offset;
-    if (playerMode == PlayerMode.random && offset > 0) {
-      final others = collectionQueue.where((item) => item != current).toList()
-        ..shuffle();
-      if (others.isNotEmpty) {
-        await play(music: others.first);
-        return;
-      }
-    }
-    if (playerMode == PlayerMode.listOrder &&
-        (nextIndex < 0 || nextIndex >= collectionQueue.length)) {
-      await pause();
-      return;
-    }
-    nextIndex %= collectionQueue.length;
-    if (nextIndex == index) {
-      await audio.seek(Duration.zero);
-      _startPlayback();
-    } else {
-      await play(music: collectionQueue[nextIndex]);
-    }
-  }
-
   Future<void> resume() async {
     final music = current;
     if (music == null || audio.playing) return;
@@ -197,195 +155,85 @@ class BBPlayer {
     _updateLocalStorage();
   }
 
-  // 上一首
-  Future<void> prev() async {
-    if (collectionQueue.isNotEmpty) return _stepCollection(-1);
-    if (current != null && !await db.isTableExists(current!.orderName)) {
-      BotToast.showText(text: "找不到上一曲");
-      return;
-    }
-
-    await audio.seek(Duration.zero);
-
-    if (current != null && current!.orderName.isNotEmpty) {
-      final newCurrentMusic =
-          await db.queryByParam(current!.orderName, current!.id);
-
-      // 检查当前播放歌曲在列表中的 prev 变了没有，变了要重新赋值，变了就意味着列表里有歌曲增减
-      if (newCurrentMusic.isNotEmpty &&
-          newCurrentMusic[0]["prev"] != current!.prev) {
-        current = row2MusicItem(dbRow: newCurrentMusic[0]);
-      }
-
-      // 如果当前模式是列表顺序播放
-      if (playerMode == PlayerMode.listOrder && current!.isFirst == "true") {
-        BotToast.showText(text: "已经是列表第一首 QAQ");
-        return;
-      }
-
-      final lastMusic =
-          await db.queryByParam(current!.orderName, current!.prev);
-
-      if (lastMusic.isNotEmpty) {
-        await play(music: row2MusicItem(dbRow: lastMusic[0]));
-      } else {
-        BotToast.showText(
-            text: "找不到上一曲。当前歌曲所在歌单：${current!.orderName}",
-            duration: const Duration(seconds: 4));
-        return;
-      }
-    }
-
-    _updateLocalStorage();
+  Future<void> seek(Duration position) async {
+    await audio.seek(position);
+    await _cachePosition();
   }
 
-  // 下一首
-  Future<void> next() => endNext();
+  Future<void> prev() => _step(-1);
 
-  // 结束播放
-  Future<void> endNext() async {
-    if (current == null) return;
+  Future<void> next() => _step(1);
 
-    if (playerMode == PlayerMode.signalLoop) {
+  bool _advancing = false;
+
+  Future<void> _completeTrack() async {
+    if (_advancing) return;
+    _advancing = true;
+    try {
+      if (PartyService.instance.isGuest || autoClose.isPlayDoneAutoClose) {
+        autoClose.isPlayDoneAutoClose = false;
+        await pause();
+      } else {
+        await _step(1, completed: true);
+      }
+    } catch (_) {
+      await pause();
+    } finally {
+      _advancing = false;
+    }
+  }
+
+  Future<void> _step(int offset, {bool completed = false}) async {
+    final music = current;
+    if (music == null || isLoading) return;
+    if (completed && playerMode == PlayerMode.signalLoop) {
       await audio.seek(Duration.zero);
       _startPlayback();
-      _updateLocalStorage();
-      return;
-    }
-    if (collectionQueue.isNotEmpty) return _stepCollection(1);
-    if (current!.orderName.isEmpty ||
-        !await db.isTableExists(current!.orderName)) {
-      await pause();
       return;
     }
 
-    // 随机
-    if (playerMode == PlayerMode.random) {
-      final randomList = await db.queryRandom(tableName: current!.orderName);
-
-      if (randomList.isEmpty) {
-        BotToast.showText(
-            text: "当前列表是空的 QAQ", duration: const Duration(seconds: 3));
-        return;
-      } else {
+    final List<MusicItem> queue;
+    if (collectionQueue.isNotEmpty) {
+      queue = collectionQueue;
+    } else if (music.orderName == TableName.musicWaitPlay ||
+        (offset > 0 && playerList.isNotEmpty)) {
+      queue = playerList;
+    } else if (music.orderName.isNotEmpty) {
+      queue = await getUpdatedMusicList(tabName: music.orderName);
+    } else {
+      queue = const [];
+    }
+    if (!identical(current, music)) return;
+    if (queue.isEmpty) {
+      if (completed) {
+        await pause();
+      } else if (offset < 0) {
         await audio.seek(Duration.zero);
-        await play(music: row2MusicItem(dbRow: randomList[0]));
       }
-
-      _updateLocalStorage();
-
       return;
     }
 
-    if (current!.orderName.isNotEmpty) {
-      final newCurrentMusic = await db.queryByParam(current!.orderName,
-          current!.playId.isEmpty ? current!.id : current!.playId);
-
-      // 检查当前播放歌曲在列表中的 next 变了没有，变了要重新赋值，变了就意味着列表里有歌曲增减
-      if (newCurrentMusic.isNotEmpty &&
-          newCurrentMusic[0]["next"] != current!.next) {
-        current = row2MusicItem(dbRow: newCurrentMusic[0]);
-      }
-    }
-
-    // 列表顺序播放
-    if (playerMode == PlayerMode.listOrder) {
-      // 待播放列表不为空
-      if (playerList.isNotEmpty) {
-        await audio.seek(Duration.zero);
-        final index =
-            playerList.indexWhere((music) => music.playId == current!.playId);
-
-        if (index >= 0) {
-          if (playerList[index].isLast != "true") {
-            await play(music: playerList[index + 1]);
-          } else {
-            BotToast.showText(text: "已经是列表最后一首了 QAQ");
-
-            return;
-          }
-        } else {
-          await play(music: playerList.first);
-        }
-
-        _updateLocalStorage();
-        return;
-      }
-
-      /// -----------------------------------------------------------------------
-      if (current!.next.isNotEmpty &&
-          current!.isLast == "false" &&
-          current!.orderName.isNotEmpty) {
-        final nextDbMusics =
-            await db.queryByParam(current!.orderName, current!.next);
-
-        if (nextDbMusics.isNotEmpty) {
-          await audio.seek(Duration.zero);
-          await play(music: row2MusicItem(dbRow: nextDbMusics[0]));
-        } else {
-          BotToast.showText(
-              text: "找不到下一曲。当前歌曲所在歌单：${current!.orderName}",
-              duration: const Duration(seconds: 4));
-
-          return;
-        }
-      } else if (current!.isLast == "true") {
-        BotToast.showText(
-            text: "已经是列表最后一首歌了 QAQ", duration: const Duration(seconds: 3));
-
-        return;
-      }
-
-      if (!audio.playing) {
-        _startPlayback();
-      }
-
-      _updateLocalStorage();
-
+    final index = queue.indexWhere((entry) =>
+        identical(entry, music) ||
+        (music.playId.isNotEmpty && entry.playId == music.playId) ||
+        (music.playId.isEmpty &&
+            entry.orderName == music.orderName &&
+            _track(entry) == _track(music)));
+    final nextIndex = nextQueueIndex(
+      length: queue.length,
+      current: index,
+      offset: offset,
+      mode: playerMode,
+    );
+    if (nextIndex == null) {
+      if (completed) await pause();
       return;
     }
-
-    // 列表循环
-    if (playerMode == PlayerMode.listLoop) {
-      // 待播放列表不为空
-      if (playerList.isNotEmpty) {
-        final targets =
-            playerList.where((music) => music.playId == current!.next);
-
-        await audio.seek(Duration.zero);
-
-        if (targets.isNotEmpty) {
-          await play(music: targets.first);
-        } else {
-          await play(music: playerList.first);
-        }
-
-        _updateLocalStorage();
-        return;
-      }
-
-      /// -----------------------------------------------------------------------
-      if (current!.next.isNotEmpty && current!.orderName.isNotEmpty) {
-        final dbMusics =
-            await db.queryByParam(current!.orderName, current!.next);
-
-        if (dbMusics.isNotEmpty) {
-          await audio.seek(Duration.zero);
-          await play(music: row2MusicItem(dbRow: dbMusics[0]));
-        } else {
-          BotToast.showText(
-              text: "找不到下一曲。当前歌曲所在歌单：${current!.orderName}",
-              duration: const Duration(seconds: 4));
-
-          return;
-        }
-      }
-
-      if (!audio.playing) {
-        _startPlayback();
-      }
-
-      _updateLocalStorage();
+    if (nextIndex == index) {
+      await audio.seek(Duration.zero);
+      _startPlayback();
+    } else {
+      await play(music: queue[nextIndex]);
     }
   }
 
@@ -413,83 +261,63 @@ class BBPlayer {
     // notifyListeners();
   }
 
-  // 添加到待播放列表中
-  // 这块逻辑确实不够优雅，但是不管那么多了
-  Future<void> addPlayerList(List<MusicItem> musics,
-      {bool? showToast = false}) async {
-    if (playerList.length + musics.length > 1000) {
-      BotToast.showText(text: "出于性能考虑，列表歌曲不能超过 1000 首");
-      return;
-    }
+  Future<void> _waitListMutation = Future.value();
 
-    EasyLoading.show(maskType: EasyLoadingMaskType.black);
+  Future<void> addPlayerList(List<MusicItem> musics, {bool? showToast}) =>
+      _mutateWaitList(() async {
+        if (playerList.length + musics.length > 1000) {
+          BotToast.showText(text: "待播放列表最多可加入 1000 首");
+          return;
+        }
+        await db.insertAll(TableName.musicWaitPlay, [
+          for (final music in musics)
+            musicItem2Row(
+                music: music.copyWith(
+              playId: uuid.v4(),
+              orderName: TableName.musicWaitPlay,
+            )),
+        ]);
+        if (showToast == true) BotToast.showText(text: "已添加到待播放列表");
+      });
 
-    List<MusicItem> mList = [];
-    for (var m in musics) {
-      final newM =
-          m.copyWith(playId: uuid.v4(), orderName: TableName.musicWaitPlay);
-      mList.add(newM);
-    }
-    playerList.addAll(mList);
+  Future<void> removePlayerList(List<MusicItem> musics) =>
+      _mutateWaitList(() async {
+        final database = await db.database;
+        await database.transaction((transaction) async {
+          final batch = transaction.batch();
+          for (final item in musics.where((music) => music.playId.isNotEmpty)) {
+            batch.delete(TableName.musicWaitPlay,
+                where: "playId = ?", whereArgs: [item.playId]);
+          }
+          await batch.commit(noResult: true);
+        });
+      });
 
-    await db.deleteAll(TableName.musicWaitPlay);
+  Future<void> clearPlayerList() => _mutateWaitList(() async {
+        await db.deleteAll(TableName.musicWaitPlay);
+      });
 
-    for (var pm in playerList) {
-      await db.insert(TableName.musicWaitPlay, musicItem2Row(music: pm));
-    }
-
-    final newMusicList =
-        await getUpdatedMusicList(tabName: TableName.musicWaitPlay);
-
-    playerList.clear();
-    playerList.addAll(newMusicList);
-
-    EasyLoading.dismiss();
-
-    if (current != null) {
-      final targets = newMusicList
-          .where((music) => music.playId == current!.playId)
-          .toList();
-
-      if (targets.isNotEmpty) {
-        current = targets.first;
+  Future<void> _mutateWaitList(Future<void> Function() action) {
+    _waitListMutation = _waitListMutation.then((_) async {
+      try {
+        await action();
+        await _readWaitList();
+      } catch (_) {
+        BotToast.showText(text: "待播放列表更新失败");
       }
-    }
-
-    if (showToast != null && showToast) {
-      BotToast.showText(text: "已添加到待播放列表");
-    }
+    });
+    return _waitListMutation;
   }
 
-  // 在待播放列表中移除
-  Future<void> removePlayerList(List<MusicItem> musics) async {
-    EasyLoading.show(maskType: EasyLoadingMaskType.black);
-    try {
-      playerList.removeWhere(
-          (w) => musics.where((e) => e.playId == w.playId).isNotEmpty);
-
-      for (var m in musics) {
-        await db.delete(TableName.musicWaitPlay, m.playId);
-      }
-
-      await getUpdatedMusicList(tabName: TableName.musicWaitPlay);
-    } catch (error) {
-      print(error);
-    }
-    EasyLoading.dismiss();
-  }
-
-  // 清空播放列表
-  Future<void> clearPlayerList() async {
-    EasyLoading.show(maskType: EasyLoadingMaskType.black);
-    try {
-      playerList.clear();
-      await db.deleteAll(TableName.musicWaitPlay);
-    } catch (error) {
-      print(error);
-    }
-
-    EasyLoading.dismiss();
+  Future<void> _readWaitList() async {
+    final rows = await db.queryAll(
+      TableName.musicWaitPlay,
+      groupBy: "playId",
+      needOrder: false,
+    );
+    playerList
+      ..clear()
+      ..addAll(rows.map((row) => row2MusicItem(dbRow: row)));
   }
 
   int _loadRequest = 0;
@@ -499,17 +327,28 @@ class BBPlayer {
     bool canLoad() => request == _loadRequest && (isCurrent?.call() ?? true);
     isLoading = true;
     try {
-      final source = music.localPath.isNotEmpty
-          ? AudioSource.file(music.localPath)
-          : await resolveMusicSource(music);
-      if (!canLoad()) throw PlayerInterruptedException("歌曲已切换");
-      await audio.pause();
-      if (!canLoad()) throw PlayerInterruptedException("歌曲已切换");
-      _loadedTrack = null;
-      await audio.setAudioSource(source);
-      if (!canLoad()) throw PlayerInterruptedException("歌曲已切换");
-      _loadedTrack = _track(music);
-      current = music;
+      Object? failure;
+      await for (final source in musicSources(music)) {
+        if (!canLoad()) throw PlayerInterruptedException("歌曲已切换");
+        await audio.pause();
+        if (!canLoad()) throw PlayerInterruptedException("歌曲已切换");
+        _loadedTrack = null;
+        sourceDescription = "";
+        try {
+          await audio.setAudioSource(source.audio);
+        } on PlayerInterruptedException {
+          rethrow;
+        } on PlayerException catch (error) {
+          failure = error;
+          continue;
+        }
+        if (!canLoad()) throw PlayerInterruptedException("歌曲已切换");
+        _loadedTrack = _track(music);
+        sourceDescription = source.description;
+        current = music;
+        return;
+      }
+      throw failure ?? StateError("找不到可播放的音轨");
     } finally {
       if (request == _loadRequest) isLoading = false;
     }
@@ -517,7 +356,13 @@ class BBPlayer {
 
   Future<void> _play({MusicItem? music, bool isPlay = true}) async {
     if (music != null) await _load(music);
-    if (isPlay) _startPlayback();
+    if (isPlay) {
+      if (music != null) unawaited(_cachePosition());
+      if (audio.processingState == ProcessingState.completed) {
+        await audio.seek(Duration.zero);
+      }
+      _startPlayback();
+    }
   }
 
   void _startPlayback() {
@@ -530,6 +375,7 @@ class BBPlayer {
 
   // 缓存播放进度
   Future<void> _cachePosition() async {
+    if (_loadedTrack == null || PartyService.instance.isGuest) return;
     final localStorage = await SharedPreferences.getInstance();
     localStorage.setInt(
       _storageKeyPosition,
@@ -539,13 +385,21 @@ class BBPlayer {
 
   // 更新缓存
   void _updateLocalStorage() {
+    if (PartyService.instance.isGuest) return;
     _timer?.cancel();
     _timer = Timer(const Duration(microseconds: 500), () async {
       final localStorage = await SharedPreferences.getInstance();
-      localStorage.setString(
-        _storageKeyCurrent,
-        current != null ? jsonEncode(current) : "",
-      );
+      final music = current;
+      await localStorage.setString(
+          _storageKeyCurrent,
+          music == null
+              ? ""
+              : jsonEncode({
+                  ...music.toJson(),
+                  if (collectionQueue.isNotEmpty) "collection": collectionQueue,
+                  if (collectionQueue.isNotEmpty)
+                    "collectionIndex": collectionQueue.indexOf(music),
+                }));
       localStorage.setString(
         _storageKeyPlayerMode,
         playerMode.value.toString(),
@@ -556,44 +410,51 @@ class BBPlayer {
   // 读取缓存
   Future<void> _initLocalStorage() async {
     final localStorage = await SharedPreferences.getInstance();
-    // 当前歌曲
-    String? c = localStorage.getString(_storageKeyCurrent);
-    if (c != null && c.isNotEmpty) {
-      var data = jsonDecode(c) as Map<String, dynamic>;
-      current = MusicItem(
-        id: data["id"],
-        name: data["name"],
-        cover: data["cover"],
-        author: data["author"],
-        duration: data["duration"],
-        origin: OriginType.getByValue(data["origin"]),
-        playId: data["playId"],
-        lyric: data["lyric"],
-        prev: data["prev"],
-        next: data["next"],
-        orderName: data["orderName"],
-        localPath: data["localPath"],
-        isFirst: data["isFirst"],
-        isLast: data["isLast"],
-      );
+    final savedPosition = localStorage.getInt(_storageKeyPosition) ?? 0;
+    final mode =
+        int.tryParse(localStorage.getString(_storageKeyPlayerMode) ?? "");
+    if (mode != null && PlayerMode.values.any((value) => value.value == mode)) {
+      playerMode = PlayerMode.getByValue(mode);
+    }
 
-      try {
-        await _play(music: current!, isPlay: false);
-        final pos = localStorage.getInt(_storageKeyPosition) ?? 0;
-        if (pos > 0) await audio.seek(Duration(milliseconds: pos));
-      } catch (_) {
-        // 用户仍可重新尝试播放上次的歌曲。
+    // Wait for pending queue writes before reloading the persisted rows.
+    try {
+      await _waitListMutation;
+      await _readWaitList();
+    } catch (_) {
+      // Playback remains available if the local database is unavailable.
+    }
+
+    final encoded = localStorage.getString(_storageKeyCurrent);
+    if (encoded == null || encoded.isEmpty || _loadRequest != 0) return;
+    try {
+      final data = jsonDecode(encoded) as Map<String, dynamic>;
+      var saved = MusicItem.fromJson(data);
+      final collection = data["collection"];
+      final index = data["collectionIndex"];
+      if (collection is List &&
+          index is int &&
+          index >= 0 &&
+          index < collection.length) {
+        final entries = collection
+            .cast<Map<String, dynamic>>()
+            .map(MusicItem.fromJson)
+            .toList();
+        if (_track(entries[index]) == _track(saved)) {
+          entries[index] = saved;
+          collectionQueue = List.unmodifiable(entries);
+          saved = collectionQueue[index];
+        }
       }
+      current = saved;
+      await _play(music: saved, isPlay: false);
+      if (savedPosition > 0 && identical(current, saved)) {
+        await audio.seek(Duration(milliseconds: savedPosition));
+      }
+      eventBus.fire(RefreshPlayerCard());
+    } catch (_) {
+      // The saved track can be retried from the player.
     }
-
-    // 播放模式
-    String? m = localStorage.getString(_storageKeyPlayerMode);
-    if (m != null && m.isNotEmpty) {
-      playerMode = PlayerMode.getByValue(int.parse(m));
-    }
-
-    playerList
-        .addAll(await getUpdatedMusicList(tabName: TableName.musicWaitPlay));
   }
 }
 

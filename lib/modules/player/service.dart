@@ -87,7 +87,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
   @override
   Future<void> seek(Duration position) async {
     if (_blocked) return;
-    await player.audio.seek(position);
+    await player.seek(position);
     _updatePosition();
     eventBus.fire(PartyPlaybackChanged());
   }

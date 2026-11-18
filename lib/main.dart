@@ -16,6 +16,7 @@ import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
 import "package:bobomusic/modules/home/home.dart";
 import "package:bobomusic/modules/party/party_page.dart";
+import "package:bobomusic/modules/party/party_service.dart";
 import "package:bobomusic/modules/party/party_tone.dart";
 import "package:bobomusic/modules/party/party_background.dart";
 import "package:bobomusic/modules/party/party_watcher.dart";
@@ -266,6 +267,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
+    unawaited(PartyService.instance.recoverAfterResume());
     _checkClipboardOnResume();
   }
 

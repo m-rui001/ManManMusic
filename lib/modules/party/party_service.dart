@@ -552,6 +552,14 @@ class PartyService {
     }
   }
 
+  Future<void> recoverAfterResume() async {
+    if (!inRoom || _connecting || _reconnectTimer?.isActive == true) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (!connected || now - _lastRelayActivity > 55000) {
+      await retryNow();
+    }
+  }
+
   /// 手动重连：清掉退避立刻再连一次
   Future<bool> retryNow() async {
     if (!inRoom) return false;
@@ -1051,9 +1059,31 @@ class PartyService {
   /// 时钟筛的，所以「窗口里有房主的消息」就等于「房间还开着」，不受两台手机
   /// 时间不准的影响。房主没在放歌也算在线：能进房间，只是没有歌可显示。
   /// 如果房主最后一句是 bye，就认为房间已经关了。
-  Future<PartyProbe?> probeRoom(String targetRoom) async {
-    if (targetRoom.trim().isEmpty) return null;
+  final _probeRequests = <String, Future<PartyProbe?>>{};
+  final _probeResults = <String, ({PartyProbe? probe, int expires})>{};
+
+  Future<PartyProbe?> probeRoom(String targetRoom, {bool force = false}) {
     final room = targetRoom.trim();
+    if (hostUidFromRoom(room) <= 0) return Future.value(null);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _probeResults.removeWhere((_, result) => result.expires <= now);
+    final result = _probeResults[room];
+    if (!force && result != null) return Future.value(result.probe);
+    return _probeRequests.putIfAbsent(room, () async {
+      try {
+        final probe = await _pollRoom(room);
+        _probeResults[room] = (
+          probe: probe,
+          expires: DateTime.now().millisecondsSinceEpoch + 18000,
+        );
+        return probe;
+      } finally {
+        _probeRequests.remove(room);
+      }
+    });
+  }
+
+  Future<PartyProbe?> _pollRoom(String room) async {
     final targetTopic = "manman_party_$room";
 
     final resp = await _probeDio.get<String>(

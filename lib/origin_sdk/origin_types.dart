@@ -315,7 +315,22 @@ class MusicDetail {
 class MusicUrl {
   final String url; // 播放地址
   final Map<String, String>? headers; // 请求头
-  const MusicUrl({required this.url, this.headers});
+  final String format;
+  final int bitrate;
+  final List<MusicUrl> alternatives;
+
+  const MusicUrl({
+    required this.url,
+    this.headers,
+    this.format = "",
+    this.bitrate = 0,
+    this.alternatives = const [],
+  });
+
+  String get description => [
+        if (format.isNotEmpty) format,
+        if (bitrate > 0) "约 ${(bitrate / 1000).round()} kbps",
+      ].join(" · ");
 }
 
 /// 歌单源服务
