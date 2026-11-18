@@ -25,7 +25,7 @@ class GuidePage extends StatelessWidget {
               color: primaryColor,
               lines: const [
                 "顶部搜索框搜歌名或 UP 主，点结果直接播放。",
-                "播放页可以拖进度、看歌词；通知栏和锁屏也能控制。",
+                "播放页可以拖动进度条；通知栏和锁屏也能控制播放。",
                 "登录 B 站账号后会自动用更高音质，不登录只能听最低档。",
               ],
             ),
@@ -59,15 +59,6 @@ class GuidePage extends StatelessWidget {
                 "名单里点红心 = 永久共管：他一进房间就能和你一起换歌、拖进度。",
                 "没点红心的人只能听。想自己点歌，先退出房间。",
                 "有人进出会有一声很轻的提示音，可以在设置里关掉。",
-              ],
-            ),
-            _Section(
-              icon: Icons.online_prediction_outlined,
-              title: "好友上线提醒",
-              color: primaryColor,
-              lines: const [
-                "设置里打开后，名单里的好友开始听歌时会提醒你。",
-                "App 在前台时一分钟探一次；切到后台改由系统低频唤醒，所以后台提醒会慢一些，换来的是几乎不耗电。",
               ],
             ),
             _Section(

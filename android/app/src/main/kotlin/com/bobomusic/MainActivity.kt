@@ -1,6 +1,9 @@
 package com.bobomusic
 
+import android.app.NotificationManager
+import android.app.job.JobScheduler
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -21,8 +24,35 @@ class MainActivity : AudioServiceActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        clearLegacyFriendAlerts()
         // 冷启动时可能已经带了分享内容
         pendingShare = extractSharedText(intent)
+    }
+
+    private fun clearLegacyFriendAlerts() {
+        val prefs = getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)
+        val keys = listOf(
+            "flutter.manman_party_watch_friends",
+            "flutter.manman_party_watch_last",
+            "flutter.manman_party_watch_baseline"
+        )
+        if (keys.none { prefs.contains(it) }) return
+
+        // Friend alerts were the only feature that scheduled WorkManager jobs.
+        val jobs = getSystemService(JOB_SCHEDULER_SERVICE) as JobScheduler
+        for (job in jobs.allPendingJobs) {
+            if (job.service.className == "androidx.work.impl.background.systemjob.SystemJobService") {
+                jobs.cancel(job.id)
+            }
+        }
+        val notifications = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        notifications.cancel(1001)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            notifications.deleteNotificationChannel("party_friend_online")
+        }
+        val editor = prefs.edit()
+        for (key in keys) editor.remove(key)
+        editor.apply()
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
