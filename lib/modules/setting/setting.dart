@@ -16,6 +16,9 @@ import "package:bobomusic/utils/get_cache_color.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:bobomusic/utils/update_version.dart";
 import "package:flutter/material.dart";
+import "package:provider/provider.dart";
+import "package:bobomusic/modules/player/audio_equalizer.dart";
+import "package:bobomusic/modules/player/model.dart";
 import "package:flutter_svg/svg.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
@@ -48,6 +51,42 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
     await PartyRoster.instance.init();
     if (!mounted) return;
     setState(() => _rosterCount = PartyRoster.instance.length);
+  }
+
+  Future<void> _selectAudioPreset() async {
+    final equalizer = context.read<PlayerModel>().equalizer;
+    if (equalizer == null) return;
+    final selected = await showModalBottomSheet<AudioPreset>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text("播放音效"),
+              subtitle: Text("调节人声或高频，音效仅作用于本机播放。"),
+            ),
+            for (final preset in AudioPreset.values)
+              ListTile(
+                title: Text(preset.label),
+                trailing: preset == equalizer.preset
+                    ? const Icon(Icons.check_rounded)
+                    : null,
+                onTap: () => Navigator.pop(context, preset),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (selected == null || !mounted) return;
+    final applied = await equalizer.setPreset(selected);
+    if (!mounted) return;
+    if (applied) {
+      setState(() {});
+    } else {
+      BotToast.showText(text: "当前设备无法应用播放音效");
+    }
   }
 
   @override
@@ -112,7 +151,14 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                           );
                         }
                       }
-                    )
+                    ),
+                    if (AudioEqualizer.supported)
+                      SettingItem(
+                        leadingIcon: Icons.equalizer_rounded,
+                        title: "播放音效",
+                        trailing: Text(context.read<PlayerModel>().equalizer?.preset.label ?? "原声"),
+                        onTap: _selectAudioPreset,
+                      ),
                   ],
                 ),
                 const SizedBox(height: 16),

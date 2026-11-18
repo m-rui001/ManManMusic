@@ -71,6 +71,13 @@ class MusicOrderDetailState extends State<MusicOrderDetail> {
     EasyLoading.dismiss();
   }
 
+  void _play(MusicItem item) {
+    Provider.of<PlayerModel>(context, listen: false).play(
+      music: item,
+      collection: widget.shouldLoadData ? null : musicList,
+    );
+  }
+
   _moreHandler(BuildContext context, MusicItem item) {
     openBottomSheet(context, [
       SheetItem(
@@ -86,7 +93,7 @@ class MusicOrderDetailState extends State<MusicOrderDetail> {
       SheetItem(
         title: const Text("播放"),
         onPressed: () {
-          Provider.of<PlayerModel>(context, listen: false).play(music: item);
+          _play(item);
         },
       ),
       SheetItem(
@@ -164,9 +171,8 @@ class MusicOrderDetailState extends State<MusicOrderDetail> {
           final item = musicList[index];
           return MusicListTile(
             item,
-            onMore: () {
-              _moreHandler(context, item);
-            },
+            onPlay: () => _play(item),
+            onMore: () => _moreHandler(context, item),
           );
         }
       ),

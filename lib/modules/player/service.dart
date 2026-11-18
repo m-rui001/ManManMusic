@@ -66,13 +66,13 @@ class AudioPlayerHandler extends BaseAudioHandler {
   bool get _blocked => !PartyService.instance.allowLocalControl;
 
   @override
-  Future<void> play({MusicItem? music}) async {
+  Future<void> play({MusicItem? music, List<MusicItem>? collection}) async {
     if (_blocked) return;
     if (music != null) {
-      await player.play(music: music); // 处理传入新音乐的情况
+      await player.play(music: music, collection: collection);
     } else {
       if (player.current == null) return; // 无当前音乐时返回
-      await player.audio.play(); // 继续播放当前音乐
+      await player.resume();
     }
     _updatePosition();
   }
@@ -88,6 +88,8 @@ class AudioPlayerHandler extends BaseAudioHandler {
   Future<void> seek(Duration position) async {
     if (_blocked) return;
     await player.audio.seek(position);
+    _updatePosition();
+    eventBus.fire(PartyPlaybackChanged());
   }
 
   @override

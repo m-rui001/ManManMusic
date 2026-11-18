@@ -23,7 +23,7 @@ class PartyTabView extends StatefulWidget {
   State<PartyTabView> createState() => PartyTabViewState();
 }
 
-class PartyTabViewState extends State<PartyTabView> {
+class PartyTabViewState extends State<PartyTabView> with WidgetsBindingObserver {
   final PartySession session = PartySession.instance;
   final BiliAuth auth = BiliAuth.instance;
   final PartyRoster roster = PartyRoster.instance;
@@ -34,10 +34,14 @@ class PartyTabViewState extends State<PartyTabView> {
   Map<int, PartyProbe?> probes = {};
   bool _busy = false;
   bool _probing = false;
+  final _probeErrors = <int>{};
+  Timer? _probeTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _startProbing();
 
     _memberSub = session.memberStream.listen((_) {
       if (mounted) setState(() {});
@@ -54,8 +58,25 @@ class PartyTabViewState extends State<PartyTabView> {
     });
   }
 
+  void _startProbing() {
+    _probeTimer?.cancel();
+    _probeTimer = Timer.periodic(const Duration(seconds: 45), (_) => _probeAll());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startProbing();
+      _probeAll();
+    } else {
+      _probeTimer?.cancel();
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _probeTimer?.cancel();
     _memberSub?.cancel();
     _changeSub?.cancel();
     super.dispose();
@@ -86,6 +107,7 @@ class PartyTabViewState extends State<PartyTabView> {
 
   /// 只探测名单里的人
   Future<void> _probeAll() async {
+    if (!mounted || _probing) return;
     if (roster.members.isEmpty) {
       if (mounted) setState(() => probes = {});
       return;
@@ -94,26 +116,30 @@ class PartyTabViewState extends State<PartyTabView> {
     setState(() => _probing = true);
 
     final result = <int, PartyProbe?>{};
-    // 排队探测：一把全发出去会把 ntfy 的请求额度打空，接着建房就 429
-    await PartyService.forEachLimited(roster.members, (m) async {
-      final probe = await PartyService.instance.probeRoom(m.roomId);
-      result[m.mid] = (probe != null && probe.isFresh) ? probe : null;
-    });
+    final errors = <int>{};
+    await PartyService.forEachLimited(roster.members, (member) async {
+      try {
+        result[member.mid] = await PartyService.instance.probeRoom(member.roomId);
+      } catch (_) {
+        errors.add(member.mid);
+        if (probes[member.mid]?.isFresh == true) {
+          result[member.mid] = probes[member.mid];
+        }
+      }
+    }, limit: 2, gap: const Duration(milliseconds: 400));
 
     if (!mounted) return;
     setState(() {
       probes = result;
+      _probeErrors
+        ..clear()
+        ..addAll(errors);
       _probing = false;
     });
   }
 
   Future<void> _join(RosterMember member) async {
-    final probe = probes[member.mid];
-    if (probe == null) {
-      BotToast.showText(text: "${member.uname} 现在没在听歌");
-      return;
-    }
-
+    if (_busy) return;
     if (!auth.isLogin) {
       final ok = await BiliLoginGate.ensureLoggedIn(context);
       if (!ok || !mounted) return;
@@ -125,7 +151,7 @@ class PartyTabViewState extends State<PartyTabView> {
     setState(() => _busy = false);
 
     BotToast.showText(
-      text: ok ? "已加入 ${member.uname} 的一起听" : "加入失败，请检查网络",
+      text: ok ? "已加入 ${member.uname} 的一起听" : session.joinHint,
     );
   }
 
@@ -175,7 +201,7 @@ class PartyTabViewState extends State<PartyTabView> {
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).primaryColor;
     final members = roster.members;
-    final listeningCount = probes.values.where((e) => e != null).length;
+    final listeningCount = probes.values.where((e) => e?.isFresh == true).length;
 
     return Scaffold(
       appBar: AppBar(
@@ -268,7 +294,9 @@ class PartyTabViewState extends State<PartyTabView> {
                   ...members.map(
                     (m) => PartyRosterTile(
                       member: m,
-                      probe: probes[m.mid],
+                      probe: probes[m.mid]?.isFresh == true ? probes[m.mid] : null,
+                      statusUnavailable: !probes.containsKey(m.mid) ||
+                          _probeErrors.contains(m.mid),
                       onTap: _busy ? () {} : () => _join(m),
                       onRemove: () => _removeFromRoster(m),
                       onToggleControl: () => _toggleControl(m),

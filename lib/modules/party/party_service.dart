@@ -73,6 +73,8 @@ class PartyState {
 
   /// 定向消息的接收者 UID（0 表示广播）
   final int toUid;
+  final String toClient;
+  final int receivedAt;
 
   const PartyState({
     required this.type,
@@ -91,6 +93,8 @@ class PartyState {
     required this.at,
     this.controlUids = const [],
     this.toUid = 0,
+    this.toClient = "",
+    this.receivedAt = 0,
   });
 
   MusicItem? toMusicItem() {
@@ -123,16 +127,18 @@ class PartyState {
       "at": at,
       "cc": controlUids,
       "to": toUid,
+      if (toClient.isNotEmpty) "tc": toClient,
     };
   }
 
-  factory PartyState.fromJson(Map<String, dynamic> json) {
+  factory PartyState.fromJson(Map<String, dynamic> json, {int receivedAt = 0}) {
     final cc = json["cc"];
     return PartyState(
       type: PartyMessageType.tryParse("${json["ty"]}"),
       roomId: "${json["r"] ?? ""}",
       from: "${json["f"] ?? ""}",
-      uid: json["u"] is int ? json["u"] : int.tryParse("${json["u"] ?? 0}") ?? 0,
+      uid:
+          json["u"] is int ? json["u"] : int.tryParse("${json["u"] ?? 0}") ?? 0,
       fromName: "${json["fn"] ?? ""}",
       musicId: "${json["i"] ?? ""}",
       origin: "${json["o"] ?? "bili"}",
@@ -147,7 +153,18 @@ class PartyState {
           ? cc.whereType<num>().map((e) => e.toInt()).toList()
           : const [],
       toUid: json["to"] is int ? json["to"] : 0,
+      toClient: "${json["tc"] ?? ""}",
+      receivedAt: receivedAt,
     );
+  }
+
+  Duration positionAt(int now, {Duration? duration}) {
+    // 只用本机计时补偿取流耗时，避免把房主手机的时钟偏差算进进度。
+    final elapsed = playing && receivedAt > 0 ? max(0, now - receivedAt) : 0;
+    final target = Duration(milliseconds: max(0, position + elapsed));
+    return duration != null && duration > Duration.zero && target > duration
+        ? duration
+        : target;
   }
 }
 
@@ -187,21 +204,25 @@ class PartyNotice {
 /// - 其他人只能听，本地播放控制会被锁住，想自己操作必须先退出房间
 class PartyService {
   /// 中继服务地址（可自行替换为自建 ntfy 实例）
-  static const String relayBase = "https://ntfy.sh";
+  final String relayBase;
+  final int? _testUid;
 
   static final PartyService instance = PartyService._();
 
-  PartyService._();
+  PartyService._()
+      : relayBase = "https://ntfy.sh",
+        _testUid = null;
+
+  @visibleForTesting
+  PartyService.withRelay(this.relayBase, int uid) : _testUid = uid;
 
   /// 房主多久没动静就认为下线了
   ///
-  /// 房主每 15 秒发一次心跳，容忍丢三次。
-  static const int hostTimeoutMs = 60000;
+  static const int hostTimeoutMs = 95000;
 
   /// 成员多久没心跳就认为掉线了
   ///
-  /// 心跳 15 秒一次，容忍丢两次；太长会在房主那边留下"幽灵成员"。
-  static const int memberTimeoutMs = 45000;
+  static const int memberTimeoutMs = 95000;
 
   PartyRole role = PartyRole.none;
   String roomId = "";
@@ -210,6 +231,11 @@ class PartyService {
   int myUid = 0;
   int hostUid = 0;
   bool connected = false;
+  bool admitted = false;
+  String joinHint = "";
+  Completer<bool>? _admission;
+  String _hostClient = "";
+  final Map<String, int> _lastStateAt = {};
 
   /// 连不上时给用户看的原因，别让人干等着「连接中…」
   String connectionHint = "";
@@ -247,9 +273,6 @@ class PartyService {
   /// 已经提示过「被名单拦下」的 UID（重连会反复敲门，别反复弹）
   final Set<int> _deniedUids = {};
 
-  /// 正在应用远端状态时不要拦截本机播放控制
-  bool applyingRemote = false;
-
   final _stateController = StreamController<PartyState>.broadcast();
   final _membersController = StreamController<Map<String, String>>.broadcast();
   final _noticeController = StreamController<PartyNotice>.broadcast();
@@ -258,12 +281,8 @@ class PartyService {
   Stream<Map<String, String>> get membersStream => _membersController.stream;
   Stream<PartyNotice> get notices => _noticeController.stream;
 
-  /// 房主需要广播状态时（被请求 / 名单变化）的回调
-  ///
-  /// [force] 为 true 时表示「就算现在没在放歌也要回一条」——
-  /// 新成员加入时必须这样，否则他拿不到 controlUids，
-  /// 名单里点了红心的共管会一直被锁着。
-  void Function(bool force)? onSyncRequested;
+  /// 房主回复指定听众，或定期向房间广播播放快照。
+  void Function({String toClient, int toUid})? onSyncRequested;
 
   /// 连接状态变化
   void Function(bool connected)? onConnectionChanged;
@@ -274,7 +293,6 @@ class PartyService {
   Timer? _pruneTimer;
   Timer? _reconnectTimer;
   int _lastHostSeen = 0;
-  String _buf = "";
 
   bool get inRoom => role != PartyRole.none;
 
@@ -286,9 +304,8 @@ class PartyService {
   ///
   /// 房主永远可以；被点红心的共管也可以；普通听众不行。
   bool get allowLocalControl {
-    if (applyingRemote) return true;
     if (role != PartyRole.guest) return true;
-    return controlUids.contains(myUid);
+    return admitted && controlUids.contains(myUid);
   }
 
   /// 当前是否处于「只能听」的状态
@@ -336,7 +353,7 @@ class PartyService {
 
   void _readIdentity() {
     final auth = BiliAuth.instance;
-    myUid = auth.isLogin ? auth.mid : 0;
+    myUid = _testUid ?? (auth.isLogin ? auth.mid : 0);
     myName = auth.isLogin && auth.uname.isNotEmpty ? auth.uname : "我";
   }
 
@@ -411,49 +428,54 @@ class PartyService {
     if (kicked.isNotEmpty) _emitMembers();
 
     // 权限变了立刻广播：新点红心的人不用等房主下次切歌
-    _broadcastNow(force: true);
+    onSyncRequested?.call();
   }
 
   /// 作为听众加入别人的房间
   Future<bool> joinRoom({required String id, required String name}) async {
+    if (inRoom) await leaveRoom();
     _readIdentity();
     if (name.trim().isNotEmpty) myName = name.trim();
 
-    // 已经在自己的房间里就先退出（发 bye，别让房间里的人干等）
-    if (inRoom) await leaveRoom();
-
+    joinHint = "";
+    hostUid = hostUidFromRoom(id);
+    if (myUid <= 0 || hostUid <= 0 || hostUid == myUid) {
+      joinHint = "请用哔哩哔哩账号加入好友的房间";
+      return false;
+    }
     roomId = id.trim();
     role = PartyRole.guest;
     myId = genClientId();
-    hostUid = hostUidFromRoom(roomId);
-
-    members.clear();
-    _memberUids.clear();
-    _memberSeen.clear();
-    controlUids.clear();
-    allowedUids.clear();
+    final client = myId;
+    final admission = _admission = Completer<bool>();
     _lastHostSeen = DateTime.now().millisecondsSinceEpoch;
-
     _resetConnectionState();
-    final ok = await _connect();
-    if (!ok) return false;
-
-    _publish(PartyMessageType.join);
-    // 稍等让房主收到 join，再请求一次完整状态
-    await Future.delayed(const Duration(milliseconds: 400));
-    _publish(PartyMessageType.sync);
-    return true;
+    final ready = await _connect();
+    if (myId != client || !isGuest) return false;
+    final joined = ready &&
+        await admission.future
+            .timeout(const Duration(seconds: 14), onTimeout: () => false);
+    if (!joined && myId == client && isGuest) {
+      if (joinHint.isEmpty) {
+        joinHint = connectionHint.isNotEmpty
+            ? connectionHint
+            : "房主未确认加入，请确认房主在线且两端已升级";
+      }
+      await leaveRoom(silent: true);
+    }
+    return joined;
   }
 
   Future<bool> _connect() async {
-    if (_connecting) return false;
+    if (_connecting || !inRoom) return false;
     _connecting = true;
+    final client = myId;
     try {
       await _disconnect();
+      if (!inRoom || myId != client) return false;
 
       final token = CancelToken();
       _cancelToken = token;
-      _buf = "";
 
       final Response<ResponseBody> resp;
       try {
@@ -471,12 +493,14 @@ class PartyService {
             .timeout(const Duration(seconds: 15));
       } on TimeoutException {
         token.cancel("connect timeout");
+        if (!inRoom || myId != client) return false;
         _fail("连接超时，网络好像不通");
         _scheduleReconnect();
         return false;
       }
 
       // 被中继限流了：退到最长间隔再试，越急越连不上
+      if (token.isCancelled || !inRoom || myId != client) return false;
       if (resp.statusCode == 429) {
         final wait = _retryAfter(resp) ?? 20;
         _fail("中继限流，$wait 秒后自动重连");
@@ -491,25 +515,35 @@ class PartyService {
         return false;
       }
 
+      final gen = ++_connGen;
+      _lastRelayActivity = DateTime.now().millisecondsSinceEpoch;
+      _sub = resp.data!.stream
+          .cast<List<int>>()
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen(
+            (line) => _handleLine(line, gen),
+            onDone: () => _onClosed(gen),
+            onError: (_) => _onClosed(gen),
+            cancelOnError: true,
+          );
       _reconnectAttempt = 0;
       _connectAttempts = 0;
       connectionHint = "";
       connected = true;
-      onConnectionChanged?.call(true);
-
-      final gen = ++_connGen;
-      _sub = resp.data!.stream.listen(
-        _onBytes,
-        onDone: () => _onClosed(gen),
-        onError: (_) => _onClosed(gen),
-        cancelOnError: false,
-      );
-
       _startTimers();
-      // 重连后听众要重新报个到，房主才知道你还在
-      if (isGuest) _publish(PartyMessageType.join);
+      onConnectionChanged?.call(true);
+      if (isGuest) {
+        unawaited(_publish(PartyMessageType.join));
+        _joinRetry = Timer(const Duration(seconds: 5), () {
+          if (connected && isGuest && !admitted) {
+            unawaited(_publish(PartyMessageType.join));
+          }
+        });
+      }
       return true;
     } catch (_) {
+      if (!inRoom || myId != client) return false;
       _fail("连接出错，正在重试");
       _scheduleReconnect();
       return false;
@@ -525,7 +559,6 @@ class PartyService {
     _reconnectTimer?.cancel();
     _reconnectAttempt = 0;
     _connectAttempts = 0;
-    _publishPausedUntil = 0;
     connectionHint = "";
     onConnectionChanged?.call(false);
     return _connect();
@@ -571,7 +604,6 @@ class PartyService {
     connectionHint = "";
     _connectAttempts = 0;
     _reconnectAttempt = 0;
-    _publishPausedUntil = 0;
   }
 
   int? _retryAfter(Response<dynamic> resp) {
@@ -582,22 +614,9 @@ class PartyService {
     return secs.clamp(5, 120).toInt();
   }
 
-  /// 处理 SSE 数据流
-  void _onBytes(List<int> bytes) {
-    _buf += utf8.decode(bytes, allowMalformed: true);
-
-    // 按行解析 NDJSON（ntfy 的 /json 端点每行一条）
-    while (true) {
-      final idx = _buf.indexOf("\n");
-      if (idx < 0) break;
-      final line = _buf.substring(0, idx).trim();
-      _buf = _buf.substring(idx + 1);
-      if (line.isEmpty) continue;
-      _handleLine(line);
-    }
-  }
-
-  void _handleLine(String line) {
+  void _handleLine(String line, int gen) {
+    if (gen != _connGen || !connected) return;
+    _lastRelayActivity = DateTime.now().millisecondsSinceEpoch;
     Map<String, dynamic> json;
     try {
       final decoded = jsonDecode(line);
@@ -622,105 +641,96 @@ class PartyService {
       return;
     }
 
-    final state = PartyState.fromJson(payload);
-    if (state.roomId != roomId) return;
-    if (state.from == myId) return;
-    if (state.toUid != 0 && state.toUid != myUid) return;
-
     final now = DateTime.now().millisecondsSinceEpoch;
+    final state = PartyState.fromJson(payload, receivedAt: now);
+    if (state.roomId != roomId || state.from.isEmpty || state.from == myId) {
+      return;
+    }
+    if (state.toUid != 0 && state.toUid != myUid) return;
+    if (state.toClient.isNotEmpty && state.toClient != myId) return;
 
-    // 房主发的任何消息都算「房主还在」
-    if (hostUid > 0 && state.uid == hostUid) _lastHostSeen = now;
-
+    final fromHost = isGuest && state.uid == hostUid;
+    if (fromHost && state.type != PartyMessageType.bye) {
+      if (_hostClient.isNotEmpty && _hostClient != state.from) {
+        admitted = false;
+        controlUids.clear();
+        _lastStateAt.clear();
+        _lastHostSeen = now;
+        unawaited(_publish(PartyMessageType.join));
+        onConnectionChanged?.call(true);
+      }
+      _hostClient = state.from;
+      _lastHostSeen = now;
+    }
+    final allowed = allowedUids.contains(state.uid);
     switch (state.type) {
       case PartyMessageType.deny:
-        // 只认发给自己的拒绝（toUid 为空的是广播，别跟着瞎退）
-        if (myUid <= 0 || state.toUid != myUid) return;
-        _emitNotice(PartyNotice(kind: PartyNoticeKind.denied, name: state.fromName));
-        Future.microtask(() => leaveRoom(silent: true));
+        if (!fromHost || state.toUid != myUid) return;
+        joinHint = "房主未将你列入一起听名单";
+        _emitNotice(
+            PartyNotice(kind: PartyNoticeKind.denied, name: state.fromName));
+        unawaited(leaveRoom(silent: true));
         return;
 
       case PartyMessageType.bye:
-        final wasHost = hostUid > 0 && state.uid == hostUid;
-        _removeMember(state.from);
-        _removeMemberByUid(state.uid);
-        if (wasHost) {
-          _emitNotice(PartyNotice(kind: PartyNoticeKind.hostLeft, name: state.fromName));
-          Future.microtask(() => leaveRoom(silent: true));
-        } else {
-          _emitNotice(PartyNotice(kind: PartyNoticeKind.left, name: state.fromName));
+        if (fromHost && state.from == _hostClient) {
+          _emitNotice(PartyNotice(
+              kind: PartyNoticeKind.hostLeft, name: state.fromName));
+          unawaited(leaveRoom(silent: true));
+        } else if (members.containsKey(state.from)) {
+          _removeMember(state.from);
+          _emitNotice(
+              PartyNotice(kind: PartyNoticeKind.left, name: state.fromName));
         }
         return;
 
       case PartyMessageType.join:
-        if (isHost) {
-          // 认不出是谁（没登录）就直接不理，避免误伤其他听众
-          if (state.uid <= 0) return;
-          // 名单外的人不许进
-          if (!allowedUids.contains(state.uid)) {
-            _publish(PartyMessageType.deny, toUid: state.uid);
-            // 房主这边也要知道：不然只看到「没人进来」，不知道是被名单拦了。
-            // 同一个人在重连时会反复敲门，只提示一次。
-            if (_deniedUids.add(state.uid)) {
-              _emitNotice(
-                PartyNotice(kind: PartyNoticeKind.blocked, name: state.fromName),
-              );
-            }
-            return;
+      case PartyMessageType.sync:
+        if (!isHost || state.uid <= 0) return;
+        if (!allowed) {
+          _publish(PartyMessageType.deny,
+              toUid: state.uid, toClient: state.from);
+          if (_deniedUids.add(state.uid)) {
+            _emitNotice(PartyNotice(
+                kind: PartyNoticeKind.blocked, name: state.fromName));
           }
-          final isNew = _touchMember(state.from, state.uid, state.fromName);
-          // 断线重连会再发一次 join，别重复弹「加入了一起听」
-          if (isNew) {
-            _emitNotice(
-              PartyNotice(kind: PartyNoticeKind.joined, name: state.fromName),
-            );
-          }
-          // 必须回一条，哪怕房主现在没在放歌：
-          // 新成员要靠这条消息拿到 controlUids（红心共管）。
-          _broadcastNow(force: true);
           return;
         }
-        _touchMember(state.from, state.uid, state.fromName);
-        _emitNotice(PartyNotice(kind: PartyNoticeKind.joined, name: state.fromName));
+        if (_touchMember(state.from, state.uid, state.fromName)) {
+          _emitNotice(
+              PartyNotice(kind: PartyNoticeKind.joined, name: state.fromName));
+        }
+        onSyncRequested?.call(toClient: state.from, toUid: state.uid);
         return;
 
       case PartyMessageType.ping:
-        if (state.from.isNotEmpty) {
+        if ((isHost && allowed) || (isGuest && admitted)) {
           _touchMember(state.from, state.uid, state.fromName);
         }
-        if (isGuest && state.controlUids.isNotEmpty) {
-          _applyControlList(state.controlUids);
-        }
-        return;
-
-      case PartyMessageType.sync:
-        if (!isHost) return;
-        if (state.uid > 0 && !allowedUids.contains(state.uid)) {
-          _publish(PartyMessageType.deny, toUid: state.uid);
-          return;
-        }
-        if (state.uid <= 0) return;
-        if (state.from.isNotEmpty) {
-          _touchMember(state.from, state.uid, state.fromName);
-        }
-        _broadcastNow(force: true);
         return;
 
       case PartyMessageType.state:
-        if (state.from.isNotEmpty) {
-          _touchMember(state.from, state.uid, state.fromName);
-        }
-
+        if (state.at < (_lastStateAt[state.from] ?? 0)) return;
         if (isGuest) {
+          if (!fromHost) return;
+          if (!admitted) {
+            if (state.toClient != myId || state.toUid != myUid) return;
+            admitted = true;
+            _joinRetry?.cancel();
+            final admission = _admission;
+            if (admission != null && !admission.isCompleted) {
+              admission.complete(true);
+            }
+          }
           _applyControlList(state.controlUids);
-          // 只有控制端的状态才跟随
-          if (!state.controlUids.contains(state.uid)) return;
-        } else {
-          // 房主只跟随「有控制权的人」（共管）
-          if (!controlUids.contains(state.uid)) return;
+        } else if (!allowed ||
+            !controlUids.contains(state.uid) ||
+            _memberUids[state.from] != state.uid) {
+          return;
         }
-
-        if (!_stateController.isClosed) _stateController.add(state);
+        _lastStateAt[state.from] = state.at;
+        _touchMember(state.from, state.uid, state.fromName);
+        _stateController.add(state);
         return;
     }
   }
@@ -752,6 +762,7 @@ class PartyService {
         members.remove(old);
         _memberUids.remove(old);
         _memberSeen.remove(old);
+        _lastStateAt.remove(old);
         isNew = false;
         changed = true;
       }
@@ -766,25 +777,11 @@ class PartyService {
     return isNew;
   }
 
-  /// 按 UID 移除（bye 里的 clientId 对不上时兜底）
-  void _removeMemberByUid(int uid) {
-    if (uid <= 0) return;
-    final hits = _memberUids.entries
-        .where((e) => e.value == uid)
-        .map((e) => e.key)
-        .toList();
-    for (final id in hits) {
-      members.remove(id);
-      _memberUids.remove(id);
-      _memberSeen.remove(id);
-    }
-    if (hits.isNotEmpty) _emitMembers();
-  }
-
   void _removeMember(String clientId) {
     final removed = members.remove(clientId) != null;
     _memberUids.remove(clientId);
     _memberSeen.remove(clientId);
+    _lastStateAt.remove(clientId);
     if (removed) _emitMembers();
   }
 
@@ -800,6 +797,10 @@ class PartyService {
 
   void _onClosed(int gen) {
     if (gen != _connGen) return;
+    _connGen++;
+    _cancelToken?.cancel();
+    _joinRetry?.cancel();
+    if (isGuest) admitted = false;
     final wasConnected = connected;
     connected = false;
     if (wasConnected) onConnectionChanged?.call(false);
@@ -812,6 +813,9 @@ class PartyService {
   }
 
   Future<void> _disconnect() async {
+    _joinRetry?.cancel();
+    if (isGuest) admitted = false;
+    connected = false;
     // 作废旧连接：之后旧流再报 onDone / onError 都不算掉线
     _connGen++;
     _pingTimer?.cancel();
@@ -827,7 +831,6 @@ class PartyService {
       // 卡住就放弃这一条，反正 token 已经取消了
     }
     _sub = null;
-    _buf = "";
     connected = false;
   }
 
@@ -854,56 +857,49 @@ class PartyService {
     });
   }
 
+  Timer? _joinRetry;
+  int _lastRelayActivity = 0;
+
   void _startTimers() {
     _pingTimer?.cancel();
-    // 15 秒一次：ntfy.sh 免费额度是「60 次突发 + 每 5 秒回 1 次」，
-    // 以前 3 秒广播 + 10 秒心跳 = 26 次/分钟，四五分钟就把额度打空，
-    // 之后所有消息都被 429 丢掉，房间看着还连着其实已经不同步了。
-    _pingTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      _publish(PartyMessageType.ping);
+    // 房主的播放快照也承担心跳。
+    _pingTimer = Timer.periodic(const Duration(seconds: 25), (_) {
+      if (isHost) {
+        onSyncRequested?.call();
+      } else {
+        _publish(admitted ? PartyMessageType.ping : PartyMessageType.join);
+      }
     });
 
     _pruneTimer?.cancel();
     _pruneTimer = Timer.periodic(const Duration(seconds: 8), (_) {
       _pruneMembers();
-
-      // 听众：房主很久没动静 → 房间已经结束了
-      if (isGuest && _lastHostSeen > 0) {
-        final silent = DateTime.now().millisecondsSinceEpoch - _lastHostSeen;
-        if (silent > hostTimeoutMs) {
-          _emitNotice(const PartyNotice(kind: PartyNoticeKind.hostLeft));
-          Future.microtask(() => leaveRoom(silent: true));
-        }
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (isGuest && now - _lastHostSeen > hostTimeoutMs) {
+        _emitNotice(const PartyNotice(kind: PartyNoticeKind.hostLeft));
+        unawaited(leaveRoom(silent: true));
+        return;
       }
+      if (now - _lastRelayActivity > 90000) _onClosed(_connGen);
     });
   }
 
-  /// 广播播放状态
-  ///
-  /// [music] 可以为空：房主暂时没放歌时也要能把 controlUids 发出去，
-  /// 否则刚加入的共管会以为自己没有权限。
   void broadcast({
     MusicItem? music,
     Duration position = Duration.zero,
     bool playing = false,
+    String toClient = "",
+    int toUid = 0,
   }) {
     _publish(
       PartyMessageType.state,
       music: music,
       position: position.inMilliseconds,
       playing: playing,
+      toClient: toClient,
+      toUid: toUid,
     );
   }
-
-  void _broadcastNow({bool force = false}) {
-    onSyncRequested?.call(force);
-  }
-
-  /// 听众主动要一次完整状态
-  ///
-  /// 丢包时靠这个补，比把房主的广播频率提回去省额度：
-  /// 只在刚进房间 / 长时间没收到消息时发几条。
-  Future<void> requestSync() => _publish(PartyMessageType.sync);
 
   /// 发布一条消息
   Future<void> _publish(
@@ -912,6 +908,7 @@ class PartyService {
     int position = 0,
     bool playing = false,
     int toUid = 0,
+    String toClient = "",
   }) async {
     if (!connected || roomId.isEmpty) return;
 
@@ -936,6 +933,7 @@ class PartyService {
       at: DateTime.now().millisecondsSinceEpoch,
       controlUids: controlUids.toList(),
       toUid: toUid,
+      toClient: toClient,
     );
 
     try {
@@ -947,9 +945,10 @@ class PartyService {
           headers: {"User-Agent": "manman-music/party"},
         ),
       );
-      if (resp.statusCode == 429) {
+      if (resp.statusCode == 429 && state.from == myId && inRoom) {
         final wait = _retryAfter(resp) ?? 30;
-        _publishPausedUntil = DateTime.now().millisecondsSinceEpoch + wait * 1000;
+        _publishPausedUntil =
+            DateTime.now().millisecondsSinceEpoch + wait * 1000;
       }
     } catch (_) {
       // 单条失败无需处理，下一次心跳会自动补上
@@ -996,6 +995,7 @@ class PartyService {
       members.remove(id);
       _memberUids.remove(id);
       _memberSeen.remove(id);
+      _lastStateAt.remove(id);
     }
     _emitMembers();
   }
@@ -1005,11 +1005,18 @@ class PartyService {
   /// [silent] 为 true 时不发 bye（被踢、房主已走这类情况没必要再喊一声）。
   Future<void> leaveRoom({bool silent = false}) async {
     if (inRoom && connected && !silent) {
-      await _publish(PartyMessageType.bye);
-      // 给这条 bye 一点时间发出去
-      await Future.delayed(const Duration(milliseconds: 120));
+      await _publish(PartyMessageType.bye).timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {},
+      );
     }
 
+    final admission = _admission;
+    if (admission != null && !admission.isCompleted) admission.complete(false);
+    _admission = null;
+    admitted = false;
+    _hostClient = "";
+    _lastStateAt.clear();
     role = PartyRole.none;
     roomId = "";
     hostUid = 0;
@@ -1049,34 +1056,32 @@ class PartyService {
     final room = targetRoom.trim();
     final targetTopic = "manman_party_$room";
 
-    try {
-      final resp = await Dio(
-        BaseOptions(
-          connectTimeout: const Duration(seconds: 5),
-          receiveTimeout: const Duration(seconds: 5),
-          validateStatus: (_) => true,
-          responseType: ResponseType.plain,
-          headers: {"User-Agent": "manman-music/party"},
-        ),
-      ).get<String>("$relayBase/$targetTopic/json?poll=1&since=120s");
-
-      if (resp.statusCode != 200) return null;
-      final text = resp.data ?? "";
-      if (text.isEmpty) return null;
-
-      return parseProbe(
-        text.split("\n"),
-        room: room,
-        nowMs: DateTime.now().millisecondsSinceEpoch,
-      );
-    } catch (_) {
-      return null;
+    final resp = await _probeDio.get<String>(
+      "$relayBase/$targetTopic/json",
+      queryParameters: {"poll": "1", "since": "100s"},
+      options: Options(headers: {"Cache-Control": "no-cache"}),
+    );
+    if (resp.statusCode != 200) {
+      throw StateError("中继暂时不可用（HTTP ${resp.statusCode}）");
     }
+    return parseProbe(
+      (resp.data ?? "").split("\n"),
+      room: room,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+    );
   }
+
+  final Dio _probeDio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 6),
+    receiveTimeout: const Duration(seconds: 6),
+    validateStatus: (_) => true,
+    responseType: ResponseType.plain,
+    headers: {"User-Agent": "manman-music/party"},
+  ));
 
   /// 从 poll 回来的 NDJSON 里挑出房间状态
   ///
-  /// 纯函数，方便单测：窗口是服务端给的（since=120s），
+  /// 纯函数，方便单测：窗口是服务端给的（since=100s），
   /// 所以「窗口里有房主的消息」就等于「房间还开着」。
   @visibleForTesting
   static PartyProbe? parseProbe(
@@ -1086,10 +1091,9 @@ class PartyService {
   }) {
     final hostUid = hostUidFromRoom(room);
 
-    String nick = "";
-    int lastHostAt = 0;
-    int lastByeAt = 0;
-    PartyProbe? music;
+    PartyState? latestHost;
+    PartyState? latestPlayback;
+    int relayTime = -1;
 
     for (final line in lines) {
       final trimmed = line.trim();
@@ -1123,40 +1127,34 @@ class PartyService {
       // 只认房主的消息：房间号里就写着房主 UID
       if (hostUid > 0 && state.uid != hostUid) continue;
 
-      if (state.at > lastHostAt) lastHostAt = state.at;
-      if (state.fromName.isNotEmpty) nick = state.fromName;
-
-      if (state.type == PartyMessageType.bye) {
-        if (state.at > lastByeAt) lastByeAt = state.at;
+      if (state.type != PartyMessageType.state &&
+          state.type != PartyMessageType.ping &&
+          state.type != PartyMessageType.bye) {
         continue;
       }
-      if (state.type != PartyMessageType.state) continue;
-      if (state.musicId.isEmpty) continue;
-
-      // 只保留最新的一条带歌的状态
-      if (music == null || state.at > music.at) {
-        music = PartyProbe(
-          nick: state.fromName,
-          musicName: state.name,
-          author: state.author,
-          cover: state.cover,
-          playing: state.playing,
-          at: state.at,
-        );
+      // ntfy 按服务端时间返回历史。同秒内以投递顺序为准。
+      final timestamp = json["time"];
+      final time = timestamp is num ? timestamp.toInt() : 0;
+      if (time < relayTime) continue;
+      relayTime = time;
+      if (latestHost?.from != state.from ||
+          state.type == PartyMessageType.bye) {
+        latestPlayback = null;
       }
+      if (state.type == PartyMessageType.state) latestPlayback = state;
+      latestHost = state;
     }
 
-    if (lastHostAt == 0) return null;
-    // 房主最后一句就是拜拜 → 房间已经关了
-    if (lastByeAt > 0 && lastByeAt >= lastHostAt) return null;
-
+    if (latestHost == null || latestHost.type == PartyMessageType.bye) {
+      return null;
+    }
     return PartyProbe(
-      nick: music?.nick ?? nick,
-      musicName: music?.musicName ?? "",
-      author: music?.author ?? "",
-      cover: music?.cover ?? "",
-      playing: music?.playing ?? true,
-      at: music?.at ?? 0,
+      nick: latestHost.fromName,
+      musicName: latestPlayback?.name ?? "",
+      author: latestPlayback?.author ?? "",
+      cover: latestPlayback?.cover ?? "",
+      playing: latestPlayback?.playing ?? false,
+      at: latestPlayback?.at ?? 0,
       seenAt: nowMs,
     );
   }
@@ -1189,7 +1187,6 @@ class PartyProbe {
   /// 知道在放什么歌（只知道房间开着但没在放歌时为 false）
   bool get hasMusic => musicName.isNotEmpty;
 
-  /// 两分钟内听不到房主动静就当作没在听
-  bool get isFresh =>
-      DateTime.now().millisecondsSinceEpoch - seenAt < 120000;
+  /// 列表中的探测结果最多保留 70 秒。
+  bool get isFresh => DateTime.now().millisecondsSinceEpoch - seenAt < 70000;
 }

@@ -86,9 +86,8 @@ class BiliSearchItem extends SearchItem {
     List<MusicItem> musicList = [];
 
     // 判断是否为歌单
-    if (json["videos"] != null) {
-      type = SearchType.orderName;
-      final pages = json["pages"].toList();
+    final pages = json["pages"];
+    if (pages is List) {
 
       for (var j in pages) {
         final mid = BiliId(
@@ -99,7 +98,9 @@ class BiliSearchItem extends SearchItem {
 
         final item = MusicItem(
           id: mid,
-          cover: j["first_frame"] ?? "",
+          cover: j["first_frame"]?.toString().isNotEmpty == true
+              ? j["first_frame"] as String
+              : json["pic"]?.toString() ?? "",
           name: j["part"],
           duration: j["duration"],
           author: "",
@@ -109,7 +110,7 @@ class BiliSearchItem extends SearchItem {
       }
     }
     if (musicList.isNotEmpty) {
-      if (json["videos"] > 1) {
+      if (musicList.length > 1) {
         type = SearchType.orderName;
       } else {
         type = SearchType.music;

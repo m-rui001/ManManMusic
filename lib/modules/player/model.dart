@@ -3,6 +3,7 @@ import "dart:async";
 import "package:audio_service/audio_service.dart";
 import "package:bobomusic/modules/party/party_control.dart";
 import "package:bobomusic/modules/player/service.dart";
+import "package:bobomusic/modules/player/audio_equalizer.dart";
 import "package:just_audio/just_audio.dart";
 import "package:flutter/material.dart";
 import "package:bobomusic/modules/player/const.dart";
@@ -61,10 +62,32 @@ class PlayerModel extends ChangeNotifier {
     super.dispose();
   }
 
+  List<MusicItem> get collectionQueue =>
+      _playerHandler?.player.collectionQueue ?? const [];
+
+  AudioEqualizer? get equalizer => _playerHandler?.player.equalizer;
+
+  Stream<PlayerState>? get playerStates => _audio?.playerStateStream;
+
+  Future<void> followRoom({
+    required MusicItem? music,
+    required bool playing,
+    required Duration Function(Duration?) position,
+    required bool Function() isCurrent,
+  }) async {
+    await _playerHandler?.player.followRoom(
+      music: music,
+      playing: playing,
+      position: position,
+      isCurrent: isCurrent,
+    );
+    notifyListeners();
+  }
+
   // 播放
-  Future<void> play({MusicItem? music}) async {
+  Future<void> play({MusicItem? music, List<MusicItem>? collection}) async {
     if (PartyControl.blocked()) return;
-    await _playerHandler?.play(music: music);
+    await _playerHandler?.play(music: music, collection: collection);
     notifyListeners();
   }
 
@@ -93,7 +116,7 @@ class PlayerModel extends ChangeNotifier {
 
   // 切换播放模式
   void togglePlayerMode({PlayerMode? mode}) {
-    _playerHandler?.player.togglePlayerMode();
+    _playerHandler?.player.togglePlayerMode(mode: mode);
     notifyListeners();
   }
 

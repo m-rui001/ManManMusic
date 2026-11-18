@@ -210,6 +210,7 @@ class PartySelfCard extends StatelessWidget {
 class PartyRosterTile extends StatelessWidget {
   final RosterMember member;
   final PartyProbe? probe;
+  final bool statusUnavailable;
   final VoidCallback onTap;
   final VoidCallback onRemove;
   final VoidCallback? onToggleControl;
@@ -218,6 +219,7 @@ class PartyRosterTile extends StatelessWidget {
     super.key,
     required this.member,
     required this.probe,
+    this.statusUnavailable = false,
     required this.onTap,
     required this.onRemove,
     this.onToggleControl,
@@ -295,9 +297,9 @@ class PartyRosterTile extends StatelessWidget {
                   Text(
                     (listening
                             ? (probe!.hasMusic
-                                ? "正在听《${clearHtmlTags(probe!.musicName)}》"
+                                ? "${probe!.playing ? "正在听" : "已暂停"}《${clearHtmlTags(probe!.musicName)}》"
                                 : "一起听开着 · 没在放歌")
-                            : "没在听歌") +
+                            : (statusUnavailable ? "在线状态待确认 · 可尝试加入" : "未开房 · 可尝试加入")) +
                         (member.canControl ? " · 共管" : ""),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

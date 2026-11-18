@@ -118,7 +118,12 @@ class PartyWatcher with WidgetsBindingObserver {
     final fresh = <int>[];
     try {
       await PartyService.forEachLimited(batch, (m) async {
-        final probe = await PartyService.instance.probeRoom(m.roomId);
+        final PartyProbe? probe;
+        try {
+          probe = await PartyService.instance.probeRoom(m.roomId);
+        } catch (_) {
+          return;
+        }
         final online = probe != null && probe.isFresh;
         // 只有「确定上次没在听 → 现在在听」才提醒；
         // 没探过的人（null）只记状态，不提醒
@@ -131,7 +136,7 @@ class PartyWatcher with WidgetsBindingObserver {
       _busy = false;
     }
 
-    if (fresh.isEmpty) return;
+    if (!enabled || !_started || fresh.isEmpty) return;
 
     final names = batch
         .where((m) => fresh.contains(m.mid))

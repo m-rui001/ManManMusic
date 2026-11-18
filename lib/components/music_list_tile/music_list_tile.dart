@@ -9,6 +9,7 @@ import "package:provider/provider.dart";
 class MusicListTile extends StatefulWidget {
   final MusicItem music;
   final void Function() onMore;
+  final VoidCallback? onPlay;
   final bool showAddIcon;
   final bool showOrderName;
   final bool showOrgin;
@@ -18,6 +19,7 @@ class MusicListTile extends StatefulWidget {
     {
       super.key,
       required this.onMore,
+      this.onPlay,
       this.showAddIcon = true,
       this.showOrderName = false,
       this.showOrgin = true
@@ -102,7 +104,7 @@ class MusicListTitleState extends State<MusicListTile> with SingleTickerProvider
           onTap: widget.onMore,
           child: Icon(Icons.more_vert, color: mainColor, size: 22),
         ),
-        onTap: () {
+        onTap: widget.onPlay ?? () {
           Provider.of<PlayerModel>(context, listen: false).play(music: widget.music);
         },
         onLongPress: widget.onMore,

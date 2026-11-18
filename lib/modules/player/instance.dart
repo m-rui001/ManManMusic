@@ -5,7 +5,9 @@ import "package:bobomusic/constants/cache_key.dart";
 import "package:bobomusic/db/db.dart";
 import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/music_order/utils.dart";
+import "package:bobomusic/modules/party/party_service.dart";
 import "package:bobomusic/modules/player/const.dart";
+import "package:bobomusic/modules/player/audio_equalizer.dart";
 import "package:bobomusic/modules/player/source.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:bobomusic/utils/throttle.dart";
@@ -32,8 +34,12 @@ class BBPlayer {
   }
 
   final audio = AudioPlayer();
+  late final equalizer = AudioEqualizer(audio);
   MusicItem? current;
   final List<MusicItem> playerList = [];
+  List<MusicItem> collectionQueue = const [];
+  String? _loadedTrack;
+  static String _track(MusicItem item) => "${item.origin.value}:${item.id}";
   PlayerMode playerMode = PlayerMode.listLoop;
 
   /// 开始播放时的回调（用于记录历史播放）
@@ -45,7 +51,7 @@ class BBPlayer {
     autoClose = AutoCloseMusic(onPause: () {
       pause();
     });
-    await _initLocalStorage();
+    unawaited(equalizer.init());
     var throttleEndNext = Throttle(const Duration(seconds: 1));
 
     _subscriptions.add(audio.playerStateStream.listen((state) {
@@ -57,6 +63,7 @@ class BBPlayer {
       }
       if (state.processingState == ProcessingState.completed) {
         throttleEndNext.call(() {
+          if (PartyService.instance.isGuest) return pause();
           if (autoClose.isPlayDoneAutoClose) {
             autoClose.isPlayDoneAutoClose = false;
             return pause();
@@ -74,69 +81,114 @@ class BBPlayer {
         t = n;
       }
     }));
+    await _initLocalStorage();
   }
 
   void dispose() {
     for (var sub in _subscriptions) {
       sub?.cancel();
     }
+    equalizer.dispose();
     audio.dispose();
     _timer?.cancel();
     autoClose.cancel();
   }
 
-  // 播放
-  Future<void> play({MusicItem? music}) async {
-    if (music != null) {
-      if (
-        current == null ||
-        (current!.orderName != music.orderName) ||
-        (current!.playId.isNotEmpty && current!.playId != music.playId) ||
-        current!.id != music.id
-      ) {
-        current = music;
-        _updateLocalStorage();
+  Future<void> play({MusicItem? music, List<MusicItem>? collection}) async {
+    final selected =
+        music ?? current ?? (playerList.isEmpty ? null : playerList.first);
+    if (selected == null) return;
 
-        await audio.seek(Duration.zero);
-        await _play(music: music);
+    try {
+      final sameEntry = current?.id == selected.id &&
+          current?.origin == selected.origin &&
+          current?.orderName == selected.orderName &&
+          current?.playId == selected.playId;
+      if (!sameEntry || _loadedTrack != _track(selected)) {
+        await _play(music: selected);
+      } else if (isPlaying) {
+        await audio.pause();
       } else {
-        // 和 current 相等
-        if (isPlaying) {
-          // 播放中暂停
-          await audio.pause();
-        } else {
-          // 暂停中恢复播放
-          await _play();
-        }
+        await _play();
       }
+      current = selected;
+      if (collection != null) {
+        collectionQueue = List.unmodifiable(collection);
+      } else if (music != null && !collectionQueue.contains(music)) {
+        collectionQueue = const [];
+      }
+      eventBus.fire(RefreshPlayerCard());
+      _updateLocalStorage();
+    } on PlayerInterruptedException {
+      return;
+    } catch (error) {
+      BotToast.showText(text: "播放失败：$error");
+    }
+  }
+
+  Future<void> followRoom({
+    required MusicItem? music,
+    required bool playing,
+    required Duration Function(Duration?) position,
+    required bool Function() isCurrent,
+  }) async {
+    if (music == null) {
+      if (isCurrent()) await audio.pause();
+      return;
+    }
+    if (!isCurrent()) return;
+    final changed = _loadedTrack != _track(music);
+    if (changed) {
+      await _load(music, isCurrent: isCurrent);
+      if (!isCurrent()) return;
+      collectionQueue = const [];
+      eventBus.fire(RefreshPlayerCard());
+    }
+    if (!isCurrent()) return;
+    if (!playing && audio.playing) await audio.pause();
+    final target = position(audio.duration);
+    if (changed || (audio.position - target).abs().inMilliseconds > 900) {
+      await audio.seek(target);
+    }
+    if (isCurrent() && playing && !audio.playing) _startPlayback();
+  }
+
+  Future<void> _stepCollection(int offset) async {
+    final index = collectionQueue.indexWhere((entry) => entry == current);
+    if (index < 0) return;
+    var nextIndex = index + offset;
+    if (playerMode == PlayerMode.random && offset > 0) {
+      final others = collectionQueue.where((item) => item != current).toList()
+        ..shuffle();
+      if (others.isNotEmpty) {
+        await play(music: others.first);
+        return;
+      }
+    }
+    if (playerMode == PlayerMode.listOrder &&
+        (nextIndex < 0 || nextIndex >= collectionQueue.length)) {
+      await pause();
+      return;
+    }
+    nextIndex %= collectionQueue.length;
+    if (nextIndex == index) {
+      await audio.seek(Duration.zero);
+      _startPlayback();
     } else {
-      if (current != null) {
-        if (isPlaying) {
-          // 播放中暂停
-          await audio.pause();
-        } else {
-          // 停止中恢复播放
-          await _play();
-        }
-      } else {
-        // 没有播放列表
-        if (playerList.isNotEmpty) {
-          // 播放列表不为空
-          current = playerList.first;
-          _updateLocalStorage();
-          if (current != null) {
-            await _play(music: current);
-          }
-        }
-      }
+      await play(music: collectionQueue[nextIndex]);
     }
+  }
 
-    if (current!.duration == 0 && audio.duration != null) {
-      await db.update(current!.orderName, musicItem2Row(music: current!.copyWith(duration: audio.duration!.inSeconds)));
+  Future<void> resume() async {
+    final music = current;
+    if (music == null || audio.playing) return;
+    try {
+      await _play(music: _loadedTrack == _track(music) ? null : music);
+    } on PlayerInterruptedException {
+      return;
+    } catch (error) {
+      BotToast.showText(text: "播放失败：$error");
     }
-
-    eventBus.fire(RefreshPlayerCard());
-    _updateLocalStorage();
   }
 
   // 暂停
@@ -147,7 +199,8 @@ class BBPlayer {
 
   // 上一首
   Future<void> prev() async {
-    if(current != null && !await db.isTableExists(current!.orderName)) {
+    if (collectionQueue.isNotEmpty) return _stepCollection(-1);
+    if (current != null && !await db.isTableExists(current!.orderName)) {
       BotToast.showText(text: "找不到上一曲");
       return;
     }
@@ -155,10 +208,12 @@ class BBPlayer {
     await audio.seek(Duration.zero);
 
     if (current != null && current!.orderName.isNotEmpty) {
-      final newCurrentMusic = await db.queryByParam(current!.orderName, current!.id);
+      final newCurrentMusic =
+          await db.queryByParam(current!.orderName, current!.id);
 
       // 检查当前播放歌曲在列表中的 prev 变了没有，变了要重新赋值，变了就意味着列表里有歌曲增减
-      if (newCurrentMusic.isNotEmpty && newCurrentMusic[0]["prev"] != current!.prev) {
+      if (newCurrentMusic.isNotEmpty &&
+          newCurrentMusic[0]["prev"] != current!.prev) {
         current = row2MusicItem(dbRow: newCurrentMusic[0]);
       }
 
@@ -168,12 +223,15 @@ class BBPlayer {
         return;
       }
 
-      final lastMusic = await db.queryByParam(current!.orderName, current!.prev);
+      final lastMusic =
+          await db.queryByParam(current!.orderName, current!.prev);
 
       if (lastMusic.isNotEmpty) {
         await play(music: row2MusicItem(dbRow: lastMusic[0]));
       } else {
-        BotToast.showText(text: "找不到上一曲。当前歌曲所在歌单：${current!.orderName}", duration: const Duration(seconds: 4));
+        BotToast.showText(
+            text: "找不到上一曲。当前歌曲所在歌单：${current!.orderName}",
+            duration: const Duration(seconds: 4));
         return;
       }
     }
@@ -182,42 +240,22 @@ class BBPlayer {
   }
 
   // 下一首
-  Future<void> next() async {
-    if (current == null) return;
-
-    if (playerMode != PlayerMode.signalLoop) {
-      await endNext();
-    } else {
-      await audio.seek(Duration.zero);
-      await play(music: current);
-      await audio.play();
-    }
-
-    _updateLocalStorage();
-  }
+  Future<void> next() => endNext();
 
   // 结束播放
   Future<void> endNext() async {
     if (current == null) return;
 
-    signalLoop() async {
-      await audio.seek(Duration.zero);
-      await play(music: current);
-    }
-
-    // 单曲循环
     if (playerMode == PlayerMode.signalLoop) {
-      await signalLoop();
-      if (!audio.playing) {
-        audio.play();
-      }
-
+      await audio.seek(Duration.zero);
+      _startPlayback();
       _updateLocalStorage();
       return;
     }
-
-    if(current != null && !await db.isTableExists(current!.orderName)) {
-      BotToast.showText(text: "找不到下一曲", duration: const Duration(seconds: 4));
+    if (collectionQueue.isNotEmpty) return _stepCollection(1);
+    if (current!.orderName.isEmpty ||
+        !await db.isTableExists(current!.orderName)) {
+      await pause();
       return;
     }
 
@@ -226,7 +264,8 @@ class BBPlayer {
       final randomList = await db.queryRandom(tableName: current!.orderName);
 
       if (randomList.isEmpty) {
-        BotToast.showText(text: "当前列表是空的 QAQ", duration: const Duration(seconds: 3));
+        BotToast.showText(
+            text: "当前列表是空的 QAQ", duration: const Duration(seconds: 3));
         return;
       } else {
         await audio.seek(Duration.zero);
@@ -239,10 +278,12 @@ class BBPlayer {
     }
 
     if (current!.orderName.isNotEmpty) {
-      final newCurrentMusic = await db.queryByParam(current!.orderName, current!.playId.isEmpty ? current!.id : current!.playId);
+      final newCurrentMusic = await db.queryByParam(current!.orderName,
+          current!.playId.isEmpty ? current!.id : current!.playId);
 
       // 检查当前播放歌曲在列表中的 next 变了没有，变了要重新赋值，变了就意味着列表里有歌曲增减
-      if (newCurrentMusic.isNotEmpty && newCurrentMusic[0]["next"] != current!.next) {
+      if (newCurrentMusic.isNotEmpty &&
+          newCurrentMusic[0]["next"] != current!.next) {
         current = row2MusicItem(dbRow: newCurrentMusic[0]);
       }
     }
@@ -252,7 +293,8 @@ class BBPlayer {
       // 待播放列表不为空
       if (playerList.isNotEmpty) {
         await audio.seek(Duration.zero);
-        final index = playerList.indexWhere((music) => music.playId == current!.playId);
+        final index =
+            playerList.indexWhere((music) => music.playId == current!.playId);
 
         if (index >= 0) {
           if (playerList[index].isLast != "true") {
@@ -269,26 +311,33 @@ class BBPlayer {
         _updateLocalStorage();
         return;
       }
+
       /// -----------------------------------------------------------------------
-      if (current!.next.isNotEmpty && current!.isLast == "false" && current!.orderName.isNotEmpty) {
-        final nextDbMusics = await db.queryByParam(current!.orderName, current!.next);
+      if (current!.next.isNotEmpty &&
+          current!.isLast == "false" &&
+          current!.orderName.isNotEmpty) {
+        final nextDbMusics =
+            await db.queryByParam(current!.orderName, current!.next);
 
         if (nextDbMusics.isNotEmpty) {
           await audio.seek(Duration.zero);
           await play(music: row2MusicItem(dbRow: nextDbMusics[0]));
         } else {
-          BotToast.showText(text: "找不到下一曲。当前歌曲所在歌单：${current!.orderName}", duration: const Duration(seconds: 4));
+          BotToast.showText(
+              text: "找不到下一曲。当前歌曲所在歌单：${current!.orderName}",
+              duration: const Duration(seconds: 4));
 
           return;
         }
       } else if (current!.isLast == "true") {
-        BotToast.showText(text: "已经是列表最后一首歌了 QAQ", duration: const Duration(seconds: 3));
+        BotToast.showText(
+            text: "已经是列表最后一首歌了 QAQ", duration: const Duration(seconds: 3));
 
         return;
       }
 
       if (!audio.playing) {
-        audio.play();
+        _startPlayback();
       }
 
       _updateLocalStorage();
@@ -300,7 +349,8 @@ class BBPlayer {
     if (playerMode == PlayerMode.listLoop) {
       // 待播放列表不为空
       if (playerList.isNotEmpty) {
-        final targets = playerList.where((music) => music.playId == current!.next);
+        final targets =
+            playerList.where((music) => music.playId == current!.next);
 
         await audio.seek(Duration.zero);
 
@@ -313,22 +363,26 @@ class BBPlayer {
         _updateLocalStorage();
         return;
       }
+
       /// -----------------------------------------------------------------------
       if (current!.next.isNotEmpty && current!.orderName.isNotEmpty) {
-        final dbMusics = await db.queryByParam(current!.orderName, current!.next);
+        final dbMusics =
+            await db.queryByParam(current!.orderName, current!.next);
 
         if (dbMusics.isNotEmpty) {
           await audio.seek(Duration.zero);
           await play(music: row2MusicItem(dbRow: dbMusics[0]));
         } else {
-          BotToast.showText(text: "找不到下一曲。当前歌曲所在歌单：${current!.orderName}", duration: const Duration(seconds: 4));
+          BotToast.showText(
+              text: "找不到下一曲。当前歌曲所在歌单：${current!.orderName}",
+              duration: const Duration(seconds: 4));
 
           return;
         }
       }
 
       if (!audio.playing) {
-        audio.play();
+        _startPlayback();
       }
 
       _updateLocalStorage();
@@ -361,7 +415,8 @@ class BBPlayer {
 
   // 添加到待播放列表中
   // 这块逻辑确实不够优雅，但是不管那么多了
-  Future<void> addPlayerList(List<MusicItem> musics, {bool? showToast = false}) async {
+  Future<void> addPlayerList(List<MusicItem> musics,
+      {bool? showToast = false}) async {
     if (playerList.length + musics.length > 1000) {
       BotToast.showText(text: "出于性能考虑，列表歌曲不能超过 1000 首");
       return;
@@ -371,10 +426,8 @@ class BBPlayer {
 
     List<MusicItem> mList = [];
     for (var m in musics) {
-      final newM = m.copyWith(
-        playId: uuid.v4(),
-        orderName: TableName.musicWaitPlay
-      );
+      final newM =
+          m.copyWith(playId: uuid.v4(), orderName: TableName.musicWaitPlay);
       mList.add(newM);
     }
     playerList.addAll(mList);
@@ -385,7 +438,8 @@ class BBPlayer {
       await db.insert(TableName.musicWaitPlay, musicItem2Row(music: pm));
     }
 
-    final newMusicList = await getUpdatedMusicList(tabName: TableName.musicWaitPlay);
+    final newMusicList =
+        await getUpdatedMusicList(tabName: TableName.musicWaitPlay);
 
     playerList.clear();
     playerList.addAll(newMusicList);
@@ -393,7 +447,9 @@ class BBPlayer {
     EasyLoading.dismiss();
 
     if (current != null) {
-      final targets = newMusicList.where((music) => music.playId == current!.playId).toList();
+      final targets = newMusicList
+          .where((music) => music.playId == current!.playId)
+          .toList();
 
       if (targets.isNotEmpty) {
         current = targets.first;
@@ -409,7 +465,8 @@ class BBPlayer {
   Future<void> removePlayerList(List<MusicItem> musics) async {
     EasyLoading.show(maskType: EasyLoadingMaskType.black);
     try {
-      playerList.removeWhere((w) => musics.where((e) => e.playId == w.playId).isNotEmpty);
+      playerList.removeWhere(
+          (w) => musics.where((e) => e.playId == w.playId).isNotEmpty);
 
       for (var m in musics) {
         await db.delete(TableName.musicWaitPlay, m.playId);
@@ -435,26 +492,40 @@ class BBPlayer {
     EasyLoading.dismiss();
   }
 
-  Future<void> _play({MusicItem? music, bool isPlay = true}) async {
-    if (music != null) {
-      if (music.localPath.isNotEmpty) {
-        await audio.setFilePath(music.localPath);
-      } else {
-        try {
-          await audio.setAudioSource(BBMusicSource(music));
-        } catch (error) {
-          BotToast.showText(text: "播放失败：$error");
-        }
-      }
-    }
+  int _loadRequest = 0;
 
-    if (isPlay) {
-      await audio.play();
-      // 真正开始播放时才记账：当前这首歌
-      if (current != null) onPlayRecord?.call(current!);
-    } else {
+  Future<void> _load(MusicItem music, {bool Function()? isCurrent}) async {
+    final request = ++_loadRequest;
+    bool canLoad() => request == _loadRequest && (isCurrent?.call() ?? true);
+    isLoading = true;
+    try {
+      final source = music.localPath.isNotEmpty
+          ? AudioSource.file(music.localPath)
+          : await resolveMusicSource(music);
+      if (!canLoad()) throw PlayerInterruptedException("歌曲已切换");
       await audio.pause();
+      if (!canLoad()) throw PlayerInterruptedException("歌曲已切换");
+      _loadedTrack = null;
+      await audio.setAudioSource(source);
+      if (!canLoad()) throw PlayerInterruptedException("歌曲已切换");
+      _loadedTrack = _track(music);
+      current = music;
+    } finally {
+      if (request == _loadRequest) isLoading = false;
     }
+  }
+
+  Future<void> _play({MusicItem? music, bool isPlay = true}) async {
+    if (music != null) await _load(music);
+    if (isPlay) _startPlayback();
+  }
+
+  void _startPlayback() {
+    unawaited(audio.play().catchError((Object error) {
+      BotToast.showText(text: "播放失败：$error");
+    }));
+    final music = current;
+    if (music != null) onPlayRecord?.call(music);
   }
 
   // 缓存播放进度
@@ -506,13 +577,13 @@ class BBPlayer {
         isLast: data["isLast"],
       );
 
-      _play(music: current!, isPlay: false).then((res) {
-        // 设置播放进度
+      try {
+        await _play(music: current!, isPlay: false);
         final pos = localStorage.getInt(_storageKeyPosition) ?? 0;
-        if (pos > 0) {
-          audio.seek(Duration(milliseconds: pos));
-        }
-      });
+        if (pos > 0) await audio.seek(Duration(milliseconds: pos));
+      } catch (_) {
+        // 用户仍可重新尝试播放上次的歌曲。
+      }
     }
 
     // 播放模式
@@ -521,9 +592,8 @@ class BBPlayer {
       playerMode = PlayerMode.getByValue(int.parse(m));
     }
 
-    // 待播放列表
-    List<MusicItem> playMusics = (await db.queryAll(TableName.musicWaitPlay, groupBy: "playId")).map((e) => row2MusicItem(dbRow: e)).toList();
-    addPlayerList(playMusics);
+    playerList
+        .addAll(await getUpdatedMusicList(tabName: TableName.musicWaitPlay));
   }
 }
 

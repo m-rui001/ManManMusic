@@ -34,6 +34,7 @@ class CurrentListState extends State<CurrentList> {
   }
 
   void _scrollToCurrentSong() {
+    if (!mounted) return;
     final player = Provider.of<PlayerModel>(context, listen: false);
     if (player.current == null) return;
 
@@ -54,7 +55,7 @@ class CurrentListState extends State<CurrentList> {
     // 如果找到目标索引，则滚动到该位置
     if (targetIndex != null && _scrollController.hasClients) {
       // 每首歌大约 60 像素高度（估算），如果更准确的话可以通过 GlobalKey 计算
-      const double itemHeight = 60;
+      const double itemHeight = 64;
       final double scrollOffset = targetIndex * itemHeight;
 
       // 滚动到目标位置
@@ -125,6 +126,7 @@ class CurrentListState extends State<CurrentList> {
       height: h,
       child: ListView.builder(
         controller: _scrollController,
+        itemExtent: 64,
         padding: const EdgeInsets.only(bottom: 20),
         itemCount: widget.musicList.length,
         itemBuilder: (context, index) {

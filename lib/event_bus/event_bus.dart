@@ -21,6 +21,7 @@ class ShowLocalAction {}
 class RefreshTabList {}
 class RefreshCollectionList {}
 class RefreshPlayerCard {}
+class PartyPlaybackChanged {}
 class ScrollLyric {}
 
 class ThemeColorChanged {

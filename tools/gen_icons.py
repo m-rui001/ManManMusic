@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""从 logo.jpg 生成全平台 App 图标 / 应用内 logo / 启动图。
+"""从 logo.png 生成全平台 App 图标 / 应用内 logo / 启动图。
 
 用法（在项目根目录执行）：
     python tools/gen_icons.py [源图片路径]
 
-默认源图片：logo.jpg；默认输出：assets/logo.png + assets/ic_launch.png
+默认源图片：logo.png；默认输出：assets/logo.png + assets/ic_launch.png
 以及 android / ios / macos / windows / web 五端图标。
 
 依赖：pip install pillow
@@ -22,7 +22,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 from PIL import Image, ImageDraw
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(ROOT, sys.argv[1] if len(sys.argv) > 1 else "logo.jpg")
+SRC = os.path.join(ROOT, sys.argv[1] if len(sys.argv) > 1 else "logo.png")
 
 # 图标兜底背景色（与 logo 边缘平均色一致，用于自适应图标背景 / maskable 图标）
 BG = (0xCF, 0xC4, 0xAA)
@@ -75,11 +75,17 @@ def main():
     if not os.path.exists(SRC):
         sys.exit(f"找不到源图片：{SRC}")
 
+    global BG
+    image = Image.open(SRC).convert("RGB")
+    BG = tuple(round(sum(pixel[i] for pixel in (
+        image.getpixel((0, 0)), image.getpixel((0, image.height - 1)),
+        image.getpixel((image.width - 1, 0)), image.getpixel((image.width - 1, image.height - 1)),
+    )) / 4) for i in range(3))
     print(f"源图片：{SRC}")
     print("\n[1/7] 应用内 logo / 窗口图标")
 
-    # 应用内展示 + 桌面窗口图标（setting.dart / window_manage.dart 引用 ic_launch.png）
-    save(make(1600), "assets/ic_launch.png")
+    # 应用内展示和启动图
+    save(make(1024), "assets/ic_launch.png")
     save(make(1024), "assets/logo.png")
 
     print("\n[2/7] Android")

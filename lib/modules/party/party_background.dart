@@ -68,12 +68,13 @@ class PartyBackground {
     if (members.isEmpty) return;
 
     final online = <int>{};
+    final unknown = <int>{};
     for (final m in members) {
       try {
         final probe = await PartyService.instance.probeRoom(m.roomId);
         if (probe != null && probe.isFresh) online.add(m.mid);
       } catch (_) {
-        // 单个失败不影响其他人
+        unknown.add(m.mid);
       }
     }
 
@@ -81,6 +82,9 @@ class PartyBackground {
         .map((e) => int.tryParse(e) ?? 0)
         .where((e) => e > 0)
         .toSet();
+
+    if (unknown.length == members.length) return;
+    online.addAll(last.intersection(unknown));
 
     // 第一次跑只建立基线，不提醒
     if (!(prefs.getBool(_kBaseline) ?? false)) {

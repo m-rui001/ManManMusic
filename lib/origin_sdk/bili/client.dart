@@ -285,7 +285,8 @@ class BiliClient implements OriginService {
   // 搜索视频所在系列或合集
   Future<BiliSearchSeasonItem?> searchSeason(int mid, int seasonId) async {
     await init();
-    const url = "https://api.bilibili.com/x/polymer/web-space/seasons_archives_list";
+    const url =
+        "https://api.bilibili.com/x/polymer/web-space/seasons_archives_list";
     Map<String, String> query = _signParams({
       "mid": "$mid",
       "season_id": "$seasonId",
@@ -351,7 +352,8 @@ class BiliClient implements OriginService {
     }
   }
 
-  Future<String?> _doFetchCid({required String aid, required String bvid}) async {
+  Future<String?> _doFetchCid(
+      {required String aid, required String bvid}) async {
     try {
       final resp = await dio.get(
         "https://api.bilibili.com/x/web-interface/view",
@@ -413,76 +415,66 @@ class BiliClient implements OriginService {
     await init();
     const apiPath = "https://api.bilibili.com/x/player/wbi/playurl";
     // const url = "https://api.bilibili.com/x/player/playurl";
-    final tryHiRes = BiliAuth.instance.isLogin;
-    Map<String, String> query = _signParams({
-      "avid": biliid.aid,
-      "bvid": biliid.bvid,
-      "cid": biliid.cid!,
-      "fnval": tryHiRes ? "4048" : "16",
-      "fourk": "1",
-    });
-    final uri = Uri.parse(apiPath).replace(queryParameters: query).toString();
-    dynamic response;
-    try {
-      response = await dio.get(uri);
-    } catch (e) {
-      // 高音质请求被拒时，静默退回普通音质，避免影响播放
-      if (!tryHiRes) rethrow;
-      query = _signParams({
+    Future<MusicUrl> requestAudio(String flags) async {
+      final query = _signParams({
         "avid": biliid.aid,
         "bvid": biliid.bvid,
         "cid": biliid.cid!,
-        "fnval": "16",
+        "fnval": flags,
+        "fourk": "1",
       });
-      response = await dio.get(
+      final response = await dio.get(
         Uri.parse(apiPath).replace(queryParameters: query).toString(),
       );
+      final body = response.data;
+      final data = body is Map ? body["data"] : null;
+      final dash = data is Map ? data["dash"] : null;
+      if (dash is! Map) throw StateError("该视频没有可播放的音轨");
+
+      String? url(Map track) {
+        for (final value in [track["baseUrl"], track["base_url"]]) {
+          if (value is String && value.isNotEmpty) return value;
+        }
+        for (final list in [track["backupUrl"], track["backup_url"]]) {
+          if (list is List) {
+            for (final value in list) {
+              if (value is String && value.isNotEmpty) return value;
+            }
+          }
+        }
+        return null;
+      }
+
+      final flac = dash["flac"];
+      final lossless = flac is Map ? flac["audio"] : null;
+      final dolby = dash["dolby"];
+      final audio = dash["audio"];
+      final stereo = audio is List ? audio.whereType<Map>().toList() : <Map>[];
+      int bandwidth(Map item) => (item["bandwidth"] as num?)?.toInt() ?? 0;
+      stereo.sort((a, b) => bandwidth(b).compareTo(bandwidth(a)));
+      final candidates = [
+        if (lossless is Map) lossless,
+        ...stereo,
+        if (dolby is Map && dolby["audio"] is List)
+          ...(dolby["audio"] as List).whereType<Map>(),
+      ];
+      for (final candidate in candidates) {
+        final src = url(candidate);
+        if (src != null) {
+          return MusicUrl(url: src, headers: {"Referer": _referer});
+        }
+      }
+      throw StateError("获取音频地址失败：没有可用音轨");
     }
 
-    final data = response.data["data"];
-    final dash = data["dash"];
-    if (dash == null) {
-      throw Exception("该视频没有音频流");
-    }
-
-    // 汇总所有可选音轨
-    final List<Map> candidates = [];
-    final audioList = (dash["audio"] as List?) ?? [];
-    for (final a in audioList) {
-      if (a is Map) candidates.add(a);
-    }
-    // Hi-Res / 无损
-    final flac = dash["flac"];
-    if (flac is Map && flac["audio"] is Map) {
-      candidates.add(Map.from(flac["audio"] as Map));
-    }
-    // 杜比全景声
-    final dolby = dash["dolby"];
-    if (dolby is Map && dolby["audio"] is List) {
-      for (final a in (dolby["audio"] as List)) {
-        if (a is Map) candidates.add(Map.from(a));
+    if (BiliAuth.instance.isLogin) {
+      try {
+        return await requestAudio("4048");
+      } catch (_) {
+        // HTTP 成功也可能返回业务错误或缺失 DASH，继续请求常规音轨。
       }
     }
-
-    if (candidates.isEmpty) {
-      throw Exception("获取音频地址失败：没有可用音轨");
-    }
-
-    // 按带宽排序，取最高音质
-    candidates.sort(
-      (a, b) => (b["bandwidth"] ?? 0).compareTo(a["bandwidth"] ?? 0),
-    );
-    final best = candidates.first;
-    final murl =
-        best["baseUrl"] ?? best["base_url"] ?? best["base_url_backup"];
-    if (murl == null) {
-      throw Exception("获取音频地址失败");
-    }
-
-    return MusicUrl(
-      url: "$murl",
-      headers: {"Referer": _referer},
-    );
+    return requestAudio("16");
   }
 
   // 对参数进行签名

@@ -86,7 +86,7 @@ class MarkdownRendererState extends State<MarkdownRenderer> {
           launchUrl(Uri.parse(href));
         }
       },
-      imageBuilder: (uri, title, alt) => _buildImage(uri.toString(), title, alt), // 添加 imageBuilder 来处理图片
+      sizedImageBuilder: (image) => _buildImage(image.uri.toString(), image.title, image.alt),
     );
   }
 }

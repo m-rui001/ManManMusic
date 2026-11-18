@@ -14,6 +14,7 @@ import "package:bobomusic/modules/download/model.dart";
 import "package:bobomusic/modules/music_order/utils.dart";
 import "package:bobomusic/modules/player/lyrics_card/lyric_scroller.dart";
 import "package:bobomusic/modules/player/player_card/current_list.dart";
+import "package:bobomusic/modules/player/artwork.dart";
 import "package:bobomusic/modules/player/player_card/vinyl_record.dart";
 import "package:bobomusic/modules/player/utils.dart";
 import "package:bobomusic/modules/share/share_sheet.dart";
@@ -45,11 +46,12 @@ class PlayerCard extends StatefulWidget {
 
 class PlayerCardState extends State<PlayerCard> {
   bool isLike = false;
-  String coverUrl = "";
   String errorCoverUrl = Covers.getLocalCover();
   ImageProvider? _imageProvider;
   ImageStream? _imageStream;
   ImageInfo? _imageInfo;
+  ImageStreamListener? _imageListener;
+  MusicItem? _artworkTrack;
   late PageController _pageController;
   int _currentPage = 0;
   final List<StreamSubscription?> _subscriptions = [];
@@ -81,68 +83,50 @@ class PlayerCardState extends State<PlayerCard> {
 
   Future<void> _initCoverAndLyric() async {
     if (!mounted) return;
+    final player = context.read<PlayerModel>();
+    final current = player.current;
+    if (current == null || identical(current, _artworkTrack)) return;
+    _artworkTrack = current;
 
-    final current = Provider.of<PlayerModel>(context, listen: false).current;
-    if (current == null) return;
-
-    final p = SearchParams(keyword: current.name, page: 1, pageSize: 10);
-
-    if (current.lyric != "" && current.cover != "") {
-      setState(() {
-        final albumcover = current.cover;
-        _imageProvider = NetworkImage(albumcover);
-        _loadImage();
-      });
-      return;
+    final original = musicArtwork(current.cover);
+    _loadImage(original, onError: () => _findArtwork(current));
+    if (original == null) {
+      await _findArtwork(current);
+    } else if (current.lyric.isEmpty) {
+      await _findArtwork(current, onlyLyrics: true);
     }
+  }
 
-    const maxRetries = 3;
-    int attempt = 0;
-    dynamic lastError;
-
-    while (attempt < maxRetries) {
-      attempt++;
-      try {
-        final value = await lyricService.searchMusic(p, silent: true);
-        if (value != null && value.list.isNotEmpty) {
-          final first = value.list.first;
-          final albumcover = first.albumcover;
-
-          if (!mounted) return;
-          setState(() {
-            _imageProvider = NetworkImage(albumcover);
-            _loadImage();
-          });
-
-          var musicItem = current.copyWith(cover: first.albumcover);
-          await db.update(current.orderName, musicItem2Row(music: musicItem));
-
-          if (current.lyric == "" && mounted) {
-            try {
-              final lyric = await lyricService.searchLyric(first.songmid);
-              if (lyric != null && mounted) {
-                musicItem = musicItem.copyWith(lyric: lyric.lyric);
-                final id = await db.update(current.orderName, musicItem2Row(music: musicItem));
-                if (id > -1) {
-                  eventBus.fire(ScrollLyric());
-                }
-              }
-            } catch (e) {
-              print("歌词搜索失败: $e");
-            }
-          }
-          return;
-        }
-      } catch (error) {
-        lastError = error;
-        print("_initCoverAndLyric 第$attempt次尝试失败: $error");
-        if (attempt < maxRetries) {
-          await Future.delayed(Duration(milliseconds: 500 * attempt));
-        }
+  Future<void> _findArtwork(MusicItem current, {bool onlyLyrics = false}) async {
+    try {
+      final result = await lyricService.searchMusic(
+        SearchParams(keyword: current.name, page: 1, pageSize: 10),
+        silent: true,
+      );
+      if (!mounted || !identical(_artworkTrack, current) ||
+          result == null || result.list.isEmpty) {
+        return;
       }
+      final match = result.list.first;
+      if (!onlyLyrics && _imageInfo == null) {
+        _loadImage(musicArtwork(match.albumcover));
+      }
+      if (current.lyric.isNotEmpty || current.orderName.isEmpty) return;
+      final lyric = await lyricService.searchLyric(match.songmid);
+      if (!mounted || !identical(_artworkTrack, current) || lyric == null) return;
+      final id = await db.update(current.orderName,
+          musicItem2Row(music: current.copyWith(lyric: lyric.lyric)));
+      if (id > -1) eventBus.fire(ScrollLyric());
+    } catch (_) {
+      // 保留原封面。找不到匹配时使用内置占位图。
     }
+  }
 
-    print("_initCoverAndLyric 重试$maxRetries次后仍然失败: $lastError");
+  void _removeImageListener() {
+    final listener = _imageListener;
+    if (listener != null) _imageStream?.removeListener(listener);
+    _imageListener = null;
+    _imageStream = null;
   }
 
   @override
@@ -150,30 +134,33 @@ class PlayerCardState extends State<PlayerCard> {
     for (var sub in _subscriptions) {
       sub?.cancel();
     }
-    _imageStream?.removeListener(
-      ImageStreamListener(
-        (ImageInfo info, bool synchronousCall) {},
-        onError: (dynamic exception, StackTrace? stackTrace) {},
-      ),
-    );
+    _removeImageListener();
+    _imageInfo?.dispose();
     _pageController.dispose();
     super.dispose();
   }
 
-  void _loadImage() {
-    _imageStream = _imageProvider?.resolve(const ImageConfiguration());
-    _imageStream?.addListener(
-      ImageStreamListener(
-        (ImageInfo info, bool synchronousCall) {
-          setState(() {
-            _imageInfo = info;
-          });
-        },
-        onError: (dynamic exception, StackTrace? stackTrace) {
-          print("Image loading error: $exception");
-        },
-      ),
-    );
+  void _loadImage(ImageProvider? provider, {VoidCallback? onError}) {
+    _removeImageListener();
+    setState(() {
+      _imageInfo?.dispose();
+      _imageInfo = null;
+      _imageProvider = provider;
+    });
+    if (provider == null) return;
+    final stream = provider.resolve(createLocalImageConfiguration(context));
+    _imageStream = stream;
+    _imageListener = ImageStreamListener((info, _) {
+      if (!mounted || !identical(_imageStream, stream)) {
+        info.dispose();
+        return;
+      }
+      setState(() {
+        _imageInfo?.dispose();
+        _imageInfo = info;
+      });
+    }, onError: (_, __) => onError?.call());
+    stream.addListener(_imageListener!);
   }
 
   Widget _buildTopBar(Color primaryColor) {
@@ -306,6 +293,8 @@ class PlayerCardState extends State<PlayerCard> {
     final NavigatorState navigator = Navigator.of(context, rootNavigator: false);
     return navigator.push(ModalBottomSheetRoute(
       isScrollControlled: true,
+      showDragHandle: true,
+      useSafeArea: true,
       builder: (context) {
         return CurrentList(musicList: musicList);
       },
@@ -407,10 +396,14 @@ class PlayerCardState extends State<PlayerCard> {
               showShareSheet(context);
             },
           ),
-          if(player.current!.orderName.isNotEmpty)
+          if (player.collectionQueue.isNotEmpty || player.current!.orderName.isNotEmpty)
             RippleIcon(
               size: 28,
               onTap: () async {
+                if (player.collectionQueue.isNotEmpty) {
+                  showCurrentList(context, player.collectionQueue);
+                  return;
+                }
                 EasyLoading.show(maskType: EasyLoadingMaskType.black);
 
                 try {
@@ -699,7 +692,6 @@ class _PlayerProgressState extends State<PlayerProgress> {
   double _value = 0;
   bool _isChanged = false;
   List<StreamSubscription<Duration>?> listens = [];
-  Timer? _seekTimer;
 
   @override
   void initState() {
@@ -726,7 +718,6 @@ class _PlayerProgressState extends State<PlayerProgress> {
 
   @override
   void dispose() {
-    _seekTimer?.cancel();
     for (final listen in listens) {
       listen?.cancel();
     }
@@ -770,16 +761,6 @@ class _PlayerProgressState extends State<PlayerProgress> {
                 final player = Provider.of<PlayerModel>(context, listen: false);
                 int v = (value * total).toInt();
                 player.seek(Duration(seconds: v));
-
-                _seekTimer?.cancel();
-                _seekTimer = Timer(const Duration(seconds: 1), () {
-                  if (player.isPlaying) {
-                    player.pause();
-                    player.play();
-                  } else {
-                    player.pause();
-                  }
-                });
 
                 setState(() {
                   _isChanged = false;

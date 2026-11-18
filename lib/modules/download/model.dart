@@ -62,11 +62,9 @@ Future<String> _downloadForDesktop(
   final addr = path.join("${dir!.path}/$name");
 
   // 查询缓存文件
-  final key = music2cacheKey(music);
-  final cacheFile = await audioCacheManage.getFileFromCache(key);
-  if (cacheFile?.file != null) {
-    final file = cacheFile!.file;
-    await file.copy(addr);
+  final cached = await cachedMusicFile(music);
+  if (cached != null) {
+    await cached.copy(addr);
     return addr;
   }
   // 从网络下载
@@ -100,13 +98,12 @@ Future<String> _downloadForAndroid(
   }
 
   // 查询缓存文件
-  final key = music2cacheKey(music);
-  final cacheFile = await audioCacheManage.getFileFromCache(key);
+  final cached = await cachedMusicFile(music);
   // 保存路径
   String savePath = path.join(dir.path, name);
-  if (cacheFile?.file != null) {
+  if (cached != null) {
     // 文件保存
-    cacheFile!.file.copy(savePath);
+    await cached.copy(savePath);
     BotToast.showText(text: "已经下载过此音乐");
   } else {
     // 没有缓存文件，从网络下载

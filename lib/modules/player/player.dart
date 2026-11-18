@@ -3,6 +3,8 @@ import "dart:async";
 import "package:bobomusic/modules/party/party_control.dart";
 import "package:bobomusic/modules/party/party_page.dart";
 import "package:bobomusic/modules/player/const.dart";
+import "package:bobomusic/modules/player/artwork.dart";
+import "package:bobomusic/modules/player/player_card/current_list.dart";
 import "package:bobomusic/utils/color.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
@@ -24,12 +26,12 @@ class PlayerView extends StatelessWidget {
         showPlayerCard(context);
       },
       child: Container(
-        height: 50,
+        height: 60,
         width: MediaQuery.of(context).size.width - 32,
         margin: EdgeInsets.only(bottom: cancelMargin ? 0 : 34),
-        padding: const EdgeInsets.only(left: 15, right: 10),
+        padding: const EdgeInsets.only(left: 9, right: 4),
         decoration: BoxDecoration(
-          borderRadius: cancelMargin ? const BorderRadius.all(Radius.circular(4)) : const BorderRadius.only(topLeft: Radius.circular(4), topRight: Radius.circular(4)),
+          borderRadius: BorderRadius.circular(18),
           color: ColorPallette.colorMix(context, 0.1),
         ),
         child: const Flex(
@@ -97,15 +99,48 @@ class PlayInfo extends StatelessWidget {
       builder: (context, player, child) {
         String name = player.current?.name ?? "暂无歌曲";
 
+        final artwork = musicArtwork(player.current?.cover ?? "");
+        final author = player.current?.author ?? "";
         return Expanded(
-          flex: 1,
-          child: Text(
-            name,
-            style: TextStyle(
-              fontSize: 16,
-              overflow: TextOverflow.ellipsis,
-              color: Theme.of(context).primaryColor,
-            ),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(9),
+                child: SizedBox.square(
+                  dimension: 42,
+                  child: artwork == null
+                      ? const Icon(Icons.music_note_rounded)
+                      : Image(
+                          image: artwork,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              const Icon(Icons.music_note_rounded),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    if (author.isNotEmpty)
+                      Text(
+                        author,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
         );
       },
@@ -167,7 +202,7 @@ class PrevButtonState extends State<PrevButton> {
 
     return Consumer<PlayerModel>(
       builder: (context, player, child) {
-        final disabled = (player.playerMode == PlayerMode.random || player.playerMode == PlayerMode.signalLoop || (player.current?.prev != null && player.current!.prev.isEmpty));
+        final disabled = player.collectionQueue.isEmpty && (player.current?.prev.isEmpty ?? true);
 
         return IconButton(
           color: widget.color ?? primaryColor,
@@ -219,7 +254,7 @@ class NextButtonState extends State<NextButton> {
 
     return Consumer<PlayerModel>(
       builder: (context, player, child) {
-        final disabled = player.current?.next != null && player.current!.next.isEmpty;
+        final disabled = player.collectionQueue.isEmpty && (player.current?.next.isEmpty ?? true);
 
         return IconButton(
           color: widget.color ?? primaryColor,
@@ -310,11 +345,14 @@ class ModeButton extends StatelessWidget {
 
 /// 显示待播放列表
 Future showPlayerList(BuildContext context) {
+  final collection = context.read<PlayerModel>().collectionQueue;
   final NavigatorState navigator = Navigator.of(context, rootNavigator: false);
   return navigator.push(ModalBottomSheetRoute(
     isScrollControlled: true,
+    showDragHandle: true,
+    useSafeArea: true,
     builder: (context) {
-      return const PlayerList();
+      return collection.isEmpty ? const PlayerList() : CurrentList(musicList: collection);
     },
   ));
 }

@@ -22,7 +22,10 @@ class PartySession {
 
   PlayerModel? _player;
   Timer? _broadcastTimer;
-  Timer? _syncTimer;
+  StreamSubscription? _playerStateSub;
+  StreamSubscription? _seekSub;
+  PartyState? _pendingState;
+  bool _following = false;
   StreamSubscription<PartyState>? _stateSub;
   StreamSubscription<PartyNotice>? _noticeSub;
   StreamSubscription? _refreshSub;
@@ -35,7 +38,7 @@ class PartySession {
   bool get isHost => _party.isHost;
   bool get isGuest => _party.isGuest;
   bool get inRoom => _party.inRoom;
-  bool get connected => _party.connected;
+  bool get connected => _party.connected && (!isGuest || _party.admitted);
   String get roomId => _party.roomId;
   Map<String, String> get members => _party.members;
   Map<String, int> get memberUids => _party.memberUids;
@@ -62,30 +65,33 @@ class PartySession {
     _noticeSub?.cancel();
     _noticeSub = _party.notices.listen(_onNotice);
 
-    _party.onSyncRequested = (force) {
-      if (!inRoom || !_party.allowLocalControl) return;
-      _broadcastNow(force: force);
+    _party.onSyncRequested = ({String toClient = "", int toUid = 0}) {
+      _broadcastNow(toClient: toClient, toUid: toUid);
     };
-
-    // 连上 / 掉线都要让「一起听」页立刻重画，
-    // 不然界面会停在「连接中…」，其实早就连上了
     _party.onConnectionChanged = (online) {
-      if (online) {
-        _broadcastNow(force: true);
-        // 重连后房主可能已经换歌了，主动要一次
-        if (isGuest) _startSyncRetry();
+      if (!online) {
+        _pendingState = null;
+        if (!inRoom) remoteMusic = null;
+      } else if (isHost) {
+        _broadcastNow();
       }
       _notify();
     };
-
-    // 本机切歌 / 暂停立刻广播，避免等下一次 tick
     _refreshSub?.cancel();
-    _refreshSub = eventBus.on<RefreshPlayerCard>().listen((_) {
-      if (_canBroadcast) _broadcastNow();
-    });
+    _refreshSub =
+        eventBus.on<RefreshPlayerCard>().listen((_) => _scheduleBroadcast());
+    _seekSub?.cancel();
+    _seekSub =
+        eventBus.on<PartyPlaybackChanged>().listen((_) => _scheduleBroadcast());
+    _playerStateSub?.cancel();
+    _playerStateSub = player.playerStates?.listen((_) => _scheduleBroadcast());
   }
 
-  bool get _canBroadcast => inRoom && _party.allowLocalControl;
+  void _scheduleBroadcast() {
+    if (_following || !inRoom || !_party.allowLocalControl) return;
+    _broadcastTimer?.cancel();
+    _broadcastTimer = Timer(const Duration(milliseconds: 350), _broadcastNow);
+  }
 
   /// 上线：用自己房间号开房并开始广播
   ///
@@ -103,7 +109,6 @@ class PartySession {
       controllers: PartyRoster.instance.controllerUids,
     );
 
-    if (ok) startBroadcasting();
     _notify();
     return ok;
   }
@@ -130,19 +135,17 @@ class PartySession {
 
   /// 加入别人的房间
   Future<bool> join(String roomId) async {
-    _stopBroadcast();
-    _syncTimer?.cancel();
+    _broadcastTimer?.cancel();
+    _pendingState = null;
+    remoteMusic = null;
     final ok = await _party.joinRoom(id: roomId, name: selfPartyName());
     _notify();
-    // join 那一下可能正好赶上房主没订阅着（或 429），隔几秒再要一次状态
-    if (ok) _startSyncRetry();
     return ok;
   }
 
-  /// 下线 / 退出房间
   Future<void> goOffline() async {
-    _stopBroadcast();
-    _syncTimer?.cancel();
+    _broadcastTimer?.cancel();
+    _pendingState = null;
     remoteMusic = null;
     await _party.leaveRoom();
     _notify();
@@ -150,145 +153,72 @@ class PartySession {
 
   Future<void> leave() => goOffline();
 
-  /// 开始周期广播（只有房主需要定时广播，共管改歌时按事件广播）
-  ///
-  /// 20 秒一条就够：听众用消息里的时间戳自己补延迟，
-  /// 3 秒一条会把 ntfy.sh 的免费额度（每 5 秒回 1 次）打空。
-  void startBroadcasting() {
-    _broadcastTimer?.cancel();
-    if (!isHost) {
-      _broadcastNow();
-      return;
-    }
-    _broadcastTimer = Timer.periodic(const Duration(seconds: 20), (_) {
-      _broadcastNow();
-    });
-    _broadcastNow();
-  }
-
-  /// 连不上时手动重连
   Future<bool> retryConnection() async {
     final ok = await _party.retryNow();
     _notify();
     return ok;
   }
 
-  /// 连不上的原因（空字符串表示没有异常）
   String get connectionHint => _party.connectionHint;
+  String get joinHint => _party.joinHint;
 
-  /// 刚进房间时补要几次状态
-  ///
-  /// 房主的一条广播可能正好丢在订阅竞态或限流里，隔 2.5 秒再要一次，
-  /// 最多 5 次、拿到歌就停。比把房主的广播频率调回 3 秒省得多。
-  void _startSyncRetry() {
-    _syncTimer?.cancel();
-    if (!isGuest) return;
-    var tries = 0;
-    _syncTimer = Timer.periodic(const Duration(milliseconds: 2500), (timer) async {
-      if (!isGuest || !_party.connected || remoteMusic != null) {
-        timer.cancel();
-        return;
-      }
-      tries++;
-      if (tries > 5) {
-        timer.cancel();
-        return;
-      }
-      await _party.requestSync();
-    });
-  }
-
-  void _stopBroadcast() {
-    _broadcastTimer?.cancel();
-    _broadcastTimer = null;
-  }
-
-  void _broadcastNow({bool force = false}) {
-    // 正在应用远端状态时不要回广播，避免两边互相纠正
-    if (_party.applyingRemote) return;
-
+  void _broadcastNow({String toClient = "", int toUid = 0}) {
+    if (!inRoom || !_party.connected || !_party.allowLocalControl) return;
+    if (_following && toClient.isEmpty) return;
     final player = _player;
-    final music = player?.current;
-
-    if (!inRoom || !_party.connected) return;
-    if (!_party.allowLocalControl) return;
-    // force：没在放歌也发一条，让房间里的人拿到最新权限
-    if (music == null && !force) return;
-
     _party.broadcast(
-      music: music,
+      music: player?.current,
       position: player?.currentPosition ?? Duration.zero,
       playing: player?.isPlaying ?? false,
+      toClient: toClient,
+      toUid: toUid,
     );
   }
 
-  Future<void> _apply(Future<void> Function() action) async {
-    _party.applyingRemote = true;
-    try {
-      await action();
-    } finally {
-      _party.applyingRemote = false;
-    }
-  }
-
   Future<void> _onRemoteState(PartyState state) async {
-    if (!inRoom) return;
-
-    final player = _player;
-    if (player == null) return;
-
-    final music = state.toMusicItem();
-    if (music == null) return;
-
-    // 已经拿到歌了，不用再补要状态
-    _syncTimer?.cancel();
-
-    final current = player.current;
-    final sameMusic = current != null && current.id == music.id;
-
-    // 补偿网络延迟（最多补偿 5 秒，防止对方手机时间不准）
-    final elapsed = state.at > 0
-        ? (DateTime.now().millisecondsSinceEpoch - state.at).clamp(0, 5000)
-        : 0;
-    var target = Duration(milliseconds: state.position + elapsed);
-    final total = Duration(seconds: music.duration);
-    if (total > Duration.zero && target > total) target = total;
-
-    if (!sameMusic) {
-      remoteMusic = music;
-      try {
-        await _apply(() async {
-          await player.play(music: music);
-          await Future.delayed(const Duration(milliseconds: 600));
-          await player.seek(target);
-          if (!state.playing) await player.pause();
-        });
-      } catch (_) {
-        // 房主的歌在本机放不出来（版权 / 会员 / 取流失败），别一声不吭
-        BotToast.showText(text: "这首歌在你这边放不出来，可以自己换一首");
+    _pendingState = state;
+    if (_following) return;
+    _following = true;
+    _broadcastTimer?.cancel();
+    PartyState? applied;
+    try {
+      while (_pendingState != null) {
+        final next = _pendingState!;
+        _pendingState = null;
+        final player = _player;
+        if (player == null || !inRoom || next.roomId != roomId) continue;
+        final client = _party.myId;
+        bool isCurrent() =>
+            inRoom &&
+            _party.connected &&
+            _party.myId == client &&
+            next.roomId == roomId &&
+            (!isGuest || _party.admitted);
+        final music = next.toMusicItem();
+        if (isGuest) remoteMusic = music;
+        _notify();
+        try {
+          await player.followRoom(
+            music: music,
+            playing: next.playing,
+            position: (duration) => next.positionAt(
+              DateTime.now().millisecondsSinceEpoch,
+              duration: duration,
+            ),
+            isCurrent: isCurrent,
+          );
+          if (isCurrent()) applied = next;
+        } catch (_) {
+          if (isCurrent()) {
+            BotToast.showText(text: "同步音频失败，应用会在收到下一次状态时重试");
+          }
+        }
       }
-      if (!isLocked) {
-        BotToast.showText(text: "已同步：${music.name}");
-      }
-      return;
+    } finally {
+      _following = false;
     }
-
-    // 同一首歌：偏差超过 1.5 秒才纠正，避免抖动
-    final drift = (player.currentPosition - target).abs();
-    if (drift.inMilliseconds > 1500) {
-      await _apply(() async {
-        await player.seek(target);
-      });
-    }
-
-    if (state.playing && !player.isPlaying) {
-      await _apply(() async {
-        await player.play();
-      });
-    } else if (!state.playing && player.isPlaying) {
-      await _apply(() async {
-        await player.pause();
-      });
+    if (applied != null && isHost && applied.roomId == roomId) {
+      _broadcastNow();
     }
   }
 
@@ -335,8 +265,9 @@ class PartySession {
   }
 
   void dispose() {
-    _stopBroadcast();
-    _syncTimer?.cancel();
+    _broadcastTimer?.cancel();
+    _playerStateSub?.cancel();
+    _seekSub?.cancel();
     _stateSub?.cancel();
     _noticeSub?.cancel();
     _refreshSub?.cancel();
@@ -422,9 +353,7 @@ class _PartyJoinPageState extends State<PartyJoinPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        ok
-                            ? "房主切歌或拖动进度时，你会自动同步"
-                            : "房间号不对，或者房主没把你加进一起听名单",
+                        ok ? "房主切歌或拖动进度时，你会自动同步" : session.joinHint,
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           fontSize: 11,
