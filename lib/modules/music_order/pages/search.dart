@@ -6,6 +6,7 @@ import "package:bobomusic/constants/cache_key.dart";
 import "package:bobomusic/db/db.dart";
 import "package:bobomusic/modules/music_order/components/edit_music.dart";
 import "package:bobomusic/modules/music_order/utils.dart";
+import "package:bobomusic/utils/clear_html_tags.dart";
 import "package:flutter/material.dart";
 import "package:bobomusic/modules/player/player.dart";
 import "package:bobomusic/modules/player/model.dart";
@@ -185,65 +186,67 @@ class SearchOrderMusicViewState extends State<SearchOrderMusicView> {
 
   void showItemSheet(BuildContext context, MusicItem data) {
     final player = Provider.of<PlayerModel>(context, listen: false);
-    openBottomSheet(context, [
-      SheetItem(
-        title: Text(
-          data.name,
-          style: TextStyle(
-            color: Theme.of(context).primaryColor,
-            fontWeight: FontWeight.bold,
-            overflow: TextOverflow.ellipsis,
-          ),
+    openBottomSheet(
+      context,
+      [
+        SheetItem(
+          title: "播放",
+          icon: Icons.play_arrow_rounded,
+          onPressed: () {
+            player.play(music: data);
+          },
         ),
-      ),
-      SheetItem(
-        title: const Text("播放"),
-        onPressed: () {
-          player.play(music: data);
-        },
-      ),
-      SheetItem(
-        title: const Text("添加到歌单"),
-        onPressed: () {
-          collectToMusicOrder(context: context, musicList: [data]);
-        },
-      ),
-      SheetItem(
-        title: const Text("添加到待播放列表"),
-        onPressed: () {
-          player.addPlayerList([data], showToast: true);
-        },
-      ),
-      SheetItem(
-        title: const Text("编辑"),
-        onPressed: () {
-          Navigator.of(context).push(
-            ModalBottomSheetRoute(
-              isScrollControlled: true,
-              builder: (context) {
-                return Padding(
-                  padding: EdgeInsets.only(
-                    bottom: MediaQuery.of(context).viewInsets.bottom,
-                  ),
-                  child: EditMusic(
-                    musicItem: data,
-                    onOk: (music) async {
-                      await db.update(TableName.musicLocal, musicItem2Row(music: music));
+        SheetItem(
+          title: "添加到待播放",
+          icon: Icons.playlist_add_rounded,
+          onPressed: () {
+            player.addPlayerList([data], showToast: true);
+          },
+        ),
+        SheetItem(
+          title: "收藏到歌单",
+          icon: Icons.favorite_border_rounded,
+          onPressed: () {
+            collectToMusicOrder(context: context, musicList: [data]);
+          },
+        ),
+        SheetItem(
+          title: "编辑信息",
+          icon: Icons.edit_outlined,
+          onPressed: () {
+            Navigator.of(context).push(
+              ModalBottomSheetRoute(
+                isScrollControlled: true,
+                builder: (context) {
+                  return Padding(
+                    padding: EdgeInsets.only(
+                      bottom: MediaQuery.of(context).viewInsets.bottom,
+                    ),
+                    child: EditMusic(
+                      musicItem: data,
+                      onOk: (music) async {
+                        await db.update(TableName.musicLocal, musicItem2Row(music: music));
 
-                      if (player.current != null && player.current!.playId == music.playId) {
-                        player.current = music;
-                      }
+                        if (player.current != null && player.current!.playId == music.playId) {
+                          player.current = music;
+                        }
 
-                      _searchHandler(true);
-                    },
-                  )
-                );
-              },
-            )
-          );
-        },
+                        _searchHandler(true);
+                      },
+                    )
+                  );
+                },
+              )
+            );
+          },
+        ),
+      ],
+      header: SheetHeader(
+        title: clearHtmlTags(data.name),
+        subtitle: clearHtmlTags(data.author),
+        track: data,
       ),
-    ]);
+    );
   }
 
   Widget buildBody(BuildContext context) {

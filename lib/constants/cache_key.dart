@@ -28,4 +28,16 @@ class CacheKey {
 
   /// 是否需要弹出确认拉起 bilibili 的弹窗
   static String launchBilibiliConfirm  = "launch_bilibili_confirm";
+
+  /// 「上一首」先回到本曲开头
+  static String restartOnPrevious = "playback_restart_on_previous";
+
+  /// 自动匹配歌词
+  static String autoLyrics = "playback_auto_lyrics";
+
+  /// 播放页流动背景
+  static String fluidBackground = "playback_fluid_background";
+
+  /// 触感反馈
+  static String haptics = "playback_haptics";
 }

@@ -8,6 +8,7 @@ import "package:bobomusic/modules/music_order/utils.dart";
 import "package:bobomusic/modules/party/party_service.dart";
 import "package:bobomusic/modules/player/const.dart";
 import "package:bobomusic/modules/player/source.dart";
+import "package:bobomusic/modules/setting/playback_prefs.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:just_audio/just_audio.dart";
@@ -171,7 +172,18 @@ class BBPlayer {
     await _cachePosition();
   }
 
-  Future<void> prev() => _step(-1);
+  /// 「上一首」在播放超过 3 秒时先回到本曲开头。
+  ///
+  /// 听了一半想重听，不该被扔去上一首；连按两次才是真的切歌。
+  Future<void> prev() async {
+    if (PlaybackPrefs.instance.restartOnPrevious &&
+        current != null &&
+        audio.position > const Duration(seconds: 3)) {
+      await seek(Duration.zero);
+      return;
+    }
+    await _step(-1);
+  }
 
   Future<void> next() => _step(1);
 

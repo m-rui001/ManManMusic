@@ -1,5 +1,6 @@
 import "package:bobomusic/constants/app_info.dart";
 import "package:bobomusic/constants/theme_color.dart";
+import "package:bobomusic/modules/music_plaza/music_plaza.dart";
 import "package:bobomusic/modules/setting/components/setting_card.dart";
 import "package:bobomusic/modules/setting/setting.dart";
 import "package:flutter/material.dart";
@@ -23,6 +24,19 @@ void main() {
         expect(_contrast(colors.primary, colors.surfaceContainerLow),
             greaterThanOrEqualTo(4.5));
         expect(_contrast(colors.onPrimary, colors.primary),
+            greaterThanOrEqualTo(4.5));
+      }
+    }
+  });
+
+  test("首页继续播放卡在所有主题色下都读得清", () {
+    for (final brightness in Brightness.values) {
+      for (final accent in ThemeColor.availableColors) {
+        final colors = buildAppTheme(accent, brightness).colorScheme;
+        final palette = continuePlayingPalette(colors.primary);
+        expect(_contrast(palette.foreground, palette.top),
+            greaterThanOrEqualTo(4.5));
+        expect(_contrast(palette.foreground, palette.bottom),
             greaterThanOrEqualTo(4.5));
       }
     }

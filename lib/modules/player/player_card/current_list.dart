@@ -190,46 +190,50 @@ class CurrentListState extends State<CurrentList> {
   }
 
   void showItemSheet(BuildContext context, MusicItem data, PlayerModel player) {
-    openBottomSheet(context, [
-      SheetItem(
-        title: Text(
-          data.name,
-          style: TextStyle(
-            color: Theme.of(context).primaryColor,
-            fontWeight: FontWeight.bold,
-            overflow: TextOverflow.ellipsis,
+    openBottomSheet(
+      context,
+      [
+        SheetItem(
+          title: "播放",
+          icon: Icons.play_arrow_rounded,
+          onPressed: () => player.play(music: data),
+        ),
+        SheetItem(
+          title: "收藏到歌单",
+          icon: Icons.favorite_border_rounded,
+          onPressed: () =>
+              collectToMusicOrder(context: context, musicList: [data]),
+        ),
+        if (widget.waiting)
+          SheetItem(
+            title: "移出待播放",
+            icon: Icons.playlist_remove_rounded,
+            onPressed: () => player.removePlayerList([data]),
+          )
+        else
+          SheetItem(
+            title: "添加到待播放",
+            icon: Icons.playlist_add_rounded,
+            onPressed: () => player.addPlayerList([data], showToast: true),
           ),
-        ),
+        if (data.localPath.isEmpty)
+          SheetItem(
+            title: "下载",
+            icon: Icons.download_rounded,
+            onPressed: () {
+              checkMusicLocalRepeat(context, data, () {
+                final downloadModel =
+                    Provider.of<DownloadModel>(context, listen: false);
+                downloadModel.download([data]);
+              });
+            },
+          ),
+      ],
+      header: SheetHeader(
+        title: clearHtmlTags(data.name),
+        subtitle: clearHtmlTags(data.author),
+        track: data,
       ),
-      SheetItem(
-        title: const Text("播放"),
-        onPressed: () => player.play(music: data),
-      ),
-      SheetItem(
-        title: const Text("添加到歌单"),
-        onPressed: () =>
-            collectToMusicOrder(context: context, musicList: [data]),
-      ),
-      if (widget.waiting)
-        SheetItem(
-          title: const Text("移出待播放列表"),
-          onPressed: () => player.removePlayerList([data]),
-        )
-      else
-        SheetItem(
-          title: const Text("添加到待播放列表"),
-          onPressed: () => player.addPlayerList([data], showToast: true),
-        ),
-      SheetItem(
-        title: const Text("下载"),
-        onPressed: () {
-          checkMusicLocalRepeat(context, data, () {
-            final downloadModel =
-                Provider.of<DownloadModel>(context, listen: false);
-            downloadModel.download([data]);
-          });
-        },
-      ),
-    ]);
+    );
   }
 }

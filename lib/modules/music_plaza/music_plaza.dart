@@ -1,3 +1,5 @@
+import "dart:math" as math;
+
 import "package:bobomusic/components/continuous_rounding.dart";
 import "package:bobomusic/modules/bili_account/bili_login_gate.dart";
 import "package:bobomusic/modules/history/history_tab.dart";
@@ -5,6 +7,7 @@ import "package:bobomusic/modules/music_plaza/search/search.dart";
 import "package:bobomusic/modules/player/artwork.dart";
 import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/modules/player/player.dart";
+import "package:bobomusic/utils/clear_html_tags.dart";
 import "package:flutter/material.dart";
 import "package:provider/provider.dart";
 
@@ -84,6 +87,45 @@ class _MusicPlazaViewState extends State<MusicPlazaView>
   }
 }
 
+/// 首页「继续播放」卡的配色
+///
+/// 取主题色的色相、压到暗部，白字在深浅主题里都读得清。
+/// 深空黑本身没有色相，保持中性灰，别硬造出一个颜色来。
+({Color top, Color bottom, Color foreground}) continuePlayingPalette(
+    Color primary) {
+  final seed = HSLColor.fromColor(primary);
+  final neutral = seed.saturation < .08;
+  final saturation = neutral ? 0.0 : math.max(seed.saturation, .34);
+  final foreground =
+      HSLColor.fromAHSL(1, seed.hue, neutral ? 0.0 : .16, .965).toColor();
+  return (
+    top: _darkEnough(
+        HSLColor.fromAHSL(1, seed.hue, saturation, .30), foreground),
+    bottom: _darkEnough(
+        HSLColor.fromAHSL(1, (seed.hue + 26) % 360, saturation * .8, .155),
+        foreground),
+    foreground: foreground,
+  );
+}
+
+/// 黄色系在同一 HSL 亮度下比蓝色亮得多，写死亮度会让白字读不清，
+/// 所以按实测对比度往暗里收，收到够为止。
+Color _darkEnough(HSLColor color, Color foreground) {
+  var hsl = color;
+  while (_contrast(foreground, hsl.toColor()) < 4.6 && hsl.lightness > .04) {
+    hsl = hsl.withLightness(hsl.lightness - .015);
+  }
+  return hsl.toColor();
+}
+
+double _contrast(Color foreground, Color background) {
+  final first = foreground.computeLuminance();
+  final second = background.computeLuminance();
+  return first > second
+      ? (first + .05) / (second + .05)
+      : (second + .05) / (first + .05);
+}
+
 class _ContinuePlaying extends StatelessWidget {
   const _ContinuePlaying();
 
@@ -93,19 +135,20 @@ class _ContinuePlaying extends StatelessWidget {
     final music = player.current;
     if (music == null) return const SizedBox.shrink();
     final theme = Theme.of(context);
-    const foreground = Color(0xFFFFF4F5);
+    final palette = continuePlayingPalette(theme.colorScheme.primary);
+    final foreground = palette.foreground;
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Material(
-        color: const Color(0xFF30252D),
+        color: palette.bottom,
         shape: const ContinuousRounding(29),
         clipBehavior: Clip.antiAlias,
         child: Ink(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFF624152), Color(0xFF292638)],
+              colors: [palette.top, palette.bottom],
             ),
           ),
           child: Row(
@@ -131,7 +174,7 @@ class _ContinuePlaying extends StatelessWidget {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                music.name,
+                                clearHtmlTags(music.name),
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: theme.textTheme.titleMedium?.copyWith(
@@ -147,7 +190,7 @@ class _ContinuePlaying extends StatelessWidget {
                   ),
                 ),
               ),
-              const PlayButton(size: 42, color: foreground),
+              PlayButton(size: 42, color: foreground),
               const SizedBox(width: 12),
             ],
           ),

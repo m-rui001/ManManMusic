@@ -22,6 +22,7 @@ import "package:bobomusic/modules/party/party_service.dart";
 import "package:bobomusic/modules/party/party_tone.dart";
 import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/modules/player/service.dart";
+import "package:bobomusic/modules/setting/playback_prefs.dart";
 import "package:bobomusic/modules/share/share_handler.dart";
 import "package:bobomusic/modules/share/share_payload.dart";
 import "package:bobomusic/origin_sdk/bili/auth.dart";
@@ -71,6 +72,9 @@ void main() async {
 
   // 一起听提示音设置
   await PartyTone.instance.initFromStorage();
+
+  // 播放与界面偏好
+  await PlaybackPrefs.instance.init();
 
   final accent = await getCacheColor();
 

@@ -1,9 +1,12 @@
 import "dart:async";
 
 import "package:bobomusic/components/continuous_rounding.dart";
+import "package:bobomusic/constants/motion.dart";
 import "package:bobomusic/modules/party/party_control.dart";
 import "package:bobomusic/modules/party/party_page.dart";
 import "package:bobomusic/modules/player/artwork.dart";
+import "package:bobomusic/utils/clear_html_tags.dart";
+import "package:bobomusic/utils/haptics.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
 import "package:bobomusic/modules/player/player_card/card.dart";
@@ -54,12 +57,12 @@ class PlayerView extends StatelessWidget {
                 final total = player.duration?.inMilliseconds ?? 0;
                 final position = snapshot.data?.inMilliseconds ?? 0;
                 return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 27),
+                  // 胶囊底边只有中间一段是直的，缩进小于圆角会被裁掉两头
+                  padding: const EdgeInsets.symmetric(horizontal: 34),
                   child: LinearProgressIndicator(
                     value: total > 0 ? (position / total).clamp(0.0, 1.0) : 0,
                     minHeight: 2,
-                    borderRadius:
-                        const BorderRadius.vertical(top: Radius.circular(3)),
+                    borderRadius: BorderRadius.circular(1),
                     color: colors.primary,
                     backgroundColor:
                         colors.outlineVariant.withValues(alpha: .35),
@@ -83,6 +86,7 @@ class PartyLockBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final session = PartySession.instance;
+    final colors = Theme.of(context).colorScheme;
 
     return StreamBuilder<void>(
       stream: session.changes,
@@ -95,15 +99,18 @@ class PartyLockBadge extends StatelessWidget {
             margin: const EdgeInsets.only(right: 6),
             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.06),
+              color: colors.onSurface.withValues(alpha: 0.07),
               borderRadius: BorderRadius.circular(9),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.lock_outline, size: 11, color: Colors.grey),
-                SizedBox(width: 3),
-                Text("房主控制", style: TextStyle(fontSize: 9, color: Colors.grey)),
+                Icon(Icons.lock_outline, size: 11, color: colors.onSurfaceVariant),
+                const SizedBox(width: 3),
+                Text(
+                  "房主控制",
+                  style: TextStyle(fontSize: 9, color: colors.onSurfaceVariant),
+                ),
               ],
             ),
           ),
@@ -132,14 +139,14 @@ class PlayInfo extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(music.name,
+                Text(clearHtmlTags(music.name),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
                     )),
                 if (music.author.isNotEmpty)
-                  Text(music.author,
+                  Text(clearHtmlTags(music.author),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
@@ -178,12 +185,25 @@ class PlayButton extends StatelessWidget {
         final label = player.isPlaying ? "暂停" : "播放";
         void toggle() {
           if (PartyControl.blocked()) return;
+          AppHaptics.action();
           if (player.isPlaying) {
             player.pause();
           } else {
             player.play();
           }
         }
+
+        // 播放/暂停之间做一次缩放交叉淡化，图标不是「啪」地换掉
+        Widget morph(IconData data) => AnimatedSwitcher(
+              duration: AppMotion.fast,
+              switchInCurve: AppMotion.standard,
+              switchOutCurve: AppMotion.exit,
+              transitionBuilder: (child, animation) => ScaleTransition(
+                scale: Tween(begin: .62, end: 1.0).animate(animation),
+                child: FadeTransition(opacity: animation, child: child),
+              ),
+              child: Icon(data, key: ValueKey(data)),
+            );
 
         if (prominent) {
           final colors = Theme.of(context).colorScheme;
@@ -197,7 +217,7 @@ class PlayButton extends StatelessWidget {
               foregroundColor: colors.surface,
             ),
             iconSize: 34,
-            icon: Icon(player.isPlaying
+            icon: morph(player.isPlaying
                 ? Icons.pause_rounded
                 : Icons.play_arrow_rounded),
           );
@@ -207,7 +227,7 @@ class PlayButton extends StatelessWidget {
           color: color ?? primaryColor,
           iconSize: size,
           padding: const EdgeInsets.only(bottom: 0),
-          icon: Icon(flat
+          icon: morph(flat
               ? (player.isPlaying
                   ? Icons.pause_rounded
                   : Icons.play_arrow_rounded)
@@ -309,6 +329,7 @@ class ModeButton extends StatelessWidget {
           iconSize: size,
           tooltip: player.playerMode.name,
           onPressed: () {
+            AppHaptics.selection();
             player.togglePlayerMode();
             BotToast.showText(text: "${player.playerMode.name}模式");
           },
@@ -331,20 +352,98 @@ Future<void> showPlayerList(BuildContext context) => showModalBottomSheet<void>(
     );
 
 /// 显示播放卡片
+///
+/// 从迷你播放器所在的矩形「展开」成整页，而不是整页从底部滑进来：
+/// 起点是用户刚点的那一块，视线不用重新找人。
 Future<void>? showPlayerCard(BuildContext context) {
   final NavigatorState navigator = Navigator.of(context, rootNavigator: false);
   final player = Provider.of<PlayerModel>(context, listen: false);
   if (player.current == null) return null;
+  final source = _barRect(context);
+  AppHaptics.open();
   return navigator.push(PageRouteBuilder<void>(
     fullscreenDialog: true,
+    opaque: false,
     pageBuilder: (_, __, ___) => const PlayerCard(),
-    transitionDuration: const Duration(milliseconds: 260),
-    reverseTransitionDuration: const Duration(milliseconds: 200),
-    transitionsBuilder: (_, animation, __, child) => SlideTransition(
-      position: Tween(begin: const Offset(0, 1), end: Offset.zero)
-          .chain(CurveTween(curve: Curves.easeOutCubic))
-          .animate(animation),
+    transitionDuration: AppMotion.unfold,
+    reverseTransitionDuration: AppMotion.medium,
+    transitionsBuilder: (_, animation, __, child) => _UnfoldTransition(
+      animation: animation,
+      source: source,
       child: child,
     ),
   ));
+}
+
+/// 被点的迷你播放器的屏幕矩形
+Rect? _barRect(BuildContext context) {
+  RenderBox? box;
+  context.visitAncestorElements((element) {
+    if (element.widget is Material) {
+      box = element.renderObject as RenderBox?;
+      return false;
+    }
+    return true;
+  });
+  final target = box;
+  if (target == null || !target.hasSize || !target.attached) return null;
+  return target.localToGlobal(Offset.zero) & target.size;
+}
+
+class _UnfoldTransition extends StatelessWidget {
+  final Animation<double> animation;
+  final Rect? source;
+  final Widget child;
+
+  const _UnfoldTransition({
+    required this.animation,
+    required this.source,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final target = Offset.zero & size;
+    final from = source;
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, _) {
+        final t = AppMotion.emphasized.transform(animation.value);
+        final rect = from == null ? target : Rect.lerp(from, target, t)!;
+        // 内容晚一点浮现，先让容器长到位，避免小窗口里塞满字
+        final opacity = from == null
+            ? animation.value
+            : ((t - .18) / .82).clamp(0.0, 1.0);
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned.fromRect(
+              rect: rect,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(42 * (1 - t)),
+                child: Opacity(
+                  opacity: opacity,
+                  child: OverflowBox(
+                    alignment: Alignment.topLeft,
+                    maxWidth: size.width,
+                    maxHeight: size.height,
+                    // 内容钉在屏幕原位，只有窗口在长大，字不会跟着跑
+                    child: Transform.translate(
+                      offset: -rect.topLeft,
+                      child: SizedBox(
+                        width: size.width,
+                        height: size.height,
+                        child: child,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
 }

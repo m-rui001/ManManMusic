@@ -1,9 +1,11 @@
 // ignore_for_file: use_build_context_synchronously, avoid_print, deprecated_member_use
 
 import "dart:async";
+import "dart:math" as math;
 import "dart:ui" as ui;
 
 import "package:bobomusic/components/continuous_rounding.dart";
+import "package:bobomusic/components/sheet/bottom_sheet.dart";
 import "package:bobomusic/modules/bili_account/fav_sync.dart";
 import "package:bobomusic/modules/party/party_page.dart";
 import "package:bobomusic/constants/covers.dart";
@@ -13,12 +15,16 @@ import "package:bobomusic/modules/download/model.dart";
 import "package:bobomusic/modules/music_order/track_metadata.dart";
 import "package:bobomusic/modules/player/artwork.dart";
 import "package:bobomusic/modules/player/audio_options.dart";
+import "package:bobomusic/modules/player/lyrics_card/lyric_scroller.dart";
+import "package:bobomusic/modules/player/player_card/backdrop.dart";
 import "package:bobomusic/modules/player/player_card/progress.dart";
 import "package:bobomusic/modules/player/player_card/vinyl_record.dart";
 import "package:bobomusic/modules/player/utils.dart";
 import "package:bobomusic/modules/share/share_sheet.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:bobomusic/utils/check_music_local_repeat.dart";
+import "package:bobomusic/utils/clear_html_tags.dart";
+import "package:bobomusic/utils/haptics.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:flutter/cupertino.dart";
 import "package:flutter/material.dart";
@@ -46,10 +52,14 @@ class PlayerCardState extends State<PlayerCard> {
   ImageStreamListener? _imageListener;
   MusicItem? _artworkTrack;
   bool _vinyl = false;
+  bool _lyrics = false;
   bool _savingLike = false;
   static const _fallbackTone = Color(0xFF81ADA1);
   Color _artTone = _fallbackTone;
   final List<StreamSubscription?> _subscriptions = [];
+
+  static Widget _noDither(BuildContext _, Object __, StackTrace? ___) =>
+      const SizedBox.shrink();
 
   @override
   void initState() {
@@ -192,53 +202,142 @@ class PlayerCardState extends State<PlayerCard> {
   }
 
   Widget _buildTopBar(BuildContext context) {
-    return Align(
-      alignment: AlignmentDirectional.centerStart,
-      child: Padding(
-        padding: const EdgeInsetsDirectional.only(start: 13),
-        child: IconButton(
-          tooltip: "收起播放器",
-          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
-          onPressed: () => Navigator.of(context).pop(),
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(start: 13, end: 13),
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: "收起播放器",
+            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          const Spacer(),
+          IconButton(
+            tooltip: _lyrics ? "回到封面" : "歌词",
+            color: _lyrics ? colors.primary : colors.onSurfaceVariant,
+            icon: Icon(
+              _lyrics ? Icons.album_outlined : Icons.lyrics_outlined,
+              size: 22,
+            ),
+            onPressed: () {
+              AppHaptics.selection();
+              setState(() => _lyrics = !_lyrics);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _toggleStage() {
+    AppHaptics.selection();
+    setState(() => _lyrics = !_lyrics);
+  }
+
+  Widget _moreActions(PlayerModel player, MusicItem music) {
+    return IconButton(
+      tooltip: "更多播放选项",
+      icon: const Icon(Icons.more_horiz_rounded),
+      onPressed: () => openBottomSheet(
+        context,
+        [
+          if (music.localPath.isEmpty)
+            SheetItem(
+              title: "下载",
+              subtitle: "存到本地，没网也能听",
+              icon: Icons.download_rounded,
+              onPressed: () {
+                checkMusicLocalRepeat(context, music, () {
+                  context.read<DownloadModel>().download([music]);
+                });
+              },
+            ),
+          if (music.id.contains("BV"))
+            SheetItem(
+              title: "打开哔哩哔哩",
+              subtitle: "去看这条视频",
+              icon: Icons.smart_display_outlined,
+              onPressed: () {
+                final bv = RegExp(r"BV[0-9A-Za-z]+").firstMatch(music.id);
+                if (bv != null) _launchBilibiliVideo(bv.group(0)!, player);
+              },
+            ),
+          SheetItem(
+            title: "分享",
+            icon: Icons.ios_share_rounded,
+            onPressed: () => showShareSheet(context),
+          ),
+          SheetItem(
+            title: _vinyl ? "方形封面" : "黑胶封面",
+            icon: _vinyl
+                ? Icons.crop_square_rounded
+                : Icons.album_outlined,
+            onPressed: () => setState(() => _vinyl = !_vinyl),
+          ),
+        ],
+        header: SheetHeader(
+          title: clearHtmlTags(music.name),
+          subtitle: clearHtmlTags(music.author),
+          track: music,
         ),
       ),
     );
   }
 
-  Widget _moreActions(PlayerModel player, MusicItem music) {
-    return PopupMenuButton<String>(
-      tooltip: "更多播放选项",
-      icon: const Icon(Icons.more_horiz_rounded),
-      onSelected: (action) {
-        switch (action) {
-          case "download":
-            checkMusicLocalRepeat(context, music, () {
-              context.read<DownloadModel>().download([music]);
-            });
-          case "bilibili":
-            final bv = RegExp(r"BV[0-9A-Za-z]+").firstMatch(music.id);
-            if (bv != null) _launchBilibiliVideo(bv.group(0)!, player);
-          case "share":
-            showShareSheet(context);
-          case "vinyl":
-            setState(() => _vinyl = !_vinyl);
-        }
-      },
-      itemBuilder: (context) => [
-        if (music.localPath.isEmpty)
-          const PopupMenuItem(value: "download", child: Text("下载")),
-        if (music.id.contains("BV"))
-          const PopupMenuItem(value: "bilibili", child: Text("打开哔哩哔哩")),
-        const PopupMenuItem(value: "share", child: Text("分享")),
-        PopupMenuItem(
-          value: "vinyl",
-          child: Text(_vinyl ? "方形封面" : "黑胶封面"),
+  /// 封面舞台：方形封面 + 台面倒影，轻点切到歌词
+  Widget _buildStage(PlayerModel player, MusicItem music, bool wide) {
+    if (_lyrics) return _buildLyricsStage(music);
+    return LayoutBuilder(builder: (context, constraints) {
+      final mirrored = !wide && !_vinyl;
+      final gap = mirrored ? 6.0 : 0.0;
+      final reflectionHeight =
+          mirrored ? (constraints.maxHeight * .17).clamp(0.0, 58.0) : 0.0;
+      final side = math
+          .min(constraints.maxWidth,
+              constraints.maxHeight - reflectionHeight - gap)
+          .clamp(0.0, 484.0);
+      return GestureDetector(
+        onTap: _toggleStage,
+        behavior: HitTestBehavior.opaque,
+        child: Column(
+          children: [
+            Expanded(child: _buildArtwork(player, side)),
+            if (reflectionHeight > 0) ...[
+              SizedBox(height: gap),
+              ArtworkReflection(
+                provider: _imageProvider,
+                width: side,
+                height: reflectionHeight,
+                fallback: const SizedBox.shrink(),
+              ),
+            ],
+          ],
         ),
+      );
+    });
+  }
+
+  Widget _buildLyricsStage(MusicItem music) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+          child: Tooltip(
+            message: "回到封面",
+            child: GestureDetector(
+              onTap: _toggleStage,
+              child: TrackArtwork(music: music, size: 46, radius: 12),
+            ),
+          ),
+        ),
+        const Expanded(child: LyricsScroller()),
       ],
     );
   }
 
-  Widget _buildArtwork(PlayerModel player) {
+  Widget _buildArtwork(PlayerModel player, double size) {
     if (_vinyl) {
       return VinylRecordWidget(
         imageInfo: _imageInfo,
@@ -247,48 +346,45 @@ class PlayerCardState extends State<PlayerCard> {
         isPlaying: player.isPlaying,
       );
     }
-    return LayoutBuilder(builder: (context, constraints) {
-      final size = constraints.biggest.shortestSide.clamp(0.0, 484.0);
-      if (size == 0) return const SizedBox.shrink();
-      final provider = _imageProvider;
-      const shape = ContinuousRounding(26);
-      final placeholder = Image.asset(errorCoverUrl,
-          width: size, height: size, fit: BoxFit.cover);
-      return Center(
-        child: DecoratedBox(
-          decoration: const ShapeDecoration(
-            shape: shape,
-            shadows: [
-              BoxShadow(
-                  color: Color(0x3D000000),
-                  blurRadius: 22,
-                  offset: Offset(0, 8)),
-            ],
-          ),
-          child: ClipPath(
-            clipper: const ShapeBorderClipper(shape: shape),
-            child: SizedBox.square(
-              dimension: size,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                child: provider == null
-                    ? placeholder
-                    : Image(
-                        key: ValueKey(provider),
-                        image: provider,
-                        width: size,
-                        height: size,
-                        fit: BoxFit.cover,
-                        frameBuilder: (_, child, frame, __) =>
-                            frame == null ? placeholder : child,
-                        errorBuilder: (_, __, ___) => placeholder,
-                      ),
-              ),
+    if (size <= 0) return const SizedBox.shrink();
+    final provider = _imageProvider;
+    const shape = ContinuousRounding(26);
+    final placeholder =
+        Image.asset(errorCoverUrl, width: size, height: size, fit: BoxFit.cover);
+    return Center(
+      child: DecoratedBox(
+        decoration: const ShapeDecoration(
+          shape: shape,
+          shadows: [
+            BoxShadow(
+                color: Color(0x3D000000),
+                blurRadius: 22,
+                offset: Offset(0, 8)),
+          ],
+        ),
+        child: ClipPath(
+          clipper: const ShapeBorderClipper(shape: shape),
+          child: SizedBox.square(
+            dimension: size,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              child: provider == null
+                  ? placeholder
+                  : Image(
+                      key: ValueKey(provider),
+                      image: provider,
+                      width: size,
+                      height: size,
+                      fit: BoxFit.cover,
+                      frameBuilder: (_, child, frame, __) =>
+                          frame == null ? placeholder : child,
+                      errorBuilder: (_, __, ___) => placeholder,
+                    ),
             ),
           ),
         ),
-      );
-    });
+      ),
+    );
   }
 
   Widget _buildMusicInfo(
@@ -302,7 +398,7 @@ class PlayerCardState extends State<PlayerCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                music.name,
+                clearHtmlTags(music.name),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.headlineSmall?.copyWith(
@@ -314,7 +410,7 @@ class PlayerCardState extends State<PlayerCard> {
               if (music.author.isNotEmpty) ...[
                 const SizedBox(height: 5),
                 Text(
-                  music.author,
+                  clearHtmlTags(music.author),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium?.copyWith(
@@ -339,6 +435,7 @@ class PlayerCardState extends State<PlayerCard> {
   }
 
   Future<void> _toggleLike(MusicItem music) async {
+    AppHaptics.action();
     setState(() => _savingLike = true);
     final like = !isLike;
     try {
@@ -493,17 +590,12 @@ class PlayerCardState extends State<PlayerCard> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (cover != null)
-              RepaintBoundary(
-                child: ImageFiltered(
-                  imageFilter: ui.ImageFilter.blur(sigmaX: 34, sigmaY: 34),
-                  child: Image(
-                    image: ResizeImage(cover, width: 120),
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                  ),
-                ),
-              ),
+            ArtworkBackdrop(
+              provider: cover,
+              surface: colors.surface,
+              tone: _artTone,
+              brightness: theme.brightness,
+            ),
             DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -513,11 +605,22 @@ class PlayerCardState extends State<PlayerCard> {
                     tone
                         .withLightness(dark ? .24 : .88)
                         .toColor()
-                        .withValues(alpha: dark ? .78 : .90),
-                    colors.surface.withValues(alpha: dark ? .87 : .95),
+                        .withValues(alpha: dark ? .62 : .78),
+                    colors.surface.withValues(alpha: dark ? .88 : .94),
                     colors.surface,
                   ],
-                  stops: const [0, .60, 1],
+                  stops: const [0, .55, 1],
+                ),
+              ),
+            ),
+            // 8bit 渐变在大面积纯色上会出色带，铺一层极淡的噪点打散
+            const IgnorePointer(
+              child: SizedBox.expand(
+                child: Image(
+                  image: AssetImage("assets/images/dither.png"),
+                  fit: BoxFit.none,
+                  repeat: ImageRepeat.repeat,
+                  errorBuilder: _noDither,
                 ),
               ),
             ),
@@ -526,8 +629,8 @@ class PlayerCardState extends State<PlayerCard> {
                 final wide = constraints.maxWidth > 640 &&
                     constraints.maxWidth > constraints.maxHeight;
                 final artwork = Padding(
-                  padding: EdgeInsets.fromLTRB(24, 12, 24, wide ? 12 : 16),
-                  child: _buildArtwork(player),
+                  padding: EdgeInsets.fromLTRB(24, 12, 24, wide ? 12 : 10),
+                  child: _buildStage(player, music, wide),
                 );
                 final panel = Padding(
                   padding: const EdgeInsets.fromLTRB(24, 3, 24, 0),

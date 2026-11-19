@@ -4,6 +4,7 @@ import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/modules/player/artwork.dart";
 import "package:bobomusic/modules/player/player_card/current_list.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
+import "package:bobomusic/utils/clear_html_tags.dart";
 import "package:flutter/material.dart";
 import "package:provider/provider.dart";
 
@@ -78,7 +79,7 @@ class _PlayerListState extends State<PlayerList> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text("当前曲目", style: theme.textTheme.labelSmall),
-                            Text(current.name,
+                            Text(clearHtmlTags(current.name),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: theme.textTheme.titleSmall),

@@ -10,6 +10,7 @@ import "package:bobomusic/modules/music_order/utils.dart";
 import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:bobomusic/utils/check_music_local_repeat.dart";
+import "package:bobomusic/utils/clear_html_tags.dart";
 import "package:flutter/material.dart";
 import "package:flutter_easyloading/flutter_easyloading.dart";
 import "package:provider/provider.dart";
@@ -138,79 +139,83 @@ class MusicListCommonState extends State<MusicListCommon> {
   void showItemSheet(BuildContext context, MusicItem musicItem) {
     final player = Provider.of<PlayerModel>(context, listen: false);
 
-    openBottomSheet(context, [
-      SheetItem(
-        title: Text(
-          musicItem.name,
-          style: TextStyle(
-            color: Theme.of(context).primaryColor,
-            fontWeight: FontWeight.bold,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ),
-      SheetItem(
-        title: const Text("播放"),
-        onPressed: () {
-          player.play(music: musicItem);
-        },
-      ),
-      SheetItem(
-        title: const Text("添加到待播放列表"),
-        onPressed: () {
-          player.addPlayerList([musicItem], showToast: true);
-        },
-      ),
-      SheetItem(
-        title: const Text("编辑"),
-        onPressed: () {
-          Navigator.of(context).push(
-            ModalBottomSheetRoute(
-              isScrollControlled: true,
-              builder: (context) {
-                return Padding(
-                  padding: EdgeInsets.only(
-                    bottom: MediaQuery.of(context).viewInsets.bottom,
-                  ),
-                  child: EditMusic(
-                    musicItem: musicItem,
-                    onOk: (music) async {
-                      await db.update(widget.tabName, musicItem2Row(music: music));
-
-                      if (player.current != null && player.current!.playId == music.playId) {
-                        player.current = music;
-                      }
-
-                      _loadData();
-                    },
-                  ),
-                );
-              },
-            ),
-          );
-        },
-      ),
-      SheetItem(
-        title: const Text("移出歌单"),
-        onPressed: () async {
-          EasyLoading.show(maskType: EasyLoadingMaskType.black);
-          await db.deleteByMid(widget.tabName, musicItem.id);
-          EasyLoading.dismiss();
-
-          _loadData();
-          eventBus.fire(RefreshTabList());
-        },
-      ),
-      if (musicItem.localPath.isEmpty)
+    openBottomSheet(
+      context,
+      [
         SheetItem(
-          title: const Text("下载"),
+          title: "播放",
+          icon: Icons.play_arrow_rounded,
           onPressed: () {
-            checkMusicLocalRepeat(context, musicItem, () {
-              final downloadModel = Provider.of<DownloadModel>(context, listen: false);
-              downloadModel.download([musicItem]);
-            });
+            player.play(music: musicItem);
           },
         ),
-    ]);
+        SheetItem(
+          title: "添加到待播放",
+          icon: Icons.playlist_add_rounded,
+          onPressed: () {
+            player.addPlayerList([musicItem], showToast: true);
+          },
+        ),
+        SheetItem(
+          title: "编辑信息",
+          icon: Icons.edit_outlined,
+          onPressed: () {
+            Navigator.of(context).push(
+              ModalBottomSheetRoute(
+                isScrollControlled: true,
+                builder: (context) {
+                  return Padding(
+                    padding: EdgeInsets.only(
+                      bottom: MediaQuery.of(context).viewInsets.bottom,
+                    ),
+                    child: EditMusic(
+                      musicItem: musicItem,
+                      onOk: (music) async {
+                        await db.update(widget.tabName, musicItem2Row(music: music));
+
+                        if (player.current != null && player.current!.playId == music.playId) {
+                          player.current = music;
+                        }
+
+                        _loadData();
+                      },
+                    ),
+                  );
+                },
+              ),
+            );
+          },
+        ),
+        if (musicItem.localPath.isEmpty)
+          SheetItem(
+            title: "下载",
+            icon: Icons.download_rounded,
+            onPressed: () {
+              checkMusicLocalRepeat(context, musicItem, () {
+                final downloadModel = Provider.of<DownloadModel>(context, listen: false);
+                downloadModel.download([musicItem]);
+              });
+            },
+          ),
+        SheetItem(
+          title: "移出歌单",
+          icon: Icons.delete_outline_rounded,
+          destructive: true,
+          onPressed: () async {
+            EasyLoading.show(maskType: EasyLoadingMaskType.black);
+            await db.deleteByMid(widget.tabName, musicItem.id);
+            EasyLoading.dismiss();
+
+            _loadData();
+            eventBus.fire(RefreshTabList());
+          },
+        ),
+      ],
+      header: SheetHeader(
+        title: clearHtmlTags(musicItem.name),
+        subtitle: clearHtmlTags(musicItem.author),
+        track: musicItem,
+      ),
+    );
   }
 }

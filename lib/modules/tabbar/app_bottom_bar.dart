@@ -1,4 +1,5 @@
 import "package:bobomusic/components/continuous_rounding.dart";
+import "package:bobomusic/constants/motion.dart";
 import "package:flutter/material.dart";
 
 class MenuData {
@@ -68,8 +69,8 @@ class AppBottomBar extends StatelessWidget {
       button: true,
       selected: selected,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 190),
-        curve: Curves.easeOutCubic,
+        duration: AppMotion.medium,
+        curve: AppMotion.standard,
         decoration: ShapeDecoration(
           color: selected ? colors.secondaryContainer : Colors.transparent,
           shape: shape,

@@ -7,6 +7,7 @@ import "package:bobomusic/modules/player/player.dart";
 import "package:bobomusic/modules/party/party_tab.dart";
 import "package:bobomusic/modules/setting/setting.dart";
 import "package:bobomusic/modules/tabbar/app_bottom_bar.dart";
+import "package:bobomusic/utils/haptics.dart";
 import "package:flutter/material.dart";
 
 class AppNavigation extends StatefulWidget {
@@ -83,6 +84,7 @@ class AppNavigationState extends State<AppNavigation> {
 
   void _onChangePage(int index) {
     if (index == _index || index < 0 || index >= menus.length) return;
+    AppHaptics.selection();
     FocusScope.of(context).unfocus();
     _pageController.jumpToPage(index);
     setState(() {

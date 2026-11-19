@@ -1,10 +1,12 @@
 import "package:bobomusic/components/continuous_rounding.dart";
+import "package:bobomusic/components/playing_bars.dart";
 import "package:bobomusic/db/db.dart";
 import "package:bobomusic/modules/music_order/collection_subtitle.dart";
 import "package:bobomusic/modules/player/artwork.dart";
 import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:bobomusic/utils/clear_html_tags.dart";
+import "package:bobomusic/utils/haptics.dart";
 import "package:flutter/material.dart";
 import "package:provider/provider.dart";
 
@@ -80,19 +82,21 @@ class MusicListTile extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (active)
-                Icon(
-                  player.isPlaying
-                      ? Icons.graphic_eq_rounded
-                      : Icons.pause_rounded,
-                  color: colors.onSecondaryContainer,
-                  size: 18,
+                Padding(
+                  padding: const EdgeInsets.only(right: 2),
+                  child: PlayingBars(
+                    playing: player.isPlaying,
+                    color: colors.onSecondaryContainer,
+                  ),
                 ),
               if (showAddIcon)
                 IconButton(
                   icon: const Icon(Icons.playlist_add_rounded, size: 21),
                   tooltip: "加入待播放",
-                  onPressed: () =>
-                      player.addPlayerList([music], showToast: true),
+                  onPressed: () {
+                    AppHaptics.action();
+                    player.addPlayerList([music], showToast: true);
+                  },
                 ),
               IconButton(
                 icon: const Icon(Icons.more_horiz_rounded, size: 21),

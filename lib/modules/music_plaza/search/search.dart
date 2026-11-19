@@ -9,6 +9,7 @@ import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/download/model.dart";
 import "package:bobomusic/modules/music_order/utils.dart";
 import "package:bobomusic/utils/check_music_local_repeat.dart";
+import "package:bobomusic/utils/clear_html_tags.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:cached_network_image/cached_network_image.dart";
 import "package:flutter/material.dart";
@@ -107,90 +108,93 @@ class SearchViewState extends State<SearchView> {
       author: detail.author,
       origin: detail.origin,
     );
-    openBottomSheet(context, [
-      SheetItem(
-        title: Text(
-          music.name,
-          style: TextStyle(
-            color: Theme.of(context).primaryColor,
-            fontWeight: FontWeight.bold,
-            overflow: TextOverflow.ellipsis,
+    openBottomSheet(
+      context,
+      [
+        SheetItem(
+          title: "播放",
+          icon: Icons.play_arrow_rounded,
+          onPressed: () {
+            player.play(music: music);
+          },
+        ),
+        SheetItem(
+          title: "添加到待播放",
+          icon: Icons.playlist_add_rounded,
+          onPressed: () {
+            player.addPlayerList([music], showToast: true);
+          },
+        ),
+        SheetItem(
+          title: "收藏到歌单",
+          icon: Icons.favorite_border_rounded,
+          onPressed: () {
+            collectToMusicOrder(context: context, musicList: [music]);
+          },
+        ),
+        SheetItem(
+          title: "下载",
+          icon: Icons.download_rounded,
+          onPressed: () {
+            checkMusicLocalRepeat(context, music, () {
+              final downloadModel =
+                  Provider.of<DownloadModel>(context, listen: false);
+              downloadModel.download([music]);
+            });
+          },
+        ),
+        if (detail.isSeasonDisplay)
+          SheetItem(
+            title: "查看所在合集",
+            icon: Icons.video_library_outlined,
+            onPressed: () async {
+              final result = await getVideoDetail(detail);
+              viewCollectionList(result);
+            },
           ),
-        ),
+        if (detail.isSeasonDisplay)
+          SheetItem(
+            title: "收藏所在合集",
+            icon: Icons.library_add_outlined,
+            onPressed: () async {
+              final result = await getVideoDetail(detail);
+              await collectionList(result);
+            },
+          ),
+      ],
+      header: SheetHeader(
+        title: clearHtmlTags(music.name),
+        subtitle: clearHtmlTags(music.author),
+        track: music,
       ),
-      SheetItem(
-        title: const Text("播放"),
-        onPressed: () {
-          player.play(music: music);
-        },
-      ),
-      SheetItem(
-        title: const Text("下载"),
-        onPressed: () {
-          checkMusicLocalRepeat(context, music, () {
-            final downloadModel =
-                Provider.of<DownloadModel>(context, listen: false);
-            downloadModel.download([music]);
-          });
-        },
-      ),
-      SheetItem(
-        title: const Text("添加到歌单"),
-        onPressed: () {
-          collectToMusicOrder(context: context, musicList: [music]);
-        },
-      ),
-      SheetItem(
-        title: const Text("添加到待播放列表"),
-        onPressed: () {
-          player.addPlayerList([music]);
-        },
-      ),
-      if (detail.isSeasonDisplay)
-        SheetItem(
-          title: const Text("查看所在合集"),
-          onPressed: () async {
-            final result = await getVideoDetail(detail);
-            viewCollectionList(result);
-          },
-        ),
-      if (detail.isSeasonDisplay)
-        SheetItem(
-          title: const Text("收藏所在合集"),
-          onPressed: () async {
-            final result = await getVideoDetail(detail);
-            await collectionList(result);
-          },
-        ),
-    ]);
+    );
   }
 
   // 歌单合集点击
   void _onClickCollection(SearchItem detail) {
-    openBottomSheet(context, [
-      SheetItem(
-        title: Text(
-          detail.name,
-          style: TextStyle(
-            color: Theme.of(context).primaryColor,
-            fontWeight: FontWeight.bold,
-            overflow: TextOverflow.ellipsis,
-          ),
+    openBottomSheet(
+      context,
+      [
+        SheetItem(
+          title: "查看合集",
+          icon: Icons.video_library_outlined,
+          onPressed: () {
+            viewCollectionList(detail);
+          },
         ),
+        SheetItem(
+          title: "收藏合集",
+          icon: Icons.library_add_outlined,
+          onPressed: () async {
+            await collectionList(detail);
+          },
+        ),
+      ],
+      header: SheetHeader(
+        title: clearHtmlTags(detail.name),
+        subtitle: clearHtmlTags(detail.author),
       ),
-      SheetItem(
-        title: const Text("查看合集"),
-        onPressed: () {
-          viewCollectionList(detail);
-        },
-      ),
-      SheetItem(
-        title: const Text("收藏合集"),
-        onPressed: () async {
-          await collectionList(detail);
-        },
-      ),
-    ]);
+    );
   }
 
   /// 获取视频所在合集

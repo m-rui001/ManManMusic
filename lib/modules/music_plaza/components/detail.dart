@@ -5,6 +5,7 @@ import "package:bobomusic/db/db.dart";
 import "package:bobomusic/modules/download/model.dart";
 import "package:bobomusic/modules/music_order/utils.dart";
 import "package:bobomusic/utils/check_music_local_repeat.dart";
+import "package:bobomusic/utils/clear_html_tags.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
 import "package:bobomusic/components/sheet/bottom_sheet.dart";
@@ -79,46 +80,48 @@ class MusicOrderDetailState extends State<MusicOrderDetail> {
   }
 
   _moreHandler(BuildContext context, MusicItem item) {
-    openBottomSheet(context, [
-      SheetItem(
-        title: Text(
-          item.name,
-          style: TextStyle(
-            color: Theme.of(context).primaryColor,
-            fontWeight: FontWeight.bold,
-            overflow: TextOverflow.ellipsis,
-          ),
+    openBottomSheet(
+      context,
+      [
+        SheetItem(
+          title: "播放",
+          icon: Icons.play_arrow_rounded,
+          onPressed: () {
+            _play(item);
+          },
         ),
+        SheetItem(
+          title: "添加到待播放",
+          icon: Icons.playlist_add_rounded,
+          onPressed: () {
+            Provider.of<PlayerModel>(context, listen: false)
+                .addPlayerList([item], showToast: true);
+          },
+        ),
+        SheetItem(
+          title: "收藏到歌单",
+          icon: Icons.favorite_border_rounded,
+          onPressed: () {
+            collectToMusicOrder(context: context, musicList: [item]);
+          },
+        ),
+        SheetItem(
+          title: "下载",
+          icon: Icons.download_rounded,
+          onPressed: () {
+            checkMusicLocalRepeat(context, item, () {
+              final downloadModel = Provider.of<DownloadModel>(context, listen: false);
+              downloadModel.download([item]);
+            });
+          },
+        ),
+      ],
+      header: SheetHeader(
+        title: clearHtmlTags(item.name),
+        subtitle: clearHtmlTags(item.author),
+        track: item,
       ),
-      SheetItem(
-        title: const Text("播放"),
-        onPressed: () {
-          _play(item);
-        },
-      ),
-      SheetItem(
-        title: const Text("添加到歌单"),
-        onPressed: () {
-          collectToMusicOrder(context: context, musicList: [item]);
-        },
-      ),
-      SheetItem(
-        title: const Text("添加到待播放列表"),
-        onPressed: () {
-          Provider.of<PlayerModel>(context, listen: false)
-              .addPlayerList([item], showToast: true);
-        },
-      ),
-      SheetItem(
-        title: const Text("下载"),
-        onPressed: () {
-          checkMusicLocalRepeat(context, item, () {
-            final downloadModel = Provider.of<DownloadModel>(context, listen: false);
-            downloadModel.download([item]);
-          });
-        },
-      ),
-    ]);
+    );
   }
 
   @override

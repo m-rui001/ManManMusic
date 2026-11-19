@@ -11,6 +11,7 @@ import "package:bobomusic/modules/party/party_roster.dart";
 import "package:bobomusic/modules/party/party_tone.dart";
 import "package:bobomusic/modules/setting/pages/guide_page.dart";
 import "package:bobomusic/modules/setting/pages/theme_color_setting.dart";
+import "package:bobomusic/modules/setting/playback_prefs.dart";
 import "package:bobomusic/utils/get_cache_color.dart";
 import "package:bobomusic/utils/update_version.dart";
 import "package:flutter/material.dart";
@@ -97,10 +98,12 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                 ),
                 const SizedBox(height: 16),
                 SettingCard(
+                  sectionTitle: "外观",
                   settingItems: [
                     SettingItem(
                       leadingIcon: Icons.color_lens,
                       title: "更换主题色",
+                      subtitle: "整个界面的强调色跟着它走",
                       trailing: Icon(Icons.chevron_right, color: primaryColor),
                       onTap: () async {
                         Color initialColor = await getCacheColor();
@@ -129,10 +132,66 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                 ),
                 const SizedBox(height: 16),
                 SettingCard(
+                  sectionTitle: "播放",
+                  settingItems: [
+                    SettingItem(
+                      leadingIcon: Icons.replay_rounded,
+                      title: "「上一首」先回到开头",
+                      subtitle: "播放超过 3 秒时先重听本曲，连按两次才切歌",
+                      trailing: Switch(
+                        value: PlaybackPrefs.instance.restartOnPrevious,
+                        onChanged: (v) async {
+                          await PlaybackPrefs.instance.setRestartOnPrevious(v);
+                          if (mounted) setState(() {});
+                        },
+                      ),
+                    ),
+                    SettingItem(
+                      leadingIcon: Icons.lyrics_outlined,
+                      title: "自动匹配歌词",
+                      subtitle: "打开歌词时先按曲名和时长静默找一次",
+                      trailing: Switch(
+                        value: PlaybackPrefs.instance.autoLyrics,
+                        onChanged: (v) async {
+                          await PlaybackPrefs.instance.setAutoLyrics(v);
+                          if (mounted) setState(() {});
+                        },
+                      ),
+                    ),
+                    SettingItem(
+                      leadingIcon: Icons.blur_on_rounded,
+                      title: "播放页流动背景",
+                      subtitle: "封面色块缓慢旋转，关掉更省电",
+                      trailing: Switch(
+                        value: PlaybackPrefs.instance.fluidBackground,
+                        onChanged: (v) async {
+                          await PlaybackPrefs.instance.setFluidBackground(v);
+                          if (mounted) setState(() {});
+                        },
+                      ),
+                    ),
+                    SettingItem(
+                      leadingIcon: Icons.vibration_rounded,
+                      title: "触感反馈",
+                      subtitle: "播放、收藏、切模式时轻微震动",
+                      trailing: Switch(
+                        value: PlaybackPrefs.instance.haptics,
+                        onChanged: (v) async {
+                          await PlaybackPrefs.instance.setHaptics(v);
+                          if (mounted) setState(() {});
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                SettingCard(
+                  sectionTitle: "账号",
                   settingItems: [
                     SettingItem(
                       leadingIcon: Icons.account_circle_outlined,
                       title: "哔哩哔哩账号",
+                      subtitle: "登录后才能取到无损和杜比音轨",
                       trailing: Icon(Icons.chevron_right, color: primaryColor),
                       onTap: () async {
                         await Navigator.of(context).push(
@@ -149,10 +208,12 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                 ),
                 const SizedBox(height: 16),
                 SettingCard(
+                  sectionTitle: "一起听",
                   settingItems: [
                     SettingItem(
                       leadingIcon: Icons.headphones_outlined,
                       title: "打开 App 自动上线一起听",
+                      subtitle: "关掉后只能手动上线",
                       // 默认开启，关掉后只能手动上线
                       trailing: Switch(
                         value: _autoOnline,
@@ -165,6 +226,7 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                     SettingItem(
                       leadingIcon: Icons.notifications_active_outlined,
                       title: "有人进出时播放提示音",
+                      subtitle: "只在 App 打开时响",
                       trailing: Switch(
                         value: PartyTone.instance.enabled,
                         onChanged: (v) async {
@@ -176,6 +238,7 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                     SettingItem(
                       leadingIcon: Icons.group_outlined,
                       title: "一起听名单",
+                      subtitle: "只有名单里的人能进房间",
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -204,6 +267,7 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                 ),
                 const SizedBox(height: 16),
                 SettingCard(
+                  sectionTitle: "关于",
                   settingItems: [
                     SettingItem(
                       customLeadingIcon: Container(
@@ -217,6 +281,7 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                         ),
                       ),
                       title: "检查更新",
+                      subtitle: "新版本发布后这里会提示",
                       trailing: Icon(Icons.chevron_right, color: primaryColor),
                       onTap: () {
                         updateAppVersion(context);
@@ -225,6 +290,7 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                     SettingItem(
                       leadingIcon: Icons.menu_book_outlined,
                       title: "使用说明",
+                      subtitle: "搜歌、收藏、一起听怎么用",
                       trailing: Icon(Icons.chevron_right, color: primaryColor),
                       onTap: () {
                         Navigator.of(context).push(

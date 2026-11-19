@@ -129,7 +129,9 @@ void main() {
       ),
     );
     await tester.tap(find.text(player.track.name));
-    await tester.pumpAndSettle();
+    // 播放页背景一直在缓慢流动，pumpAndSettle 永远等不到静止
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
     expect(find.byType(PlayerCard), findsOneWidget);
     expect(find.byType(LyricsScroller), findsNothing);
     final close = find.byTooltip("收起播放器");
@@ -143,11 +145,13 @@ void main() {
 
     tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
     addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     expect(Theme.of(tester.element(close)).brightness, Brightness.dark);
 
     tester.view.physicalSize = const Size(800, 380);
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     expect(find.byTooltip("播放队列").hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -170,6 +174,37 @@ void main() {
     expect(tester.widget<LyricsReader>(reader).position, 26000);
     await tester.pump(const Duration(seconds: 1));
     expect(tester.widget<LyricsReader>(reader).position, 26000);
+    await tester.pumpWidget(const SizedBox.shrink());
+    unawaited(positions.close());
+  });
+
+  testWidgets("歌词当前行比其余行亮，换主题色后高亮跟着换", (tester) async {
+    final positions = StreamController<Duration>();
+    final player = LyricTestPlayer(positions.stream);
+
+    Widget app(Color accent) => ChangeNotifierProvider<PlayerModel>.value(
+          value: player,
+          child: MaterialApp(
+            theme: buildAppTheme(accent, Brightness.light),
+            home: const Scaffold(body: LyricsScroller()),
+          ),
+        );
+
+    await tester.pumpWidget(app(Colors.blue));
+    final reader = find.byType(LyricsReader);
+    final blue = tester.widget<LyricsReader>(reader).ui;
+    expect(blue.getPlayingMainTextStyle().color!.a,
+        greaterThan(blue.getOtherMainTextStyle().color!.a));
+    expect(blue.getLyricHightlightColor(),
+        buildAppTheme(Colors.blue, Brightness.light).colorScheme.primary);
+
+    await tester.pumpWidget(app(Colors.red));
+    // MaterialApp 用 AnimatedTheme 过渡，单帧 pump 还停在旧主题上
+    await tester.pump(const Duration(milliseconds: 300));
+    final red = tester.widget<LyricsReader>(reader).ui;
+    expect(red.getLyricHightlightColor(),
+        buildAppTheme(Colors.red, Brightness.light).colorScheme.primary);
+
     await tester.pumpWidget(const SizedBox.shrink());
     unawaited(positions.close());
   });
