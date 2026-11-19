@@ -14,8 +14,6 @@ import "package:bobomusic/modules/setting/pages/theme_color_setting.dart";
 import "package:bobomusic/utils/get_cache_color.dart";
 import "package:bobomusic/utils/update_version.dart";
 import "package:flutter/material.dart";
-import "package:bobomusic/modules/player/audio_processing.dart";
-import "package:bobomusic/modules/player/audio_options.dart";
 import "package:flutter_svg/svg.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
@@ -94,13 +92,6 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                         }
                       }
                     ),
-                    if (supportsAudioProcessing)
-                      SettingItem(
-                        leadingIcon: Icons.equalizer_rounded,
-                        title: "播放音效",
-                        trailing: Icon(Icons.chevron_right, color: primaryColor),
-                        onTap: () => showAudioOptions(context),
-                      ),
                   ],
                 ),
                 const SizedBox(height: 16),

@@ -327,6 +327,8 @@ class MusicUrl {
   final Map<String, String>? headers; // 请求头
   final String format;
   final int bitrate;
+  final int trackId;
+  final String codec;
   final List<MusicUrl> alternatives;
 
   const MusicUrl({
@@ -334,8 +336,12 @@ class MusicUrl {
     this.headers,
     this.format = "",
     this.bitrate = 0,
+    this.trackId = 0,
+    this.codec = "",
     this.alternatives = const [],
   });
+
+  bool get requiresAccount => format == "FLAC" || format == "杜比音轨";
 
   String get description => [
         if (format.isNotEmpty) format,

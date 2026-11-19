@@ -4,7 +4,6 @@ import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/download/types.dart";
 import "package:bobomusic/modules/player/source.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
-import "package:bobomusic/origin_sdk/service.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:dio/dio.dart";
 import "package:flutter/material.dart";
@@ -28,19 +27,12 @@ class DownloadModel extends ChangeNotifier {
 
   // 下载
   void download(List<MusicItem> musics) async {
-    for (var item in musics) {
-      final name = "${item.name}.mp3";
-      String resultPath = "";
+    for (final item in musics) {
       try {
-        if (Platform.isAndroid) {
-          resultPath = await _downloadForAndroid(item, name);
-        } else {
-          resultPath = await _downloadForDesktop(item, name);
-        }
+        final resultPath = await _downloadMusic(item);
         BotToast.showText(text: "下载完成: $resultPath");
-
         eventBus.fire(ScanLocalListWithoutLoading());
-      } catch (e) {
+      } catch (_) {
         BotToast.showText(text: "下载失败");
       }
     }
@@ -51,70 +43,50 @@ Future<Directory?> getDownloadDir() async {
   if (Platform.isAndroid) {
     return Directory("/storage/emulated/0/Download/满满音乐");
   }
-  return await getDownloadsDirectory();
+  return getDownloadsDirectory();
 }
 
-Future<String> _downloadForDesktop(
-  MusicItem music,
-  String name,
-) async {
-  final dir = await getDownloadDir();
-  final addr = path.join("${dir!.path}/$name");
-
-  // 查询缓存文件
-  final cached = await cachedMusicFile(music);
-  if (cached != null) {
-    await cached.copy(addr);
-    return addr;
+Future<String> _downloadMusic(MusicItem music) async {
+  if (Platform.isAndroid &&
+      !await Permission.manageExternalStorage.status.isGranted &&
+      !await Permission.manageExternalStorage.request().isGranted) {
+    throw StateError("未授权");
   }
-  // 从网络下载
-  final m = await service.getMusicUrl(music.id);
-  await dio.download(
-    m.url,
-    addr,
-    options: Options(headers: m.headers),
-  );
-  return addr;
-}
+  final directory = await getDownloadDir();
+  if (directory == null) throw StateError("找不到下载目录");
+  await directory.create(recursive: true);
 
-Future<String> _downloadForAndroid(
-  MusicItem music,
-  String name,
-) async {
-  // 判断是否授权
-  var status = await Permission.manageExternalStorage.status;
-  if (!status.isGranted) {
-    var per = await Permission.manageExternalStorage.request();
-    if (!per.isGranted) {
-      throw "未授权";
+  final extension =
+      music.localPath.isEmpty ? ".m4a" : path.extension(music.localPath);
+  final destination = path.join(directory.path, "${music.name}$extension");
+  final temporary = await directory.createTemp(".manman-download-");
+  final partial = File(path.join(temporary.path, "audio.part"));
+  try {
+    await for (final source in musicAudioCandidates(music)) {
+      final file = source.file;
+      final remote = source.remote;
+      try {
+        if (file != null) {
+          await file.copy(partial.path);
+        } else {
+          await dio.download(
+            remote!.url,
+            partial.path,
+            options: Options(headers: remote.headers),
+          );
+        }
+      } on DioException {
+        continue;
+      } on FileSystemException {
+        if (file != null && !await file.exists()) continue;
+        rethrow;
+      }
+      await partial.rename(destination);
+      return destination;
     }
+    throw StateError("找不到可下载的音轨");
+  } finally {
+    if (await partial.exists()) await partial.delete();
+    await temporary.delete();
   }
-
-  // 获取目录下的文件列表
-  final dir = await getDownloadDir();
-  // 判断目录是否存在
-  if (!dir!.existsSync()) {
-    dir.createSync(recursive: true);
-  }
-
-  // 查询缓存文件
-  final cached = await cachedMusicFile(music);
-  // 保存路径
-  String savePath = path.join(dir.path, name);
-  if (cached != null) {
-    // 文件保存
-    await cached.copy(savePath);
-    BotToast.showText(text: "已经下载过此音乐");
-  } else {
-    // 没有缓存文件，从网络下载
-    BotToast.showText(text: "开始下载...");
-    final m = await service.getMusicUrl(music.id);
-    await dio.download(
-      m.url,
-      savePath,
-      options: Options(headers: m.headers),
-    );
-  }
-
-  return savePath;
 }

@@ -5,14 +5,9 @@ import android.app.job.JobScheduler
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import android.os.Process
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import java.io.File
-import java.io.IOException
-import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicReference
 
 /**
  * 继承 AudioServiceActivity 以保持后台播放能力，
@@ -68,56 +63,6 @@ class MainActivity : AudioServiceActivity() {
                 result.notImplemented()
             }
         }
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "manman/audio")
-            .setMethodCallHandler { call, result ->
-                when (call.method) {
-                    "renderAudio" -> {
-                        val path = call.argument<String>("path")
-                        val request = call.argument<Int>("request")
-                        if (path.isNullOrEmpty() || request == null) {
-                            result.error("format", null, null)
-                        } else {
-                            renderAudio(path, request, result)
-                        }
-                    }
-                    "cancelAudioRender" -> {
-                        val request = call.argument<Int>("request")
-                        audioRender.get()?.takeIf { it.request == request }?.cancelled = true
-                        result.success(null)
-                    }
-                    else -> result.notImplemented()
-                }
-            }
-    }
-
-    private fun renderAudio(path: String, request: Int, result: MethodChannel.Result) {
-        val job = AudioRender(request)
-        if (!audioRender.compareAndSet(null, job)) {
-            result.error("busy", null, null)
-            return
-        }
-        val directory = File(cacheDir, "audio-repair")
-        audioWorker.execute {
-            try {
-                Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
-                val output = AudioRestoration.render(File(path), directory) { job.cancelled }
-                runOnUiThread {
-                    result.success(mapOf(
-                        "path" to output.file.absolutePath,
-                        "effects" to output.effects,
-                        "durationMs" to output.durationMs
-                    ))
-                }
-            } catch (error: IOException) {
-                val known = setOf("format", "storage", "size", "decode", "timeout", "unchanged", "cancelled")
-                val code = error.message?.takeIf { it in known } ?: "decode"
-                runOnUiThread { result.error(code, null, null) }
-            } catch (_: RuntimeException) {
-                runOnUiThread { result.error("decode", null, null) }
-            } finally {
-                audioRender.compareAndSet(job, null)
-            }
-        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -142,13 +87,7 @@ class MainActivity : AudioServiceActivity() {
         }
     }
 
-    private class AudioRender(val request: Int) {
-        @Volatile var cancelled: Boolean = false
-    }
-
     companion object {
         private const val CHANNEL = "manman/share"
-        private val audioRender = AtomicReference<AudioRender?>()
-        private val audioWorker = Executors.newSingleThreadExecutor()
     }
 }

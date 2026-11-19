@@ -425,18 +425,21 @@ class BiliClient implements OriginService {
       });
       final response = await dio.get(
         Uri.parse(apiPath).replace(queryParameters: query).toString(),
+        options: Options(receiveTimeout: const Duration(seconds: 10)),
       );
       final body = response.data;
       final data = body is Map ? body["data"] : null;
       final dash = data is Map ? data["dash"] : null;
       if (dash is! Map) throw StateError("该视频没有可播放的音轨");
 
+      int trackInt(Object? value) =>
+          value is num ? value.toInt() : int.tryParse("$value") ?? 0;
+
       Iterable<MusicUrl> urls(Map track, String format) sync* {
         final backup = track["backupUrl"] ?? track["backup_url"];
-        final bitrate = (track["bandwidth"] as num?)?.toInt() ?? 0;
         for (final value in [
           track["baseUrl"] ?? track["base_url"],
-          if (backup is List && backup.isNotEmpty) backup.first,
+          if (backup is List) ...backup,
         ]) {
           final uri = value is String ? Uri.tryParse(value) : null;
           if (uri == null || !uri.hasAuthority || uri.scheme != "https") {
@@ -446,7 +449,9 @@ class BiliClient implements OriginService {
             url: value as String,
             headers: {"Referer": _referer},
             format: format,
-            bitrate: bitrate,
+            bitrate: trackInt(track["bandwidth"]),
+            trackId: trackInt(track["id"]),
+            codec: track["codecs"]?.toString() ?? "",
           );
         }
       }
@@ -454,17 +459,23 @@ class BiliClient implements OriginService {
       final flac = dash["flac"];
       final lossless = flac is Map ? flac["audio"] : null;
       final dolby = dash["dolby"];
+      final dolbyAudio = dolby is Map ? dolby["audio"] : null;
       final audio = dash["audio"];
       final stereo = audio is List ? audio.whereType<Map>().toList() : <Map>[];
-      int bandwidth(Map item) => (item["bandwidth"] as num?)?.toInt() ?? 0;
-      stereo.sort((a, b) => bandwidth(b).compareTo(bandwidth(a)));
+      stereo.sort((a, b) {
+        final byBandwidth =
+            trackInt(b["bandwidth"]).compareTo(trackInt(a["bandwidth"]));
+        if (byBandwidth != 0) return byBandwidth;
+        return trackInt(b["id"]).compareTo(trackInt(a["id"]));
+      });
       final candidates = [
         if (lossless is Map) ...urls(lossless, "FLAC"),
-        for (final track in stereo.take(2))
+        for (final track in stereo)
           ...urls(
               track, "${track["codecs"]}".contains("mp4a") ? "AAC" : "DASH"),
-        if (dolby is Map && dolby["audio"] is List)
-          for (final track in (dolby["audio"] as List).whereType<Map>().take(1))
+        if (dolbyAudio is Map) ...urls(dolbyAudio, "杜比音轨"),
+        if (dolbyAudio is List)
+          for (final track in dolbyAudio.whereType<Map>())
             ...urls(track, "杜比音轨"),
       ];
       final seen = <String>{};
@@ -477,6 +488,8 @@ class BiliClient implements OriginService {
           headers: best.headers,
           format: best.format,
           bitrate: best.bitrate,
+          trackId: best.trackId,
+          codec: best.codec,
           alternatives: usable.skip(1).toList(),
         );
       }

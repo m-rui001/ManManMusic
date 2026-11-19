@@ -453,7 +453,7 @@ class PlayerCardState extends State<PlayerCard> {
             TextButton.icon(
               onPressed: () => showAudioOptions(context),
               icon: const Icon(Icons.graphic_eq_rounded, size: 18),
-              label: const Text("音质与音效"),
+              label: const Text("音质"),
             ),
             PlayerListButton(size: 24, color: colors.onSurfaceVariant),
           ],

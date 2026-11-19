@@ -4,7 +4,6 @@ import "package:audio_service/audio_service.dart";
 import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/party/party_control.dart";
 import "package:bobomusic/modules/player/service.dart";
-import "package:bobomusic/modules/player/audio_processing.dart";
 import "package:just_audio/just_audio.dart";
 import "package:flutter/material.dart";
 import "package:bobomusic/modules/player/const.dart";
@@ -54,8 +53,6 @@ class PlayerModel extends ChangeNotifier {
     _playerService = playerService;
     _subscriptions
         .add(eventBus.on<RefreshPlayerCard>().listen((_) => notifyListeners()));
-    _subscriptions.add(
-        eventBus.on<RefreshAudioOptions>().listen((_) => notifyListeners()));
     _subscriptions.add(_audio?.playerStateStream.listen((event) {
       notifyListeners();
     }));
@@ -75,17 +72,6 @@ class PlayerModel extends ChangeNotifier {
 
   String get sourceDescription =>
       _playerHandler?.player.sourceDescription ?? "";
-
-  bool get processingAudio => _playerHandler?.player.processingAudio ?? false;
-  bool get automaticAudioProcessing =>
-      _playerHandler?.player.automaticAudioProcessing ?? true;
-  List<LocalAudioEffect> get activeAudioEffects =>
-      _playerHandler?.player.activeAudioEffects ?? const [];
-  String? get audioProcessingStatus =>
-      _playerHandler?.player.audioProcessingStatus;
-
-  Future<void> setAutomaticAudioProcessing(bool enabled) async =>
-      _playerHandler?.player.setAutomaticAudioProcessing(enabled);
 
   Stream<PlayerState>? get playerStates => _audio?.playerStateStream;
 
