@@ -5,7 +5,35 @@ import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 import "package:flutter_easyloading/flutter_easyloading.dart";
 import "package:package_info_plus/package_info_plus.dart";
+import "package:shared_preferences/shared_preferences.dart";
 import "package:url_launcher/url_launcher.dart";
+
+const _lastAutomaticCheck = "last_automatic_update_check";
+
+Future<ReleaseInfo?> checkForAutomaticUpdate() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final last = prefs.getInt(_lastAutomaticCheck);
+    if (last != null &&
+        now >= last &&
+        now - last < const Duration(days: 1).inMilliseconds) {
+      return null;
+    }
+    await prefs.setInt(_lastAutomaticCheck, now);
+    final release =
+        await ReleaseChecker(owner: appRepoOwner, repo: appRepoName).check();
+    return release?.hasUpdate == true ? release : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<void> showAppUpdate(BuildContext context, ReleaseInfo info) =>
+    showDialog<void>(
+      context: context,
+      builder: (_) => _UpdateDialog(info: info, current: appVersion),
+    );
 
 /// 检查更新
 ///
@@ -64,10 +92,7 @@ Future<void> updateAppVersion(BuildContext context, {bool? showToast = true}) as
 
     if (!context.mounted) return;
 
-    showDialog(
-      context: context,
-      builder: (dialogContext) => _UpdateDialog(info: info, current: appVersion),
-    );
+    await showAppUpdate(context, info);
   } catch (e) {
     EasyLoading.dismiss();
     BotToast.showText(text: "更新检查出错了 QAQ，稍后再试");

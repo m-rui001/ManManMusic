@@ -11,6 +11,7 @@ import "package:bobomusic/modules/download/model.dart";
 import "package:bobomusic/modules/history/play_history.dart";
 import "package:bobomusic/permission/permission.dart";
 import "package:bobomusic/utils/get_cache_color.dart";
+import "package:bobomusic/utils/update_version.dart";
 import "package:bobomusic/utils/window_manage.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
@@ -141,6 +142,8 @@ class MyApp extends StatefulWidget {
 class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   late ThemeData _currentTheme;
   StreamSubscription? _themeColorSubscription;
+  bool _checkingForUpdate = false;
+  ReleaseInfo? _pendingUpdate;
 
   /// 回前台时提示剪贴板链接要用，不能拿 MaterialApp 外面的 context
   final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
@@ -183,6 +186,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     // 打开 App 自动上线一起听（设置里可关）
     WidgetsBinding.instance.addPostFrameCallback((_) {
       PartySession.instance.autoOnlineIfEnabled();
+      unawaited(_checkForUpdate());
     });
 
     _initDeepLinks();
@@ -263,6 +267,37 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (state != AppLifecycleState.resumed) return;
     unawaited(PartyService.instance.recoverAfterResume());
     _checkClipboardOnResume();
+    unawaited(_checkForUpdate());
+  }
+
+  Future<void> _checkForUpdate() async {
+    if (!mounted || !Platform.isAndroid || _checkingForUpdate) return;
+    _checkingForUpdate = true;
+    try {
+      _pendingUpdate ??= await checkForAutomaticUpdate();
+      final release = _pendingUpdate;
+      final messenger = _messengerKey.currentState;
+      if (release == null ||
+          !mounted ||
+          messenger == null ||
+          WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+        return;
+      }
+      _pendingUpdate = null;
+      messenger.showSnackBar(SnackBar(
+        content: Text("满满音乐 v${release.latestVersion} 已发布"),
+        duration: const Duration(seconds: 8),
+        action: SnackBarAction(
+          label: "查看",
+          onPressed: () {
+            final context = _navKey.currentContext;
+            if (context != null) unawaited(showAppUpdate(context, release));
+          },
+        ),
+      ));
+    } finally {
+      _checkingForUpdate = false;
+    }
   }
 
   /// 从后台回到前台：剪贴板里有新的分享链接就提示一下，不自动播放
