@@ -156,6 +156,7 @@ class _BiliFavPageState extends State<BiliFavPage> {
   }
 
   Widget _buildBody(Color primaryColor) {
+    final colors = Theme.of(context).colorScheme;
     if (_loading) {
       return const Center(
         child: SizedBox(
@@ -173,12 +174,12 @@ class _BiliFavPageState extends State<BiliFavPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.cloud_off_outlined, size: 42, color: Colors.grey),
+              Icon(Icons.cloud_off_outlined, size: 42, color: colors.onSurfaceVariant),
               const SizedBox(height: 12),
               Text(
                 _error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 11, color: Colors.grey),
+                style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
               ),
               const SizedBox(height: 14),
               TextButton(onPressed: _load, child: const Text("重试")),
@@ -189,10 +190,10 @@ class _BiliFavPageState extends State<BiliFavPage> {
     }
 
     if (_folders.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           "还没有创建任何收藏夹",
-          style: TextStyle(fontSize: 12, color: Colors.grey),
+          style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
         ),
       );
     }
@@ -213,7 +214,7 @@ class _BiliFavPageState extends State<BiliFavPage> {
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: colors.surfaceContainerLow,
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
@@ -250,7 +251,7 @@ class _BiliFavPageState extends State<BiliFavPage> {
                           : "${folder.mediaCount} 个视频 · ${_ago(binding.syncedAt)}同步过",
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                      style: TextStyle(fontSize: 10, color: colors.onSurfaceVariant),
                     ),
                   ],
                 ),
@@ -310,9 +311,10 @@ class _BiliFavPageState extends State<BiliFavPage> {
   }
 
   Widget _folderPlaceholder() {
+    final colors = Theme.of(context).colorScheme;
     return Container(
-      color: const Color(0xFFEEEEEE),
-      child: const Icon(Icons.folder_outlined, size: 20, color: Colors.grey),
+      color: colors.surfaceContainerHigh,
+      child: Icon(Icons.folder_outlined, size: 20, color: colors.onSurfaceVariant),
     );
   }
 

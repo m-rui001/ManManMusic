@@ -19,11 +19,12 @@ Future<void> showShareSheet(BuildContext context) async {
     context: context,
     backgroundColor: Colors.transparent,
     builder: (ctx) {
-      final primaryColor = Theme.of(ctx).primaryColor;
+      final colors = Theme.of(ctx).colorScheme;
+      final primaryColor = colors.primary;
       return Container(
-        decoration: const BoxDecoration(
-          color: Color.fromARGB(255, 245, 245, 245),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
+        decoration: BoxDecoration(
+          color: colors.surfaceContainer,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
         child: Column(
@@ -45,7 +46,7 @@ Future<void> showShareSheet(BuildContext context) async {
               music.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
+              style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
             _ShareItem(
@@ -116,7 +117,8 @@ class _ShareItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor;
+    final colors = Theme.of(context).colorScheme;
+    final primaryColor = colors.primary;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -142,12 +144,12 @@ class _ShareItem extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     desc,
-                    style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    style: TextStyle(fontSize: 10, color: colors.onSurfaceVariant),
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+            Icon(Icons.chevron_right, size: 18, color: colors.onSurfaceVariant),
           ],
         ),
       ),
@@ -195,9 +197,9 @@ Future<void> showPartyInviteDialog(BuildContext context) async {
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 "房主切换歌曲、拖动进度时，好友会自动跟随",
-                style: TextStyle(fontSize: 10, color: Colors.grey),
+                style: TextStyle(fontSize: 10, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
               ),
             ] else ...[
               const Text(

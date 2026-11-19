@@ -202,7 +202,8 @@ class PartyTabViewState extends State<PartyTabView>
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor;
+    final colors = Theme.of(context).colorScheme;
+    final primaryColor = colors.primary;
     final members = roster.members;
     final listeningCount =
         probes.values.where((e) => e?.isFresh == true).length;
@@ -229,8 +230,8 @@ class PartyTabViewState extends State<PartyTabView>
       ),
       body: SafeArea(
         bottom: true,
-        child: Container(
-          color: const Color.fromARGB(255, 245, 245, 245),
+        child: ColoredBox(
+          color: colors.surface,
           child: RefreshIndicator(
             onRefresh: () => _probeAll(force: true),
             child: ListView(
@@ -254,11 +255,11 @@ class PartyTabViewState extends State<PartyTabView>
                 ),
                 if (!auth.isLogin) ...[
                   const SizedBox(height: 12),
-                  _loginHint(primaryColor),
+                  _loginHint(colors),
                 ],
                 if (session.isGuest) ...[
                   const SizedBox(height: 12),
-                  _guestCard(primaryColor),
+                  _guestCard(colors),
                 ],
                 const SizedBox(height: 18),
                 PartySectionTitle(
@@ -288,12 +289,12 @@ class PartyTabViewState extends State<PartyTabView>
                     style: TextStyle(
                       fontSize: 9.5,
                       height: 1.6,
-                      color: Colors.grey[500],
+                      color: colors.onSurfaceVariant,
                     ),
                   ),
                 ),
                 if (members.isEmpty)
-                  _emptyRoster(primaryColor)
+                  _emptyRoster(colors)
                 else
                   ...members.map(
                     (m) => PartyRosterTile(
@@ -317,7 +318,7 @@ class PartyTabViewState extends State<PartyTabView>
                   width: double.infinity,
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: colors.surfaceContainerLow,
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: PartyMemberChips(
@@ -338,15 +339,15 @@ class PartyTabViewState extends State<PartyTabView>
   }
 
   /// 作为听众在别人房间里的状态卡
-  Widget _guestCard(Color primaryColor) {
+  Widget _guestCard(ColorScheme colors) {
     final locked = session.isLocked;
+    final foreground =
+        locked ? colors.onTertiaryContainer : colors.onSecondaryContainer;
 
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: locked
-            ? const Color.fromARGB(255, 255, 247, 230)
-            : primaryColor.withValues(alpha: 0.06),
+        color: locked ? colors.tertiaryContainer : colors.secondaryContainer,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
@@ -354,7 +355,7 @@ class PartyTabViewState extends State<PartyTabView>
           Icon(
             locked ? Icons.lock_outline : Icons.graphic_eq,
             size: 16,
-            color: locked ? const Color(0xFFB8860B) : primaryColor,
+            color: foreground,
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -363,7 +364,7 @@ class PartyTabViewState extends State<PartyTabView>
               style: TextStyle(
                 fontSize: 10,
                 height: 1.6,
-                color: locked ? const Color(0xFFB8860B) : primaryColor,
+                color: foreground,
               ),
             ),
           ),
@@ -373,6 +374,7 @@ class PartyTabViewState extends State<PartyTabView>
               if (mounted) setState(() {});
             },
             style: TextButton.styleFrom(
+              foregroundColor: foreground,
               padding: const EdgeInsets.symmetric(horizontal: 8),
               minimumSize: const Size(0, 28),
             ),
@@ -383,27 +385,29 @@ class PartyTabViewState extends State<PartyTabView>
     );
   }
 
-  Widget _emptyRoster(Color primaryColor) {
+  Widget _emptyRoster(ColorScheme colors) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: colors.surfaceContainerLow,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
         children: [
-          Icon(Icons.group_add_outlined, size: 34, color: Colors.grey[350]),
+          Icon(Icons.group_add_outlined,
+              size: 34, color: colors.onSurfaceVariant),
           const SizedBox(height: 10),
           const Text(
             "名单还是空的",
             style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 5),
-          const Text(
+          Text(
             "从你关注的人里挑几个真正会一起听歌的。"
             "没加进来的人进不了你的房间，列表也不会乱。",
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: Colors.grey, height: 1.6),
+            style: TextStyle(
+                fontSize: 11, color: colors.onSurfaceVariant, height: 1.6),
           ),
           const SizedBox(height: 14),
           SizedBox(
@@ -411,7 +415,6 @@ class PartyTabViewState extends State<PartyTabView>
             height: 38,
             child: FilledButton(
               style: FilledButton.styleFrom(
-                backgroundColor: primaryColor,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(19),
                 ),
@@ -425,27 +428,27 @@ class PartyTabViewState extends State<PartyTabView>
     );
   }
 
-  Widget _loginHint(Color primaryColor) {
+  Widget _loginHint(ColorScheme colors) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color.fromARGB(255, 255, 247, 230),
+        color: colors.tertiaryContainer,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          const Icon(
+          Icon(
             Icons.lightbulb_outline,
             size: 15,
-            color: Color(0xFFB8860B),
+            color: colors.onTertiaryContainer,
           ),
           const SizedBox(width: 8),
-          const Expanded(
+          Expanded(
             child: Text(
               "登录后好友才能按 UID 找到你，也才能认出谁在名单里。",
               style: TextStyle(
                 fontSize: 10,
-                color: Color(0xFFB8860B),
+                color: colors.onTertiaryContainer,
                 height: 1.6,
               ),
             ),
@@ -458,7 +461,7 @@ class PartyTabViewState extends State<PartyTabView>
             ),
             child: Text(
               "去登录",
-              style: TextStyle(fontSize: 11, color: primaryColor),
+              style: TextStyle(fontSize: 11, color: colors.onTertiaryContainer),
             ),
           ),
         ],

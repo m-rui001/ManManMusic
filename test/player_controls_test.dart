@@ -1,5 +1,6 @@
 import "dart:async";
 
+import "package:bobomusic/constants/theme_color.dart";
 import "package:bobomusic/modules/player/const.dart";
 import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/modules/player/lyrics_card/lyric_scroller.dart";
@@ -120,7 +121,11 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider<PlayerModel>.value(
         value: player,
-        child: const MaterialApp(home: Scaffold(body: PlayerView())),
+        child: MaterialApp(
+          theme: buildAppTheme(Colors.black, Brightness.light),
+          darkTheme: buildAppTheme(Colors.black, Brightness.dark),
+          home: const Scaffold(body: PlayerView()),
+        ),
       ),
     );
     await tester.tap(find.text(player.track.name));
@@ -135,6 +140,11 @@ void main() {
     );
     expect(tester.getSize(play).width, greaterThan(80));
     expect(tester.takeException(), isNull);
+
+    tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+    addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+    await tester.pumpAndSettle();
+    expect(Theme.of(tester.element(close)).brightness, Brightness.dark);
 
     tester.view.physicalSize = const Size(800, 380);
     await tester.pumpAndSettle();

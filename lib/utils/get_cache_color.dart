@@ -8,6 +8,6 @@ import "package:shared_preferences/shared_preferences.dart";
 Future<Color> getCacheColor() async {
   final localStorage = await SharedPreferences.getInstance();
   final colorName = localStorage.getString(CacheKey.themeColor);
-  final index = colorName != null ? ThemeColor.colorNames.indexWhere((name) => name == colorName) : 7;
-  return ThemeColor.availableColors[index];
+  final index = ThemeColor.colorNames.indexOf(colorName ?? "");
+  return index < 0 ? Colors.black : ThemeColor.availableColors[index];
 }

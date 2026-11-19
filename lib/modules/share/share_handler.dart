@@ -90,14 +90,15 @@ Future<void> openBiliShareText(BuildContext context, String text) async {
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
     builder: (ctx) {
-      final primaryColor = Theme.of(ctx).primaryColor;
+      final colors = Theme.of(ctx).colorScheme;
+      final primaryColor = colors.primary;
       return Container(
         constraints: BoxConstraints(
           maxHeight: MediaQuery.of(ctx).size.height * 0.7,
         ),
-        decoration: const BoxDecoration(
-          color: Color.fromARGB(255, 245, 245, 245),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
+        decoration: BoxDecoration(
+          color: colors.surfaceContainer,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -124,7 +125,7 @@ Future<void> openBiliShareText(BuildContext context, String text) async {
             ),
             Text(
               "共 ${musics.length} 个分 P，选择要播放的",
-              style: const TextStyle(fontSize: 10, color: Colors.grey),
+              style: TextStyle(fontSize: 10, color: colors.onSurfaceVariant),
             ),
             const SizedBox(height: 8),
             Flexible(
@@ -154,7 +155,7 @@ Future<void> openBiliShareText(BuildContext context, String text) async {
                     ),
                     trailing: Text(
                       _durationText(m.duration),
-                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                      style: TextStyle(fontSize: 10, color: colors.onSurfaceVariant),
                     ),
                     onTap: () => Navigator.of(c).pop(m),
                   );

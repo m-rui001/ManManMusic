@@ -18,6 +18,7 @@ class CustomDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Dialog(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -41,7 +42,7 @@ class CustomDialog extends StatelessWidget {
                 child: Text(
                   title!,
                   style: TextStyle(
-                    color: Theme.of(context).primaryColor,
+                    color: colors.primary,
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
                   ),
@@ -64,16 +65,14 @@ class CustomDialog extends StatelessWidget {
                 FilledButton(
                   onPressed: onCancel,
                   style: FilledButton.styleFrom(
-                    backgroundColor: Colors.grey,
+                    backgroundColor: colors.surfaceContainerHighest,
+                    foregroundColor: colors.onSurface,
                   ),
-                  child: const Text("取消", style: TextStyle(color: Colors.white)),
+                  child: const Text("取消"),
                 ),
                 const SizedBox(width: 20),
                 FilledButton(
                   onPressed: onConfirm,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Theme.of(context).primaryColor,
-                  ),
                   child: const Text("确认"),
                 ),
               ],

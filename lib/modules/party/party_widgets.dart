@@ -38,12 +38,13 @@ class PartySelfCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor;
+    final colors = Theme.of(context).colorScheme;
+    final primaryColor = colors.primary;
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: colors.surfaceContainerLow,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
@@ -54,7 +55,7 @@ class PartySelfCard extends StatelessWidget {
               if (face.isNotEmpty)
                 CircleAvatar(
                   radius: 21,
-                  backgroundColor: const Color.fromARGB(255, 240, 240, 240),
+                  backgroundColor: colors.surfaceContainerHigh,
                   backgroundImage: NetworkImage(face),
                 )
               else
@@ -95,7 +96,7 @@ class PartySelfCard extends StatelessWidget {
                             shape: BoxShape.circle,
                             color: inRoom && connected
                                 ? Colors.green
-                                : Colors.grey[350],
+                                : colors.outline,
                           ),
                         ),
                         const SizedBox(width: 5),
@@ -104,14 +105,18 @@ class PartySelfCard extends StatelessWidget {
                             inRoom
                                 ? (connected
                                     ? (isGuest ? "正在跟房主一起听" : "正在分享你的收听")
-                                    : (connectionHint.isEmpty ? "连接中…" : connectionHint))
+                                    : (connectionHint.isEmpty
+                                        ? "连接中…"
+                                        : connectionHint))
                                 : "已下线",
                             maxLines: 2,
                             style: TextStyle(
                               fontSize: 10,
-                              color: inRoom && !connected && connectionHint.isNotEmpty
+                              color: inRoom &&
+                                      !connected &&
+                                      connectionHint.isNotEmpty
                                   ? const Color(0xFFB8860B)
-                                  : Colors.grey,
+                                  : colors.onSurfaceVariant,
                             ),
                           ),
                         ),
@@ -126,8 +131,8 @@ class PartySelfCard extends StatelessWidget {
                     ? OutlinedButton(
                         onPressed: onToggleOnline,
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.grey[700],
-                          side: BorderSide(color: Colors.grey[300]!),
+                          foregroundColor: colors.onSurfaceVariant,
+                          side: BorderSide(color: colors.outlineVariant),
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           minimumSize: const Size(0, 30),
                         ),
@@ -155,7 +160,7 @@ class PartySelfCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: const Color.fromARGB(255, 248, 248, 248),
+              color: colors.surfaceContainer,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Row(
@@ -168,16 +173,14 @@ class PartySelfCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
-                      color: inRoom ? primaryColor : Colors.grey,
+                      color: inRoom ? primaryColor : colors.onSurfaceVariant,
                       letterSpacing: 0.5,
                     ),
                   ),
                 ),
                 Text(
-                  isGuest
-                      ? "在别人的房间里"
-                      : (isLogin ? "名单里的人才能进" : "登录后才能开房"),
-                  style: const TextStyle(fontSize: 9, color: Colors.grey),
+                  isGuest ? "在别人的房间里" : (isLogin ? "名单里的人才能进" : "登录后才能开房"),
+                  style: TextStyle(fontSize: 9, color: colors.onSurfaceVariant),
                 ),
               ],
             ),
@@ -227,7 +230,8 @@ class PartyRosterTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor;
+    final colors = Theme.of(context).colorScheme;
+    final primaryColor = colors.primary;
     final listening = probe != null;
 
     // 只有点右边的叉才会移除，长按不再误删
@@ -237,7 +241,7 @@ class PartyRosterTile extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(11),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: colors.surfaceContainerLow,
           borderRadius: BorderRadius.circular(14),
           border: listening
               ? Border.all(
@@ -253,11 +257,13 @@ class PartyRosterTile extends StatelessWidget {
                   opacity: listening ? 1 : 0.5,
                   child: CircleAvatar(
                     radius: 21,
-                    backgroundColor: const Color.fromARGB(255, 240, 240, 240),
-                    backgroundImage:
-                        member.face.isNotEmpty ? NetworkImage(member.face) : null,
+                    backgroundColor: colors.surfaceContainerHigh,
+                    backgroundImage: member.face.isNotEmpty
+                        ? NetworkImage(member.face)
+                        : null,
                     child: member.face.isEmpty
-                        ? Icon(Icons.person, size: 20, color: Colors.grey[400])
+                        ? Icon(Icons.person,
+                            size: 20, color: colors.onSurfaceVariant)
                         : null,
                   ),
                 ),
@@ -271,7 +277,8 @@ class PartyRosterTile extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: Colors.green,
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
+                        border: Border.all(
+                            color: colors.surfaceContainerLow, width: 2),
                       ),
                     ),
                   ),
@@ -290,7 +297,9 @@ class PartyRosterTile extends StatelessWidget {
                       fontSize: 12.5,
                       fontWeight:
                           listening ? FontWeight.bold : FontWeight.normal,
-                      color: listening ? Colors.black87 : Colors.grey[700],
+                      color: listening
+                          ? colors.onSurface
+                          : colors.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 3),
@@ -299,13 +308,15 @@ class PartyRosterTile extends StatelessWidget {
                             ? (probe!.hasMusic
                                 ? "${probe!.playing ? "正在听" : "已暂停"}《${clearHtmlTags(probe!.musicName)}》"
                                 : "一起听开着 · 没在放歌")
-                            : (statusUnavailable ? "在线状态待确认 · 可尝试加入" : "未开房 · 可尝试加入")) +
+                            : (statusUnavailable
+                                ? "在线状态待确认 · 可尝试加入"
+                                : "未开房 · 可尝试加入")) +
                         (member.canControl ? " · 共管" : ""),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 10,
-                      color: listening ? primaryColor : Colors.grey,
+                      color: listening ? primaryColor : colors.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -313,16 +324,15 @@ class PartyRosterTile extends StatelessWidget {
             ),
             const SizedBox(width: 4),
             IconButton(
-              tooltip: member.canControl
-                  ? "取消共管（随时可以再点回来）"
-                  : "设为共管：以后他一进房间就能换歌",
+              tooltip:
+                  member.canControl ? "取消共管（随时可以再点回来）" : "设为共管：以后他一进房间就能换歌",
               onPressed: onToggleControl,
               icon: Icon(
                 member.canControl
                     ? Icons.favorite
                     : Icons.favorite_border_rounded,
                 size: 17,
-                color: member.canControl ? Colors.redAccent : Colors.grey[350],
+                color: member.canControl ? Colors.redAccent : colors.outline,
               ),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
@@ -333,7 +343,7 @@ class PartyRosterTile extends StatelessWidget {
               icon: Icon(
                 Icons.close,
                 size: 16,
-                color: Colors.grey[400],
+                color: colors.onSurfaceVariant,
               ),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(
@@ -373,12 +383,12 @@ class PartyMemberChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor;
+    final colors = Theme.of(context).colorScheme;
 
     if (members.isEmpty && !inRoom) {
-      return const Text(
+      return Text(
         "没人在房间里",
-        style: TextStyle(fontSize: 11, color: Colors.grey),
+        style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
       );
     }
 
@@ -386,12 +396,12 @@ class PartyMemberChips extends StatelessWidget {
       spacing: 10,
       runSpacing: 10,
       children: [
-        if (inRoom) _chip("$myName（我）", myFace, primaryColor, true, true),
+        if (inRoom) _chip("$myName（我）", myFace, colors, true, true),
         for (final entry in members.entries)
           _chip(
             entry.value,
             "",
-            primaryColor,
+            colors,
             false,
             controlUids.contains(memberUids[entry.key] ?? 0),
           ),
@@ -402,16 +412,14 @@ class PartyMemberChips extends StatelessWidget {
   Widget _chip(
     String name,
     String face,
-    Color primaryColor,
+    ColorScheme colors,
     bool highlight,
     bool canControl,
   ) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: highlight
-            ? primaryColor.withValues(alpha: 0.08)
-            : const Color.fromARGB(255, 245, 245, 245),
+        color: highlight ? colors.secondaryContainer : colors.surfaceContainer,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
@@ -419,10 +427,10 @@ class PartyMemberChips extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 9,
-            backgroundColor: const Color.fromARGB(255, 235, 235, 235),
+            backgroundColor: colors.surfaceContainerHigh,
             backgroundImage: face.isNotEmpty ? NetworkImage(face) : null,
             child: face.isEmpty
-                ? Icon(Icons.person, size: 10, color: Colors.grey[400])
+                ? Icon(Icons.person, size: 10, color: colors.onSurfaceVariant)
                 : null,
           ),
           const SizedBox(width: 6),
@@ -430,7 +438,7 @@ class PartyMemberChips extends StatelessWidget {
             name,
             style: TextStyle(
               fontSize: 11,
-              color: highlight ? primaryColor : Colors.black87,
+              color: highlight ? colors.onSecondaryContainer : colors.onSurface,
               fontWeight: highlight ? FontWeight.bold : FontWeight.normal,
             ),
           ),
@@ -459,7 +467,7 @@ class PartySectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor;
+    final colors = Theme.of(context).colorScheme;
 
     return Padding(
       padding: const EdgeInsets.only(left: 2, bottom: 10),
@@ -470,14 +478,14 @@ class PartySectionTitle extends StatelessWidget {
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.bold,
-              color: primaryColor,
+              color: colors.primary,
             ),
           ),
           if (trailingText != null) ...[
             const SizedBox(width: 6),
             Text(
               trailingText!,
-              style: const TextStyle(fontSize: 10, color: Colors.grey),
+              style: TextStyle(fontSize: 10, color: colors.onSurfaceVariant),
             ),
           ],
           const Spacer(),

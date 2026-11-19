@@ -5,6 +5,7 @@ import "package:app_links/app_links.dart";
 import "package:audio_service/audio_service.dart";
 import "package:bobomusic/constants/app_info.dart";
 import "package:bobomusic/constants/notification.dart";
+import "package:bobomusic/constants/theme_color.dart";
 import "package:bobomusic/db/db.dart";
 import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/download/model.dart";
@@ -32,36 +33,8 @@ import "package:provider/provider.dart";
 
 // toast 初始化
 final botToastBuilder = BotToastInit();
-// 主题
-Color primaryColor = Colors.black;
 // 数据库
 final DBOrder db = DBOrder();
-
-ThemeData theme = ThemeData(
-  useMaterial3: true,
-  colorScheme: ColorScheme.fromSeed(
-    seedColor: Colors.white,
-    primary: primaryColor,
-    brightness: Brightness.light,
-  ),
-  primaryColor: primaryColor,
-  appBarTheme: const AppBarTheme(
-    backgroundColor: Color.fromARGB(255, 245, 245, 245)
-  ),
-  popupMenuTheme: const PopupMenuThemeData(
-    color: Color.fromARGB(255, 245, 245, 245)
-  ),
-  scaffoldBackgroundColor: const Color.fromARGB(255, 245, 245, 245),
-  bottomSheetTheme: BottomSheetThemeData(
-    backgroundColor: Colors.grey[200],
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.only(
-        topLeft: Radius.circular(10),
-        topRight: Radius.circular(10),
-      ),
-    ),
-  ),
-);
 
 final _playerHandler = AudioPlayerHandler();
 
@@ -99,7 +72,7 @@ void main() async {
   // 一起听提示音设置
   await PartyTone.instance.initFromStorage();
 
-  primaryColor = await getCacheColor();
+  final accent = await getCacheColor();
 
   runApp(
     MultiProvider(
@@ -108,14 +81,7 @@ void main() async {
         ChangeNotifierProvider(create: (context) => DownloadModel()),
       ],
       child: MyApp(
-        initialTheme: theme.copyWith(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.white,
-            primary: primaryColor,
-            brightness: Brightness.light,
-          ),
-          primaryColor: primaryColor,
-        ),
+        initialAccent: accent,
         playerHandler: _playerHandler,
         playerService: playerService,
       ),
@@ -124,13 +90,13 @@ void main() async {
 }
 
 class MyApp extends StatefulWidget {
-  final ThemeData initialTheme;
+  final Color initialAccent;
   final AudioPlayerHandler playerHandler;
   final AudioHandler playerService;
 
   const MyApp({
     super.key,
-    required this.initialTheme,
+    required this.initialAccent,
     required this.playerHandler,
     required this.playerService,
   });
@@ -140,8 +106,9 @@ class MyApp extends StatefulWidget {
 }
 
 class MyAppState extends State<MyApp> with WidgetsBindingObserver {
-  late ThemeData _currentTheme;
-  StreamSubscription? _themeColorSubscription;
+  late ThemeData _lightTheme;
+  late ThemeData _darkTheme;
+  StreamSubscription<ThemeColorChanged>? _themeColorSubscription;
   bool _checkingForUpdate = false;
   ReleaseInfo? _pendingUpdate;
 
@@ -159,13 +126,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     // 正好压在返回键 / 圆圈 / 方框上，退出还得先上滑。
     // 改成 edgeToEdge：系统栏常驻，SafeArea 会自动让出高度。
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setSystemUIOverlayStyle(
-      const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        systemNavigationBarColor: Colors.transparent,
-        systemNavigationBarDividerColor: Colors.transparent,
-      ),
-    );
+    _setAccent(widget.initialAccent);
 
     Provider.of<PlayerModel>(context, listen: false).init(
       playerHandler: widget.playerHandler,
@@ -176,7 +137,6 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     widget.playerHandler.player.onPlayRecord = (music) {
       PlayHistory.instance.record(music);
     };
-    _currentTheme = widget.initialTheme;
 
     // 一起听：挂载播放器
     PartySession.instance.attach(
@@ -193,17 +153,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     IncomingShare.listen((text) => _onSharedText(text));
 
     _themeColorSubscription = eventBus.on<ThemeColorChanged>().listen((event) {
-      setState(() {
-        primaryColor = event.newColor;
-        _currentTheme = _currentTheme.copyWith(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.white,
-            primary: primaryColor,
-            brightness: Brightness.light,
-          ),
-          primaryColor: primaryColor,
-        );
-      });
+      setState(() => _setAccent(event.newColor));
     });
 
     Permissions.requestNotificationPermission();
@@ -218,6 +168,11 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   }
 
   StreamSubscription<Uri>? _linkSub;
+
+  void _setAccent(Color accent) {
+    _lightTheme = buildAppTheme(accent, Brightness.light);
+    _darkTheme = buildAppTheme(accent, Brightness.dark);
+  }
 
   /// 监听深度链接（满满音乐 / manman:// 与 B 站分享）
   void _initDeepLinks() {
@@ -354,7 +309,9 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      theme: _currentTheme,
+      theme: _lightTheme,
+      darkTheme: _darkTheme,
+      themeMode: ThemeMode.system,
       home: const HomeView(),
       debugShowCheckedModeBanner: false,
       navigatorKey: _navKey,
@@ -365,12 +322,15 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
         child = botToastBuilder(context, child);
         // 消息提示框的默认配置
         BotToast.defaultOption.text.duration = const Duration(seconds: 3);
-        BotToast.defaultOption.text.textStyle = TextStyle(
+        BotToast.defaultOption.text.textStyle = const TextStyle(
           fontSize: 12,
-          color: Theme.of(context).cardColor,
+          color: Colors.white,
         );
         EasyLoading.instance.indicatorType = EasyLoadingIndicatorType.cubeGrid;
-        return child;
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: appSystemOverlayStyle(Theme.of(context).brightness),
+          child: child,
+        );
       },
     );
   }

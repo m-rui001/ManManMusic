@@ -245,6 +245,7 @@ class HistoryTabState extends State<HistoryTab> {
 
   /// 多选工具条
   Widget _buildSelectBar(List<HistoryEntry> entries, Color primaryColor) {
+    final colors = Theme.of(context).colorScheme;
     final allSelected =
         entries.isNotEmpty && _selected.length == entries.length;
 
@@ -252,7 +253,7 @@ class HistoryTabState extends State<HistoryTab> {
       margin: const EdgeInsets.fromLTRB(20, 0, 20, 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: colors.surfaceContainerLow,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -284,7 +285,7 @@ class HistoryTabState extends State<HistoryTab> {
             ),
             child: Text(
               allSelected ? "取消全选" : "全选",
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
+              style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
             ),
           ),
           TextButton(

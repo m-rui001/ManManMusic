@@ -79,7 +79,8 @@ class _PartyPickPageState extends State<PartyPickPage> {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor;
+    final colors = Theme.of(context).colorScheme;
+    final primaryColor = colors.primary;
 
     return Scaffold(
       appBar: AppBar(
@@ -111,9 +112,9 @@ class _PartyPickPageState extends State<PartyPickPage> {
                       children: [
                         Text(
                           _error!,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: Colors.grey,
+                            color: colors.onSurfaceVariant,
                           ),
                         ),
                         const SizedBox(height: 10),
@@ -122,10 +123,10 @@ class _PartyPickPageState extends State<PartyPickPage> {
                     ),
                   )
                 : _all.isEmpty
-                    ? const Center(
+                    ? Center(
                         child: Text(
                           "你在 B 站还没有关注任何人",
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                          style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
                         ),
                       )
                     : ListView.builder(
@@ -143,7 +144,7 @@ class _PartyPickPageState extends State<PartyPickPage> {
                                 "没勾选的不会被探测，也不会打扰你。",
                                 style: TextStyle(
                                   fontSize: 10,
-                                  color: Colors.grey[600],
+                                  color: colors.onSurfaceVariant,
                                   height: 1.6,
                                 ),
                               ),
@@ -169,7 +170,7 @@ class _PartyPickPageState extends State<PartyPickPage> {
                               decoration: BoxDecoration(
                                 color: checked
                                     ? primaryColor.withValues(alpha: 0.05)
-                                    : Colors.white,
+                                    : colors.surfaceContainerLow,
                                 borderRadius: BorderRadius.circular(12),
                                 border: checked
                                     ? Border.all(
@@ -183,12 +184,7 @@ class _PartyPickPageState extends State<PartyPickPage> {
                                 children: [
                                   CircleAvatar(
                                     radius: 19,
-                                    backgroundColor: const Color.fromARGB(
-                                      255,
-                                      240,
-                                      240,
-                                      240,
-                                    ),
+                                    backgroundColor: colors.surfaceContainerHigh,
                                     backgroundImage: f.face.isNotEmpty
                                         ? NetworkImage(f.face)
                                         : null,
@@ -196,7 +192,7 @@ class _PartyPickPageState extends State<PartyPickPage> {
                                         ? Icon(
                                             Icons.person,
                                             size: 18,
-                                            color: Colors.grey[400],
+                                            color: colors.onSurfaceVariant,
                                           )
                                         : null,
                                   ),
@@ -219,9 +215,9 @@ class _PartyPickPageState extends State<PartyPickPage> {
                                             f.sign,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 10,
-                                              color: Colors.grey,
+                                              color: colors.onSurfaceVariant,
                                             ),
                                           ),
                                       ],
@@ -234,7 +230,7 @@ class _PartyPickPageState extends State<PartyPickPage> {
                                     size: 20,
                                     color: checked
                                         ? primaryColor
-                                        : Colors.grey[350],
+                                        : colors.outline,
                                   ),
                                 ],
                               ),

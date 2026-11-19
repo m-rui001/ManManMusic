@@ -108,7 +108,8 @@ class _UpdateDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor;
+    final colors = Theme.of(context).colorScheme;
+    final primaryColor = colors.primary;
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -131,7 +132,7 @@ class _UpdateDialog extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               "当前版本 v$current",
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
+              style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
             ),
             if (info.body.isNotEmpty) ...[
               const SizedBox(height: 12),
@@ -139,7 +140,7 @@ class _UpdateDialog extends StatelessWidget {
                 width: double.infinity,
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color.fromARGB(255, 247, 247, 247),
+                  color: colors.surfaceContainerHigh,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: ConstrainedBox(
@@ -154,9 +155,9 @@ class _UpdateDialog extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 12),
-            const Text(
+            Text(
               "下载后直接覆盖安装，歌单和登录状态都会保留",
-              style: TextStyle(fontSize: 10, color: Colors.grey),
+              style: TextStyle(fontSize: 10, color: colors.onSurfaceVariant),
             ),
             const SizedBox(height: 14),
             Row(
@@ -164,12 +165,11 @@ class _UpdateDialog extends StatelessWidget {
               children: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text("以后再说", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  child: Text("以后再说", style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant)),
                 ),
                 const SizedBox(width: 6),
                 FilledButton(
                   style: FilledButton.styleFrom(
-                    backgroundColor: primaryColor,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(18),
                     ),

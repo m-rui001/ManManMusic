@@ -6,7 +6,6 @@ import "package:bobomusic/modules/party/party_page.dart";
 import "package:bobomusic/modules/player/artwork.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
-import "package:flutter/services.dart";
 import "package:bobomusic/modules/player/player_card/card.dart";
 import "package:bobomusic/modules/player/list.dart";
 import "package:bobomusic/modules/player/model.dart";
@@ -338,14 +337,7 @@ Future<void>? showPlayerCard(BuildContext context) {
   if (player.current == null) return null;
   return navigator.push(PageRouteBuilder<void>(
     fullscreenDialog: true,
-    pageBuilder: (_, __, ___) => AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light.copyWith(
-        statusBarColor: Colors.transparent,
-        systemNavigationBarColor: Colors.transparent,
-        systemNavigationBarContrastEnforced: false,
-      ),
-      child: const PlayerCard(),
-    ),
+    pageBuilder: (_, __, ___) => const PlayerCard(),
     transitionDuration: const Duration(milliseconds: 260),
     reverseTransitionDuration: const Duration(milliseconds: 200),
     transitionsBuilder: (_, animation, __, child) => SlideTransition(

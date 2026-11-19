@@ -119,7 +119,8 @@ class UserMusicOrderView extends State<MusicOrderView> with AutomaticKeepAliveCl
   }
 
   Widget _buildHeader(int count) {
-    final primaryColor = Theme.of(context).primaryColor;
+    final colors = Theme.of(context).colorScheme;
+    final primaryColor = colors.primary;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
@@ -128,7 +129,7 @@ class UserMusicOrderView extends State<MusicOrderView> with AutomaticKeepAliveCl
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: colors.surfaceContainerLow,
               borderRadius: BorderRadius.circular(16),
             ),
             child: Column(
@@ -181,7 +182,7 @@ class UserMusicOrderView extends State<MusicOrderView> with AutomaticKeepAliveCl
                         icon: Icon(
                           Icons.delete_outline,
                           size: 20,
-                          color: Colors.grey[400],
+                          color: colors.onSurfaceVariant,
                         ),
                       ),
                   ],

@@ -18,76 +18,37 @@ class SettingItem {
   });
 }
 
-class SettingCard extends StatefulWidget {
+class SettingCard extends StatelessWidget {
   final List<SettingItem> settingItems;
 
   const SettingCard({super.key, required this.settingItems});
 
   @override
-  State<SettingCard> createState() => SettingCardState();
-}
-
-class SettingCardState extends State<SettingCard> {
-  @override
   Widget build(BuildContext context) {
-    return Container(
-      height: widget.settingItems.length * 55 + 20,
-      padding: const EdgeInsets.only(top: 10, bottom: 10),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.all(Radius.circular(10)),
-      ),
-      child: ClipRRect(
-        borderRadius: const BorderRadius.all(Radius.circular(10)),
-        child: ListView.builder(
-          padding: EdgeInsets.zero,
-          shrinkWrap: true, // 让 ListView 根据内容自适应高度
-          physics: const NeverScrollableScrollPhysics(), // 禁止滚动
-          itemCount: widget.settingItems.length,
-          itemBuilder: (context, index) {
-            final item = widget.settingItems[index];
-            return _buildItem(
-              leadingIcon: item.leadingIcon,
-              customLeadingIcon: item.customLeadingIcon,
-              title: item.title,
-              customTitle: item.customTitle,
-              onTap: item.onTap,
-              trailing: item.trailing,
-            );
-          },
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(10),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Column(
+          children: [
+            for (final item in settingItems)
+              ListTile(
+                minTileHeight: 55,
+                leading: item.leadingIcon != null
+                    ? Icon(item.leadingIcon, color: colors.primary)
+                    : item.customLeadingIcon,
+                title: item.customTitle ??
+                    Text(item.title ?? "",
+                        style: const TextStyle(fontSize: 16)),
+                trailing: item.trailing,
+                onTap: item.onTap,
+              ),
+          ],
         ),
       ),
-    );
-  }
-
-  Widget _buildItem({
-    IconData? leadingIcon,
-    required String? title,
-    VoidCallback? onTap,
-    Widget? trailing,
-    Widget? customTitle,
-    Widget? customLeadingIcon,
-  }) {
-    return ListTile(
-      leading: leadingIcon != null
-        ? Icon(
-            leadingIcon,
-            color: Theme.of(context).primaryColor,
-          )
-        : customLeadingIcon,
-      title: customTitle ?? Text(
-        title ?? "",
-        style: TextStyle(
-          fontSize: 16,
-          color: Colors.grey[700],
-        ),
-      ),
-      trailing: trailing,
-      onTap: () {
-        if (onTap != null) {
-          onTap();
-        }
-      },
     );
   }
 }

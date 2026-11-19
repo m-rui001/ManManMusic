@@ -93,11 +93,12 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: colors.surfaceContainerLow,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
@@ -140,7 +141,7 @@ class _Section extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 11.5,
                         height: 1.7,
-                        color: Colors.grey[700],
+                        color: colors.onSurfaceVariant,
                       ),
                     ),
                   ),

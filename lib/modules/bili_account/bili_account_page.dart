@@ -41,7 +41,7 @@ class _BiliAccountPageState extends State<BiliAccountPage> {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor;
+    final colors = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -64,12 +64,12 @@ class _BiliAccountPageState extends State<BiliAccountPage> {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: colors.surfaceContainerLow,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: _auth.isLogin
-                          ? _buildUserInfo(primaryColor)
-                          : _buildLoginPrompt(primaryColor),
+                          ? _buildUserInfo(colors)
+                          : _buildLoginPrompt(colors),
                     ),
                     const SizedBox(height: 14),
                     if (_auth.isLogin) ...[
@@ -93,16 +93,16 @@ class _BiliAccountPageState extends State<BiliAccountPage> {
     );
   }
 
-  Widget _buildUserInfo(Color primaryColor) {
+  Widget _buildUserInfo(ColorScheme colors) {
     return Row(
       children: [
         CircleAvatar(
           radius: 26,
-          backgroundColor: const Color(0xFFEEEEEE),
+          backgroundColor: colors.surfaceContainerHigh,
           backgroundImage:
               _auth.face.isNotEmpty ? NetworkImage(_auth.face) : null,
           child: _auth.face.isEmpty
-              ? const Icon(Icons.person_outline, color: Colors.grey)
+              ? Icon(Icons.person_outline, color: colors.onSurfaceVariant)
               : null,
         ),
         const SizedBox(width: 14),
@@ -120,11 +120,11 @@ class _BiliAccountPageState extends State<BiliAccountPage> {
               const SizedBox(height: 4),
               Row(
                 children: [
-                  _buildTag("Lv${_auth.level}", primaryColor),
+                  _buildTag("Lv${_auth.level}", colors.primary),
                   const SizedBox(width: 6),
                   _buildTag(
                     _auth.vipStatus == 1 ? "大会员" : "普通会员",
-                    _auth.vipStatus == 1 ? const Color(0xFFCE7EAB) : Colors.grey,
+                    _auth.vipStatus == 1 ? const Color(0xFFCE7EAB) : colors.onSurfaceVariant,
                   ),
                 ],
               ),
@@ -146,13 +146,13 @@ class _BiliAccountPageState extends State<BiliAccountPage> {
     );
   }
 
-  Widget _buildLoginPrompt(Color primaryColor) {
+  Widget _buildLoginPrompt(ColorScheme colors) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Icon(Icons.account_circle_outlined, size: 20, color: primaryColor),
+            Icon(Icons.account_circle_outlined, size: 20, color: colors.primary),
             const SizedBox(width: 8),
             const Text(
               "登录后可以",
@@ -161,10 +161,10 @@ class _BiliAccountPageState extends State<BiliAccountPage> {
           ],
         ),
         const SizedBox(height: 10),
-        const Text(
+        Text(
           "· 播放大会员 / Hi-Res 高音质音频\n"
           "· 一起听时按 UID 认出名单里的人",
-          style: TextStyle(fontSize: 11, height: 1.9, color: Colors.grey),
+          style: TextStyle(fontSize: 11, height: 1.9, color: colors.onSurfaceVariant),
         ),
         const SizedBox(height: 16),
         ElevatedButton.icon(

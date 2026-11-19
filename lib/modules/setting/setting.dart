@@ -51,18 +51,51 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final primaryColor = Theme.of(context).primaryColor;
+    final colors = Theme.of(context).colorScheme;
+    final primaryColor = colors.primary;
 
     return Scaffold(
       body: SafeArea(
         bottom: true,
         child: Container(
-          color: const Color.fromARGB(255, 245, 245, 245),
           padding: const EdgeInsets.only(top: 10, left: 20, right: 20),
           height: MediaQuery.of(context).size.height,
           child: SingleChildScrollView(
             child: Column(
               children: [
+                SettingCard(
+                  settingItems: [
+                    SettingItem(
+                      customTitle: Wrap(
+                        spacing: 12,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          const CircleAvatar(
+                            radius: 12,
+                            backgroundImage: AssetImage(appLogoAsset),
+                          ),
+                          Text(
+                            appName,
+                            style: TextStyle(
+                              color: colors.onSurface,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          Text(
+                            appSlogan,
+                            style: TextStyle(
+                              color: colors.onSurfaceVariant,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
                 SettingCard(
                   settingItems: [
                     SettingItem(
@@ -123,7 +156,6 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                       // 默认开启，关掉后只能手动上线
                       trailing: Switch(
                         value: _autoOnline,
-                        activeColor: primaryColor,
                         onChanged: (v) async {
                           await PartyRoster.setAutoOnline(v);
                           if (mounted) setState(() => _autoOnline = v);
@@ -135,7 +167,6 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                       title: "有人进出时播放提示音",
                       trailing: Switch(
                         value: PartyTone.instance.enabled,
-                        activeColor: primaryColor,
                         onChanged: (v) async {
                           await PartyTone.instance.setEnabled(v);
                           if (mounted) setState(() {});
@@ -150,9 +181,9 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                         children: [
                           Text(
                             "$_rosterCount 人",
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
-                              color: Colors.grey,
+                              color: colors.onSurfaceVariant,
                             ),
                           ),
                           Icon(Icons.chevron_right, color: primaryColor),
@@ -214,7 +245,7 @@ class SettingViewState extends State<SettingView> with AutomaticKeepAliveClientM
                       backgroundImage: AssetImage(appLogoAsset),
                     ),
                     const SizedBox(width: 6),
-                    Text("$appName v$appVersion", style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                    Text("$appName v$appVersion", style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12)),
                   ],
                 ),
               ],

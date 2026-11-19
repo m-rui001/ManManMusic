@@ -81,7 +81,8 @@ class BiliLoginGate {
 class _LoginPromptSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor;
+    final colors = Theme.of(context).colorScheme;
+    final primaryColor = colors.primary;
 
     final benefits = [
       (Icons.high_quality_outlined, "解锁高音质", "登录后可用 Hi-Res / 无损音源"),
@@ -90,9 +91,9 @@ class _LoginPromptSheet extends StatelessWidget {
     ];
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
       ),
       padding: EdgeInsets.only(
         left: 24,
@@ -154,7 +155,7 @@ class _LoginPromptSheet extends StatelessWidget {
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: primaryColor,
-                foregroundColor: Colors.white,
+                foregroundColor: colors.onPrimary,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(22),

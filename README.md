@@ -42,4 +42,4 @@ Android 安装包由 [GitHub Actions](./.github/workflows/release-android.yaml) 
 
 ## 致谢
 
-感谢 Cirro 项目为满满音乐提供参考。
+满满音乐约 60% 的前端界面设计借鉴了 Cirro。感谢 Cirro 团队的设计。

@@ -27,7 +27,7 @@ class _BiliLoginPageState extends State<BiliLoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor;
+    final colors = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
@@ -38,9 +38,9 @@ class _BiliLoginPageState extends State<BiliLoginPage> {
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
             child: Row(
               children: [
-                _modeButton("手机登录", 0, primaryColor),
+                _modeButton("手机登录", 0, colors),
                 const SizedBox(width: 8),
-                _modeButton("扫码登录", 1, primaryColor),
+                _modeButton("扫码登录", 1, colors),
               ],
             ),
           ),
@@ -54,7 +54,7 @@ class _BiliLoginPageState extends State<BiliLoginPage> {
     );
   }
 
-  Widget _modeButton(String label, int mode, Color primaryColor) {
+  Widget _modeButton(String label, int mode, ColorScheme colors) {
     final selected = _mode == mode;
     return Expanded(
       child: GestureDetector(
@@ -62,7 +62,7 @@ class _BiliLoginPageState extends State<BiliLoginPage> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
-            color: selected ? primaryColor : Colors.white,
+            color: selected ? colors.primary : colors.surfaceContainerLow,
             borderRadius: BorderRadius.circular(18),
           ),
           child: Center(
@@ -71,7 +71,7 @@ class _BiliLoginPageState extends State<BiliLoginPage> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                color: selected ? Colors.white : Colors.grey[700],
+                color: selected ? colors.onPrimary : colors.onSurfaceVariant,
               ),
             ),
           ),
@@ -112,7 +112,7 @@ class _WebLoginViewState extends State<_WebLoginView> {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor;
+    final colors = Theme.of(context).colorScheme;
 
     return Stack(
       children: [
@@ -123,7 +123,7 @@ class _WebLoginViewState extends State<_WebLoginView> {
                 value: _progress,
                 minHeight: 2,
                 backgroundColor: Colors.transparent,
-                color: primaryColor,
+                color: colors.primary,
               ),
             Expanded(
               child: InAppWebView(
@@ -161,15 +161,15 @@ class _WebLoginViewState extends State<_WebLoginView> {
             ),
             Container(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-              color: const Color.fromARGB(255, 250, 250, 250),
+              color: colors.surfaceContainerLow,
               child: Row(
                 children: [
-                  Icon(Icons.lock_outline, size: 13, color: Colors.grey[500]),
+                  Icon(Icons.lock_outline, size: 13, color: colors.onSurfaceVariant),
                   const SizedBox(width: 6),
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       "这是哔哩哔哩官方登录页，密码只交给 B 站，App 不保存密码",
-                      style: TextStyle(fontSize: 10, color: Colors.grey),
+                      style: TextStyle(fontSize: 10, color: colors.onSurfaceVariant),
                     ),
                   ),
                   if (_saving)
@@ -362,7 +362,7 @@ class _QrLoginViewState extends State<_QrLoginView> {
 
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).primaryColor;
+    final colors = Theme.of(context).colorScheme;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
@@ -371,7 +371,7 @@ class _QrLoginViewState extends State<_QrLoginView> {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: colors.surfaceContainerLow,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
@@ -381,25 +381,25 @@ class _QrLoginViewState extends State<_QrLoginView> {
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
-                    color: primaryColor,
+                    color: colors.primary,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   _status.tip,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
                 ),
                 const SizedBox(height: 18),
-                _buildQrArea(primaryColor),
+                _buildQrArea(colors),
                 const SizedBox(height: 16),
                 if (_status == BiliQrStatus.expired ||
                     _status == BiliQrStatus.failed)
                   ElevatedButton(
                     onPressed: _refreshQr,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryColor,
-                      foregroundColor: Colors.white,
+                      backgroundColor: colors.primary,
+                      foregroundColor: colors.onPrimary,
                     ),
                     child: const Text("刷新二维码"),
                   ),
@@ -410,25 +410,25 @@ class _QrLoginViewState extends State<_QrLoginView> {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: const Color.fromARGB(255, 255, 247, 230),
+              color: colors.tertiaryContainer,
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Row(
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(
                   Icons.lightbulb_outline,
                   size: 15,
-                  color: Color(0xFFB8860B),
+                  color: colors.onTertiaryContainer,
                 ),
-                SizedBox(width: 8),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     "扫码要用另一台设备。只有一个手机的话，"
                     "请用上面的「手机登录」，直接输手机号和验证码更快。",
                     style: TextStyle(
                       fontSize: 11,
-                      color: Color(0xFFB8860B),
+                      color: colors.onTertiaryContainer,
                       height: 1.6,
                     ),
                   ),
@@ -441,7 +441,7 @@ class _QrLoginViewState extends State<_QrLoginView> {
     );
   }
 
-  Widget _buildQrArea(Color primaryColor) {
+  Widget _buildQrArea(ColorScheme colors) {
     if (_loading) {
       return const SizedBox(
         width: 200,
@@ -458,7 +458,7 @@ class _QrLoginViewState extends State<_QrLoginView> {
           child: Text(
             _error!,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
+            style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
           ),
         ),
       );
@@ -488,22 +488,22 @@ class _QrLoginViewState extends State<_QrLoginView> {
           Container(
             width: 190,
             height: 190,
-            color: Colors.white.withValues(alpha: 0.92),
+            color: colors.surfaceContainerLow.withValues(alpha: 0.96),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.refresh, size: 30, color: Colors.grey[400]),
+                Icon(Icons.refresh, size: 30, color: colors.onSurfaceVariant),
                 const SizedBox(height: 8),
                 Text(
                   _status == BiliQrStatus.expired ? "二维码已过期" : "登录失败",
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
                 ),
                 const SizedBox(height: 10),
                 TextButton(
                   onPressed: _refreshQr,
                   child: Text(
                     "点击刷新",
-                    style: TextStyle(fontSize: 12, color: primaryColor),
+                    style: TextStyle(fontSize: 12, color: colors.primary),
                   ),
                 ),
               ],
@@ -513,15 +513,15 @@ class _QrLoginViewState extends State<_QrLoginView> {
           Container(
             width: 190,
             height: 190,
-            color: Colors.white.withValues(alpha: 0.92),
+            color: colors.surfaceContainerLow.withValues(alpha: 0.96),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.check_circle, size: 30, color: primaryColor),
+                Icon(Icons.check_circle, size: 30, color: colors.primary),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   "已扫码，请在手机上确认",
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                  style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
                 ),
               ],
             ),

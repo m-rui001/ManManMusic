@@ -385,9 +385,10 @@ class PlayerCardState extends State<PlayerCard> {
                             final url = "bilibili://video/$bvId";
                             await launchUrl(Uri.parse(url));
                           },
-                          child: const Text("确认且不再提示",
+                          child: Text("确认且不再提示",
                               style: TextStyle(
-                                  fontSize: 12, color: Colors.deepPurple))),
+                                  fontSize: 12,
+                                  color: Theme.of(ctx).colorScheme.primary))),
                     ],
                     cancelButton: CupertinoActionSheetAction(
                         onPressed: () {
@@ -395,7 +396,10 @@ class PlayerCardState extends State<PlayerCard> {
                         },
                         child: Text("取消",
                             style: TextStyle(
-                                fontSize: 12, color: Colors.grey[800]))),
+                                fontSize: 12,
+                                color: Theme.of(ctx)
+                                    .colorScheme
+                                    .onSurfaceVariant))),
                   ),
                 ));
       } else {
@@ -467,18 +471,22 @@ class PlayerCardState extends State<PlayerCard> {
     final player = context.watch<PlayerModel>();
     final music = player.current;
     if (music == null) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
     final tone = HSLColor.fromColor(_artTone);
     final colors = ColorScheme.fromSeed(
       seedColor: _artTone,
-      brightness: Brightness.dark,
-      surface: tone.withLightness(.145).toColor(),
+      brightness: theme.brightness,
+      surface: tone.withLightness(dark ? .145 : .95).toColor(),
     );
     final cover = _imageProvider;
     return Theme(
-      data: ThemeData(
-        useMaterial3: true,
+      data: theme.copyWith(
         colorScheme: colors,
-        fontFamily: Theme.of(context).textTheme.bodyMedium?.fontFamily,
+        primaryColor: colors.primary,
+        bottomSheetTheme: theme.bottomSheetTheme.copyWith(
+          backgroundColor: colors.surfaceContainer,
+        ),
       ),
       child: Material(
         color: colors.surface,
@@ -502,8 +510,11 @@ class PlayerCardState extends State<PlayerCard> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    tone.withLightness(.24).toColor().withValues(alpha: .70),
-                    colors.surface.withValues(alpha: .83),
+                    tone
+                        .withLightness(dark ? .24 : .88)
+                        .toColor()
+                        .withValues(alpha: dark ? .78 : .90),
+                    colors.surface.withValues(alpha: dark ? .87 : .95),
                     colors.surface,
                   ],
                   stops: const [0, .60, 1],
@@ -571,6 +582,7 @@ class PartyLockBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final session = PartySession.instance;
+    final colors = Theme.of(context).colorScheme;
 
     return StreamBuilder<void>(
       stream: session.changes,
@@ -581,26 +593,28 @@ class PartyLockBanner extends StatelessWidget {
           margin: const EdgeInsets.fromLTRB(20, 0, 20, 6),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.18),
+            color: colors.tertiaryContainer,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
             children: [
-              const Icon(Icons.lock_outline, size: 13, color: Colors.white70),
+              Icon(Icons.lock_outline,
+                  size: 13, color: colors.onTertiaryContainer),
               const SizedBox(width: 6),
-              const Expanded(
+              Expanded(
                 child: Text(
                   "房主正在控制播放，只能跟着听",
-                  style: TextStyle(fontSize: 10, color: Colors.white70),
+                  style: TextStyle(
+                      fontSize: 10, color: colors.onTertiaryContainer),
                 ),
               ),
               GestureDetector(
                 onTap: () => PartySession.instance.leave(),
-                child: const Text(
+                child: Text(
                   "退出一起听",
                   style: TextStyle(
                     fontSize: 10,
-                    color: Colors.white,
+                    color: colors.onTertiaryContainer,
                     fontWeight: FontWeight.bold,
                   ),
                 ),

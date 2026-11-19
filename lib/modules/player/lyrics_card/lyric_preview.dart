@@ -50,12 +50,7 @@ class LyricPreviewState extends State<LyricPreview> {
             return Container(
               padding: const EdgeInsets.symmetric(vertical: 6),
               alignment: Alignment.center,
-              child: Text(
-                parsedLyrics[index]['text'],
-                style: const TextStyle(
-                  color: Colors.black,
-                ),
-              ),
+              child: Text(parsedLyrics[index]['text']),
             );
           },
         ),
