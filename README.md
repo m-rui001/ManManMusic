@@ -39,3 +39,7 @@ Android 安装包由 [GitHub Actions](./.github/workflows/release-android.yaml) 
 ## 上游与许可
 
 项目基于 [bobomusic](https://github.com/Redstone-1/bobomusic)，部分基础功能源自 [bb-music/flutter-app](https://github.com/bb-music/flutter-app)。本仓库新增和修改的代码采用 [MIT](./LICENSE)，上游代码按原有的 [Apache-2.0](./LICENSE-APACHE) 许可发布。
+
+## 致谢
+
+感谢 Cirro 项目为满满音乐提供参考。
