@@ -9,6 +9,7 @@ import "package:bobomusic/components/sheet/bottom_sheet.dart";
 import "package:bobomusic/modules/player/const.dart";
 import "package:bobomusic/modules/player/utils.dart";
 import "package:bobomusic/modules/player/model.dart";
+import "package:bobomusic/modules/player/audio_options.dart";
 import "package:bobomusic/modules/player/instance.dart" show AutoCloseMusic;
 import "package:bobomusic/modules/player/lyrics_card/lyric_scroller.dart";
 import "package:bobomusic/modules/player/player.dart";
@@ -83,6 +84,32 @@ void main() {
           restoredQueueIndex([a, b], MusicItem.fromJson(b.toJson()), index), 1);
     }
     expect(restoredQueueIndex([a], b, 0), -1);
+  });
+
+  testWidgets("横屏大字号下可以滚动查看音轨码率", (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(640, 300);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(ChangeNotifierProvider<PlayerModel>.value(
+      value: LayoutPlayer(playing: false),
+      child: MaterialApp(
+          builder: (context, child) => MediaQuery(
+                data: MediaQuery.of(context)
+                    .copyWith(textScaler: const TextScaler.linear(2)),
+                child: child!,
+              ),
+          home: Scaffold(
+              body: Builder(
+                  builder: (context) => TextButton(
+                      onPressed: () => showAudioOptions(context),
+                      child: const Text("音质"))))),
+    ));
+    await tester.tap(find.text("音质"));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text("码率"));
+    await tester.pumpAndSettle();
+    expect(find.text("码率").hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets("定时暂停支持改期、到期播完本首和取消", (tester) async {

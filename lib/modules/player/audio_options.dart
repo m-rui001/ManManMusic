@@ -28,7 +28,7 @@ class _AudioDetails extends StatelessWidget {
 
     return SafeArea(
       top: false,
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
