@@ -2,12 +2,15 @@
 
 import "dart:async";
 
+import "package:bobomusic/components/pressable.dart";
 import "package:bobomusic/components/sheet/bottom_sheet.dart";
 import "package:bobomusic/components/search_field.dart";
 import "package:bobomusic/constants/cache_key.dart";
 import "package:bobomusic/db/db.dart";
 import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/download/model.dart";
+import "package:bobomusic/modules/music_order/pages/search.dart"
+    as library_search;
 import "package:bobomusic/modules/music_order/utils.dart";
 import "package:bobomusic/utils/check_music_local_repeat.dart";
 import "package:bobomusic/utils/clear_html_tags.dart";
@@ -28,7 +31,14 @@ import "package:uuid/uuid.dart";
 const uuid = Uuid();
 
 class SearchView extends StatefulWidget {
-  const SearchView({super.key});
+  final String initialQuery;
+  final bool searchOnOpen;
+
+  const SearchView({
+    super.key,
+    this.initialQuery = "",
+    this.searchOnOpen = false,
+  });
 
   @override
   State<SearchView> createState() => SearchViewState();
@@ -36,7 +46,7 @@ class SearchView extends StatefulWidget {
 
 class SearchViewState extends State<SearchView> {
   final ScrollController _scrollController = ScrollController();
-  final _keywordController = TextEditingController(text: "");
+  late final TextEditingController _keywordController;
   final _focusNode = FocusNode();
   int _current = 0;
   int _generation = 0;
@@ -45,7 +55,7 @@ class SearchViewState extends State<SearchView> {
   bool _loading = false;
   final List<SearchItem> _searchItemList = [];
   List<String> _searchHistory = [];
-  List<SearchSuggestItem> _searchSuggest = [];
+  List<String> _searchSuggest = [];
 
   Future<void> _searchHandler(bool clean) async {
     if (!clean && (_loading || !_hasMore || _query.isEmpty)) return;
@@ -97,10 +107,32 @@ class SearchViewState extends State<SearchView> {
     }
   }
 
-  // 单个歌曲点击
-  void _onClickMusic(SearchItem detail) {
-    final player = Provider.of<PlayerModel>(context, listen: false);
-    final music = MusicItem(
+  // 轻点音频直接切换播放；曲目选项保留给长按。
+  Future<void> _onClickMusic(SearchItem item) async {
+    try {
+      // 搜索摘要没有每一 P 的 cid，详情才包含可播放的真实音轨。
+      final detail = await service.searchDetail(item.id);
+      if (!mounted) return;
+      final tracks = _musicListFromSearch(detail);
+      await context.read<PlayerModel>().play(
+            music: tracks.first,
+            collection: tracks.length > 1 ? tracks : null,
+          );
+    } catch (_) {
+      if (mounted) BotToast.showText(text: "音频详情加载失败");
+    }
+  }
+
+  List<MusicItem> _musicListFromSearch(SearchItem detail) {
+    final tracks = detail.musicList;
+    if (tracks != null && tracks.isNotEmpty) return tracks;
+    return [_musicFromSearch(detail)];
+  }
+
+  MusicItem _musicFromSearch(SearchItem detail) {
+    final tracks = detail.musicList;
+    if (tracks != null && tracks.isNotEmpty) return tracks.first;
+    return MusicItem(
       id: detail.id,
       cover: detail.cover,
       name: detail.name,
@@ -109,6 +141,12 @@ class SearchViewState extends State<SearchView> {
       author: detail.author,
       origin: detail.origin,
     );
+  }
+
+  void _showMusicActions(SearchItem detail) {
+    final player = Provider.of<PlayerModel>(context, listen: false);
+    final tracks = _musicListFromSearch(detail);
+    final music = tracks.first;
     openBottomSheet(
       context,
       [
@@ -116,14 +154,17 @@ class SearchViewState extends State<SearchView> {
           title: "播放",
           icon: Icons.play_arrow_rounded,
           onPressed: () {
-            player.play(music: music);
+            player.play(
+              music: music,
+              collection: tracks.length > 1 ? tracks : null,
+            );
           },
         ),
         SheetItem(
           title: "添加到待播放",
           icon: Icons.playlist_add_rounded,
           onPressed: () {
-            player.addPlayerList([music], showToast: true);
+            player.addPlayerList(tracks, showToast: true);
           },
         ),
         SheetItem(
@@ -173,6 +214,20 @@ class SearchViewState extends State<SearchView> {
 
   // 歌单合集点击
   void _onClickCollection(SearchItem detail) {
+    final collection = detail.musicList?.isNotEmpty == true
+        ? detail
+        : SearchItem(
+            id: detail.id,
+            cover: detail.cover,
+            name: detail.name,
+            duration: detail.duration,
+            author: detail.author,
+            origin: detail.origin,
+            isSeasonDisplay: detail.isSeasonDisplay,
+            ugcSeason: detail.ugcSeason,
+            musicList: _musicListFromSearch(detail),
+            type: SearchType.orderName,
+          );
     openBottomSheet(
       context,
       [
@@ -180,14 +235,14 @@ class SearchViewState extends State<SearchView> {
           title: "查看合集",
           icon: Icons.video_library_outlined,
           onPressed: () {
-            viewCollectionList(detail);
+            viewCollectionList(collection);
           },
         ),
         SheetItem(
           title: "收藏合集",
           icon: Icons.library_add_outlined,
           onPressed: () async {
-            await collectionList(detail);
+            await collectionList(collection);
           },
         ),
       ],
@@ -200,10 +255,12 @@ class SearchViewState extends State<SearchView> {
 
   /// 获取视频所在合集
   Future<SearchItem> getVideoDetail(SearchItem detail) async {
-    final collection = await service.searchSeason(
-        detail.ugcSeason!.mid, detail.ugcSeason!.seasonId);
+    final season = detail.ugcSeason;
+    if (season == null) return detail;
+    final collection = await service.searchSeason(season.mid, season.seasonId);
+    if (collection == null) return detail;
     final result = SearchItem(
-        id: "${collection!.meta.seasonId}",
+        id: "${collection.meta.seasonId}",
         cover: collection.meta.cover,
         name: collection.meta.name,
         duration: 0,
@@ -262,14 +319,21 @@ class SearchViewState extends State<SearchView> {
   @override
   void initState() {
     super.initState();
+    _keywordController = TextEditingController(text: widget.initialQuery);
     _scrollController.addListener(() {
-      if (_scrollController.position.extentAfter < 160) {
+      if (_scrollController.hasClients &&
+          _scrollController.position.extentAfter < 160) {
         unawaited(_searchHandler(false));
       }
     });
     getSearchHistory();
-    // 输入框选中
-    _focusNode.requestFocus();
+    if (widget.searchOnOpen && widget.initialQuery.trim().isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _searchHandler(true);
+      });
+    } else {
+      _focusNode.requestFocus();
+    }
   }
 
   getSearchHistory() async {
@@ -307,89 +371,120 @@ class SearchViewState extends State<SearchView> {
     _debounceTimer?.cancel();
     _scrollController.dispose();
     _keywordController.dispose();
-    _focusNode.unfocus();
     _focusNode.dispose();
     super.dispose();
   }
 
   Timer? _debounceTimer;
   void _onInputChange(String value) {
+    _generation++;
     _debounceTimer?.cancel();
     final keyword = value.trim();
+    setState(() {
+      _searchItemList.clear();
+      _query = "";
+      _current = 0;
+      _hasMore = true;
+      _loading = false;
+    });
     if (keyword.isEmpty) {
       setState(() => _searchSuggest = []);
       return;
     }
-    _debounceTimer = Timer(const Duration(milliseconds: 400), () async {
+    final matchingHistory = _searchHistory
+        .where((item) => item.toLowerCase().contains(keyword.toLowerCase()))
+        .toList();
+    setState(() {
+      _searchSuggest = matchingHistory;
+      _loading = false;
+    });
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () async {
+      final generation = _generation;
       try {
         final results = await service.searchSuggest(keyword);
         if (!mounted ||
+            generation != _generation ||
             !_focusNode.hasFocus ||
             _keywordController.text.trim() != keyword) {
           return;
         }
-        setState(() => _searchSuggest = results);
+        final suggestions = <String>{
+          ...matchingHistory,
+          ...results.map((item) => item.value),
+        }.where((item) => item.isNotEmpty).take(12).toList();
+        setState(() => _searchSuggest = suggestions);
       } catch (_) {
-        // A failed suggestion request leaves manual search available.
+        // Local history suggestions remain available offline.
       }
     });
   }
 
   Widget buildSearchHistory() {
-    return Container(
-        padding: const EdgeInsets.only(left: 10, right: 10),
-        width: double.infinity,
-        child: ListView(
-          children: _searchHistory.map((keyword) {
-            return InkWell(
-              borderRadius: const BorderRadius.all(Radius.circular(4)),
-              onTap: () {
-                _keywordController.text = keyword;
-                _searchHandler(true);
-              },
-              child: Container(
-                padding: const EdgeInsets.only(
-                  top: 6,
-                  bottom: 6,
-                  left: 18,
-                  right: 12,
+    return ListView.builder(
+      padding: EdgeInsets.only(
+        left: 10,
+        right: 10,
+        top: SearchOverlayScaffold.contentTopInset(context),
+      ),
+      itemCount: _searchHistory.length,
+      itemBuilder: (context, index) {
+        final keyword = _searchHistory[index];
+        return InkWell(
+          borderRadius: const BorderRadius.all(Radius.circular(4)),
+          onTap: () {
+            _keywordController.text = keyword;
+            _searchHandler(true);
+          },
+          child: Container(
+            padding: const EdgeInsets.only(
+              top: 6,
+              bottom: 6,
+              left: 18,
+              right: 12,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(keyword,
+                      maxLines: 1,
+                      style: const TextStyle(
+                          fontSize: 16,
+                          color: Color.fromARGB(255, 146, 146, 145),
+                          overflow: TextOverflow.ellipsis)),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(keyword,
-                        style: const TextStyle(
-                            fontSize: 16,
-                            color: Color.fromARGB(255, 146, 146, 145),
-                            overflow: TextOverflow.ellipsis)),
-                    InkWell(
-                      child: const Icon(Icons.delete_forever,
-                          size: 16, color: Color.fromARGB(255, 146, 146, 145)),
-                      onTap: () {
-                        updateSearchHistory(keyword, isDelete: true);
-                      },
-                    )
-                  ],
+                IconButton(
+                  tooltip: "删除搜索记录",
+                  icon: const Icon(Icons.delete_forever,
+                      size: 16, color: Color.fromARGB(255, 146, 146, 145)),
+                  onPressed: () => updateSearchHistory(keyword, isDelete: true),
                 ),
-              ),
-            );
-          }).toList(),
-        ));
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Widget buildSearchSuggest() {
-    return ListView(
-      children: _searchSuggest.map((item) {
-        // 渲染 html
+    return ListView.builder(
+      padding: EdgeInsets.only(
+        top: SearchOverlayScaffold.contentTopInset(context),
+        bottom: 100,
+      ),
+      itemCount: _searchSuggest.length,
+      itemBuilder: (context, index) {
+        final suggestion = _searchSuggest[index];
         return ListTile(
-          title: Text(item.value),
+          leading: const Icon(Icons.history_rounded),
+          title: Text(suggestion, maxLines: 1, overflow: TextOverflow.ellipsis),
           onTap: () {
-            _keywordController.text = item.value;
+            _keywordController.text = suggestion;
             _searchHandler(true);
-            _focusNode.unfocus();
           },
         );
-      }).toList(),
+      },
     );
   }
 
@@ -398,16 +493,29 @@ class SearchViewState extends State<SearchView> {
       return buildSearchSuggest();
     }
     if (_searchItemList.isEmpty) {
-      if (_loading) return const Center(child: CircularProgressIndicator());
+      if (_loading) {
+        return Padding(
+          padding: EdgeInsets.only(
+              top: SearchOverlayScaffold.contentTopInset(context)),
+          child: const Center(child: CircularProgressIndicator()),
+        );
+      }
       if (_query.isNotEmpty && !_focusNode.hasFocus) {
-        return const Center(child: Text("没有找到相关视频"));
+        return Padding(
+          padding: EdgeInsets.only(
+              top: SearchOverlayScaffold.contentTopInset(context)),
+          child: const Center(child: Text("没有找到相关视频")),
+        );
       }
       return buildSearchHistory();
     }
 
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.only(bottom: 100),
+      padding: EdgeInsets.only(
+        top: SearchOverlayScaffold.contentTopInset(context),
+        bottom: 100,
+      ),
       itemCount: _searchItemList.length + 1,
       itemBuilder: (ctx, index) {
         if (_searchItemList.isEmpty) {
@@ -433,64 +541,74 @@ class SearchViewState extends State<SearchView> {
           cover = "http:$cover";
         }
 
-        return ListTile(
-          leading: ClipRRect(
-            borderRadius: BorderRadius.circular(4.0),
-            child: CachedNetworkImage(
-              imageUrl: cover,
-              width: 50,
-              height: 50,
-              fit: BoxFit.cover,
+        return Pressable(
+          pressScale: .985,
+          pressedColor:
+              Theme.of(context).colorScheme.onSurface.withValues(alpha: .07),
+          pressedBorderRadius: BorderRadius.circular(14),
+          child: ListTile(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            leading: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: CachedNetworkImage(
+                imageUrl: cover,
+                width: 50,
+                height: 50,
+                fit: BoxFit.cover,
+              ),
             ),
-          ),
-          title: Text(
-            name,
-            overflow: TextOverflow.ellipsis,
-            maxLines: 1,
-          ),
-          subtitle: TextTags(tags: tags),
-          onTap: () async {
-            try {
-              final detail = await service.searchDetail(item.id);
-              if (!mounted) return;
-              if (detail.type == SearchType.orderName) {
-                _onClickCollection(detail);
-              } else {
-                _onClickMusic(detail);
+            title: Text(
+              name,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+            subtitle: TextTags(tags: tags),
+            onTap: () => _onClickMusic(item),
+            onLongPress: () async {
+              try {
+                final detail = await service.searchDetail(item.id);
+                if (!mounted) return;
+                if (detail.type == SearchType.orderName) {
+                  _onClickCollection(detail);
+                } else {
+                  _showMusicActions(detail);
+                }
+              } catch (_) {
+                if (mounted) BotToast.showText(text: "音频详情加载失败");
               }
-            } catch (_) {
-              if (mounted) BotToast.showText(text: "视频详情加载失败");
-            }
-          },
+            },
+          ),
         );
       },
     );
   }
 
+  void _switchScope(SearchScope scope) {
+    if (scope == SearchScope.bili) return;
+    final query = _keywordController.text;
+    final searchOnOpen = !_focusNode.hasFocus;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => library_search.SearchOrderMusicView(
+          initialQuery: query,
+          searchOnOpen: searchOnOpen,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    var navigator = Navigator.of(context);
-
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: SearchField(
-          keywordController: _keywordController,
-          focusNode: _focusNode,
-          hintText: "请输入歌曲名或歌手名搜索曲目",
-          onSearch: () {
-            _searchHandler(true);
-          },
-          onInput: _onInputChange,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => navigator.pop(),
-            child: const Text("取消"),
-          )
-        ],
-        toolbarHeight: 70,
-      ),
+    return SearchOverlayScaffold(
+      keywordController: _keywordController,
+      focusNode: _focusNode,
+      hintText: "搜索",
+      onSearch: () => _searchHandler(true),
+      onInput: _onInputChange,
+      scope: SearchScope.bili,
+      onScopeChanged: _switchScope,
+      onClose: () => Navigator.of(context).pop(),
       body: buildBody(context),
       floatingActionButton: const PlayerView(cancelMargin: true),
     );

@@ -1,5 +1,4 @@
 import "package:bobomusic/components/continuous_rounding.dart";
-import "package:bobomusic/constants/motion.dart";
 import "package:flutter/material.dart";
 
 class MenuData {
@@ -18,11 +17,13 @@ class AppBottomBar extends StatelessWidget {
   const AppBottomBar({
     super.key,
     required this.currentIndex,
+    this.page,
     required this.menus,
     required this.onItemTap,
   });
 
   final int currentIndex;
+  final double? page;
   final List<MenuData> menus;
   final ValueChanged<int> onItemTap;
 
@@ -41,56 +42,97 @@ class AppBottomBar extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: SizedBox(
             height: 62,
-            child: Padding(
-              padding: const EdgeInsets.all(5),
-              child: Row(
+            child: LayoutBuilder(builder: (context, constraints) {
+              const inset = 5.0;
+              final count = menus.length;
+              final slot = (constraints.maxWidth - inset * 2) / count;
+              final progress = (page ?? currentIndex.toDouble())
+                  .clamp(0.0, (count - 1).toDouble());
+              return Stack(
                 children: [
-                  for (var i = 0; i < menus.length; i++)
-                    Expanded(
-                      child: _destination(context, menus[i], i),
+                  Positioned(
+                    left: inset + slot * progress,
+                    top: inset,
+                    bottom: inset,
+                    width: slot,
+                    child: DecoratedBox(
+                      decoration: ShapeDecoration(
+                        color: colors.secondaryContainer,
+                        shape: const ContinuousRounding(27),
+                      ),
                     ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(inset),
+                    child: Row(
+                      children: [
+                        for (var i = 0; i < count; i++)
+                          Expanded(
+                            child: _destination(context, menus[i], i, progress),
+                          ),
+                      ],
+                    ),
+                  ),
                 ],
-              ),
-            ),
+              );
+            }),
           ),
         ),
       ),
     );
   }
 
-  Widget _destination(BuildContext context, MenuData menu, int index) {
+  Widget _destination(
+      BuildContext context, MenuData menu, int index, double progress) {
     final selected = index == currentIndex;
+    final distance = (progress - index).abs().clamp(0.0, 1.0);
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final ink =
-        selected ? colors.onSecondaryContainer : colors.onSurfaceVariant;
-    final shape = ContinuousRounding(selected ? 27 : 18);
+    final active = (1 - distance).clamp(0.0, 1.0);
+    final ink = Color.lerp(
+        colors.onSurfaceVariant, colors.onSecondaryContainer, active)!;
+    const shape = ContinuousRounding(27);
+    final iconOffset = (progress - index).clamp(-1.0, 1.0) * 2.5 * active;
     return Semantics(
       button: true,
       selected: selected,
-      child: AnimatedContainer(
-        duration: AppMotion.medium,
-        curve: AppMotion.standard,
-        decoration: ShapeDecoration(
-          color: selected ? colors.secondaryContainer : Colors.transparent,
-          shape: shape,
-        ),
-        child: InkWell(
-          customBorder: shape,
-          onTap: () => onItemTap(index),
+      child: InkWell(
+        customBorder: shape,
+        onTap: () => onItemTap(index),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(selected ? menu.activeIcon : menu.icon,
-                  color: ink, size: 22),
-              const SizedBox(height: 3),
+              Transform.translate(
+                offset: Offset(iconOffset, 0),
+                child: SizedBox.square(
+                  dimension: 26,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Transform.scale(
+                        scale: .88 + .12 * (1 - active),
+                        child: Icon(menu.icon,
+                            color: ink.withValues(alpha: 1 - active), size: 22),
+                      ),
+                      Transform.scale(
+                        scale: .88 + .12 * active,
+                        child: Icon(menu.activeIcon,
+                            color: ink.withValues(alpha: active), size: 22),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 1),
               Text(
                 menu.label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: ink,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  fontWeight: active > .55 ? FontWeight.w700 : FontWeight.w500,
                 ),
               ),
             ],

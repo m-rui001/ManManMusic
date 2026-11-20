@@ -77,10 +77,19 @@ void main() {
         toUid: toUid,
       );
     };
+    final hostNotices = <PartyNotice>[];
+    final noticeSub = host.notices.listen(hostNotices.add);
+    addTearDown(noticeSub.cancel);
     expect(await host.createRoom(name: "房主", id: room, allowed: [200]), isTrue);
     final first = guest.states.first;
+    final joined = host.notices
+        .firstWhere((notice) => notice.kind == PartyNoticeKind.joined)
+        .timeout(const Duration(seconds: 3));
     expect(await guest.joinRoom(id: room, name: "听众"), isTrue);
     final snapshot = await first;
+    await joined;
+    expect(hostNotices.where((notice) => notice.kind == PartyNoticeKind.joined),
+        hasLength(1));
     expect(snapshot.name, "第二首");
     expect(snapshot.toClient, guest.myId);
     expect(snapshot.playing, isFalse);
@@ -92,15 +101,23 @@ void main() {
     expect(await guest.retryNow(), isTrue);
     expect((await refreshed).position, position.inMilliseconds);
     expect(guest.admitted, isTrue);
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    expect(hostNotices.where((notice) => notice.kind == PartyNoticeKind.joined),
+        hasLength(1));
   });
 
-  test("房主在线时名单外的听众仍不能加入", () async {
+  test("房主在线时名单外的听众仍不能加入，也不触发到达通知", () async {
+    final hostNotices = <PartyNotice>[];
+    final noticeSub = host.notices.listen(hostNotices.add);
+    addTearDown(noticeSub.cancel);
     expect(await host.createRoom(name: "房主", id: room), isTrue);
     host.broadcast(music: music, playing: true);
     expect(await guest.joinRoom(id: room, name: "听众"), isFalse);
     expect(guest.admitted, isFalse);
     expect(guest.inRoom, isFalse);
     expect(guest.joinHint, contains("名单"));
+    expect(hostNotices.where((notice) => notice.kind == PartyNoticeKind.joined),
+        isEmpty);
   });
 
   test("播放中补偿本机取流耗时并限制在歌曲时长内", () {

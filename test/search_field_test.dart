@@ -51,4 +51,77 @@ void main() {
     expect(field.style!.color,
         buildAppTheme(Colors.blue, Brightness.light).colorScheme.onSurface);
   });
+
+  testWidgets("搜索 overlay 保留内容滚动层、磨砂控件与双范围切换", (tester) async {
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    SearchScope? selectedScope;
+    var closed = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildAppTheme(Colors.blue, Brightness.dark),
+        home: SearchOverlayScaffold(
+          keywordController: controller,
+          focusNode: focusNode,
+          hintText: "搜索",
+          onSearch: () {},
+          onInput: (_) {},
+          scope: SearchScope.bili,
+          onScopeChanged: (scope) => selectedScope = scope,
+          onClose: () => closed = true,
+          body: ListView(
+            children: const [ListTile(title: Text("实际搜索结果背景内容"))],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(BackdropFilter), findsNWidgets(3));
+    expect(find.text("实际搜索结果背景内容"), findsOneWidget);
+    expect(find.text("B站"), findsOneWidget);
+    expect(find.text("资料库"), findsOneWidget);
+    await tester.enterText(find.byType(TextField), "马勒");
+    await tester.tap(find.text("资料库"));
+    await tester.pump();
+    expect(controller.text, "马勒");
+    expect(selectedScope, SearchScope.library);
+    await tester.tap(find.byTooltip("关闭搜索"));
+    expect(closed, isTrue);
+  });
+
+  testWidgets("搜索内容的初始内边距包含安全区和 overlay 控件", (tester) async {
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => SearchOverlayScaffold(
+            keywordController: controller,
+            focusNode: focusNode,
+            hintText: "搜索",
+            onSearch: () {},
+            onInput: (_) {},
+            scope: SearchScope.bili,
+            onScopeChanged: (_) {},
+            onClose: () {},
+            body: Builder(
+              builder: (context) {
+                expect(
+                  SearchOverlayScaffold.contentTopInset(context),
+                  greaterThan(130),
+                );
+                return const SizedBox.expand();
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  });
 }

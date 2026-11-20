@@ -269,6 +269,13 @@ class PartyService {
   /// 有控制权的 UID（房主广播下来）
   final Set<int> controlUids = {};
 
+  /// An allowed join is only a knock. The client must acknowledge its targeted
+  /// admission snapshot before the host considers it a real arrival.
+  final Map<String, int> _pendingAdmissions = {};
+
+  /// Keep the most recent arrival per UID so reconnects stay quiet.
+  final Map<int, String> _announcedMemberClients = {};
+
   /// 成员 clientId -> B 站 UID（用来在成员列表里标出谁是共管）
   Map<String, int> get memberUids => Map.unmodifiable(_memberUids);
 
@@ -383,6 +390,8 @@ class PartyService {
     members.clear();
     _memberUids.clear();
     _memberSeen.clear();
+    _announcedMemberClients.clear();
+    _pendingAdmissions.clear();
     _deniedUids.clear();
 
     allowedUids
@@ -691,7 +700,11 @@ class PartyService {
               kind: PartyNoticeKind.hostLeft, name: state.fromName));
           unawaited(leaveRoom(silent: true));
         } else if (members.containsKey(state.from)) {
+          final uid = _memberUids[state.from];
           _removeMember(state.from);
+          if (uid != null && _announcedMemberClients[uid] == state.from) {
+            _announcedMemberClients.remove(uid);
+          }
           _emitNotice(
               PartyNotice(kind: PartyNoticeKind.left, name: state.fromName));
         }
@@ -709,15 +722,35 @@ class PartyService {
           }
           return;
         }
-        if (_touchMember(state.from, state.uid, state.fromName)) {
-          _emitNotice(
-              PartyNotice(kind: PartyNoticeKind.joined, name: state.fromName));
-        }
+        // A join request is only a knock. Admit it with a targeted state first;
+        // require its acknowledgement before showing an arrival notice.
+        _pendingAdmissions[state.from] = state.uid;
         onSyncRequested?.call(toClient: state.from, toUid: state.uid);
         return;
 
       case PartyMessageType.ping:
-        if ((isHost && allowed) || (isGuest && admitted)) {
+        if (isHost && allowed && state.uid > 0) {
+          final pendingUid = _pendingAdmissions[state.from];
+          final acknowledgedAdmission = pendingUid == state.uid;
+          if (acknowledgedAdmission) _pendingAdmissions.remove(state.from);
+          // Ordinary heartbeats are accepted only for a known admitted client.
+          // A fresh join ping must match the targeted snapshot we just sent.
+          if (!acknowledgedAdmission && _memberUids[state.from] != state.uid) {
+            return;
+          }
+          final newArrival =
+              _touchMember(state.from, state.uid, state.fromName);
+          if (acknowledgedAdmission &&
+              newArrival &&
+              _announcedMemberClients[state.uid] != state.from) {
+            _announcedMemberClients[state.uid] = state.from;
+            _emitNotice(PartyNotice(
+                kind: PartyNoticeKind.joined, name: state.fromName));
+          }
+          if (acknowledgedAdmission) {
+            onSyncRequested?.call(toClient: state.from, toUid: state.uid);
+          }
+        } else if (isGuest && admitted && state.uid > 0) {
           _touchMember(state.from, state.uid, state.fromName);
         }
         return;
@@ -734,6 +767,9 @@ class PartyService {
             if (admission != null && !admission.isCompleted) {
               admission.complete(true);
             }
+            // Confirm the targeted admission promptly, instead of waiting for
+            // the periodic heartbeat before the host reports the arrival.
+            unawaited(_publish(PartyMessageType.ping));
           }
           _applyControlList(state.controlUids);
         } else if (!allowed ||
@@ -776,6 +812,10 @@ class PartyService {
         _memberUids.remove(old);
         _memberSeen.remove(old);
         _lastStateAt.remove(old);
+        if (_announcedMemberClients[uid] == old) {
+          // Replace the connection ID without replaying the arrival cue.
+          _announcedMemberClients[uid] = clientId;
+        }
         isNew = false;
         changed = true;
       }
@@ -1006,10 +1046,14 @@ class PartyService {
     if (stale.isEmpty) return;
 
     for (final id in stale) {
+      final uid = _memberUids[id];
       members.remove(id);
       _memberUids.remove(id);
       _memberSeen.remove(id);
       _lastStateAt.remove(id);
+      if (uid != null && _announcedMemberClients[uid] == id) {
+        _announcedMemberClients.remove(uid);
+      }
     }
     _emitMembers();
   }
@@ -1038,6 +1082,8 @@ class PartyService {
     _memberUids.clear();
     _memberSeen.clear();
     _deniedUids.clear();
+    _announcedMemberClients.clear();
+    _pendingAdmissions.clear();
     controlUids.clear();
     allowedUids.clear();
     _lastHostSeen = 0;

@@ -20,6 +20,7 @@ class AppNavigation extends StatefulWidget {
 
 class AppNavigationState extends State<AppNavigation> {
   int _index = 0;
+  final ValueNotifier<double> _page = ValueNotifier<double>(0);
   final PageController _pageController = PageController();
   StreamSubscription? _switchSub;
 
@@ -43,6 +44,7 @@ class AppNavigationState extends State<AppNavigation> {
   @override
   void initState() {
     super.initState();
+    _pageController.addListener(_syncPageProgress);
     // 任意位置都能请求切页（例如首页里点「去一起听」）
     _switchSub = eventBus.on<SwitchTab>().listen((event) {
       if (!mounted) return;
@@ -53,7 +55,9 @@ class AppNavigationState extends State<AppNavigation> {
   @override
   void dispose() {
     _switchSub?.cancel();
+    _pageController.removeListener(_syncPageProgress);
     _pageController.dispose();
+    _page.dispose();
     super.dispose();
   }
 
@@ -79,21 +83,36 @@ class AppNavigationState extends State<AppNavigation> {
           ),
         ),
         const PlayerView(cancelMargin: true),
-        AppBottomBar(
-          currentIndex: _index,
-          onItemTap: _onChangePage,
-          menus: menus,
+        ValueListenableBuilder<double>(
+          valueListenable: _page,
+          builder: (context, page, _) => AppBottomBar(
+            currentIndex: _index,
+            page: page,
+            onItemTap: _onChangePage,
+            menus: menus,
+          ),
         )
       ],
     );
   }
 
+  void _syncPageProgress() {
+    if (!_pageController.hasClients) return;
+    final page = _pageController.page ?? _index.toDouble();
+    if ((page - _page.value).abs() < .002) return;
+    _page.value = page;
+  }
+
   void _onChangePage(int index) {
-    if (index == _index || index < 0 || index >= menus.length) return;
+    if (index < 0 ||
+        index >= menus.length ||
+        (index - _page.value).abs() < .01) {
+      return;
+    }
     _pageController.animateToPage(
       index,
-      duration: AppMotion.medium,
-      curve: AppMotion.standard,
+      duration: AppMotion.slow,
+      curve: Curves.easeInOutCubic,
     );
   }
 }

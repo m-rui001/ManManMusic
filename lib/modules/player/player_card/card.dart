@@ -39,7 +39,9 @@ import "package:uuid/uuid.dart";
 const uuid = Uuid();
 
 class PlayerCard extends StatefulWidget {
-  const PlayerCard({super.key});
+  const PlayerCard({super.key, this.transitionController});
+
+  final AnimationController? transitionController;
 
   @override
   State<PlayerCard> createState() => PlayerCardState();
@@ -293,35 +295,71 @@ class PlayerCardState extends State<PlayerCard> {
 
   /// 封面舞台：方形封面 + 台面倒影，轻点切到歌词
   Widget _buildStage(PlayerModel player, MusicItem music, bool wide) {
-    if (_lyrics) return _buildLyricsStage(music);
-    return LayoutBuilder(builder: (context, constraints) {
-      final mirrored = !wide && !_vinyl;
-      final gap = mirrored ? 6.0 : 0.0;
-      final reflectionHeight =
-          mirrored ? (constraints.maxHeight * .17).clamp(0.0, 58.0) : 0.0;
-      final side = math
-          .min(constraints.maxWidth,
-              constraints.maxHeight - reflectionHeight - gap)
-          .clamp(0.0, 484.0);
-      return GestureDetector(
-        onTap: _toggleStage,
-        behavior: HitTestBehavior.opaque,
-        child: Column(
-          children: [
-            Expanded(child: _buildArtwork(player, side)),
-            if (reflectionHeight > 0) ...[
-              SizedBox(height: gap),
-              ArtworkReflection(
-                provider: _imageProvider,
-                width: side,
-                height: reflectionHeight,
-                fallback: const SizedBox.shrink(),
+    final stage = _lyrics
+        ? _buildLyricsStage(music)
+        : LayoutBuilder(builder: (context, constraints) {
+            final mirrored = !wide && !_vinyl;
+            final gap = mirrored ? 6.0 : 0.0;
+            final reflectionHeight =
+                mirrored ? (constraints.maxHeight * .17).clamp(0.0, 58.0) : 0.0;
+            final side = math
+                .min(constraints.maxWidth,
+                    constraints.maxHeight - reflectionHeight - gap)
+                .clamp(0.0, 484.0);
+            return GestureDetector(
+              onTap: _toggleStage,
+              behavior: HitTestBehavior.opaque,
+              child: Column(
+                children: [
+                  Expanded(child: _buildArtwork(player, side)),
+                  if (reflectionHeight > 0) ...[
+                    SizedBox(height: gap),
+                    ArtworkReflection(
+                      provider: _imageProvider,
+                      width: side,
+                      height: reflectionHeight,
+                      fallback: const SizedBox.shrink(),
+                    ),
+                  ],
+                ],
               ),
-            ],
-          ],
+            );
+          });
+    return GestureDetector(
+      onVerticalDragUpdate: (details) {
+        if (details.delta.dy > 0) {
+          final controller = widget.transitionController;
+          if (controller != null) {
+            controller.value = (controller.value -
+                    details.delta.dy / MediaQuery.sizeOf(context).height)
+                .clamp(0.0, 1.0);
+          }
+        }
+      },
+      onVerticalDragEnd: (details) {
+        final controller = widget.transitionController;
+        if (controller == null) return;
+        if (controller.value < .78 || (details.primaryVelocity ?? 0) > 500) {
+          Navigator.of(context).maybePop();
+        } else {
+          controller.fling(velocity: 1.5);
+        }
+      },
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 360),
+        reverseDuration: const Duration(milliseconds: 280),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, animation) => FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: Tween(begin: .975, end: 1.0).animate(animation),
+            child: child,
+          ),
         ),
-      );
-    });
+        child: KeyedSubtree(key: ValueKey(_lyrics), child: stage),
+      ),
+    );
   }
 
   Widget _buildLyricsStage(MusicItem music) {
@@ -600,6 +638,20 @@ class PlayerCardState extends State<PlayerCard> {
         child: Stack(
           fit: StackFit.expand,
           children: [
+            if (_imageProvider != null)
+              Positioned.fill(
+                child: ImageFiltered(
+                  imageFilter: ui.ImageFilter.blur(sigmaX: 34, sigmaY: 34),
+                  child: Opacity(
+                    opacity: .17,
+                    child: Image(
+                      image: ResizeImage(_imageProvider!, width: 180),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+              ),
             DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(

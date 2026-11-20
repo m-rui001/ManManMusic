@@ -13,6 +13,8 @@ class Pressable extends StatefulWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final double pressScale;
+  final Color? pressedColor;
+  final BorderRadius? pressedBorderRadius;
   final bool enabled;
 
   const Pressable({
@@ -22,6 +24,8 @@ class Pressable extends StatefulWidget {
     this.onTap,
     this.onLongPress,
     this.pressScale = .93,
+    this.pressedColor,
+    this.pressedBorderRadius,
     this.enabled = true,
   }) : assert(child != null || builder != null);
 
@@ -32,34 +36,57 @@ class Pressable extends StatefulWidget {
 class _PressableState extends State<Pressable> {
   bool _pressed = false;
 
-  void _down(TapDownDetails _) {
+  @override
+  void didUpdateWidget(covariant Pressable oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.enabled && !widget.enabled && _pressed) {
+      _pressed = false;
+    }
+  }
+
+  void _down(PointerDownEvent _) {
     if (widget.enabled && !_pressed) setState(() => _pressed = true);
   }
 
-  void _up(TapUpDetails _) {
+  void _up(PointerEvent _) {
     if (_pressed) setState(() => _pressed = false);
   }
 
-  void _cancel() {
+  void _cancel(PointerCancelEvent _) {
     if (_pressed) setState(() => _pressed = false);
   }
 
   @override
   Widget build(BuildContext context) {
     final claimsTap = widget.onTap != null || widget.onLongPress != null;
-    return AnimatedScale(
-      scale: _pressed ? widget.pressScale : 1,
-      duration: AppMotion.fast,
-      curve: Curves.easeOut,
-      child: GestureDetector(
-        behavior:
-            claimsTap ? HitTestBehavior.opaque : HitTestBehavior.translucent,
-        onTapDown: widget.enabled ? _down : null,
-        onTapUp: widget.enabled ? _up : null,
-        onTapCancel: widget.enabled ? _cancel : null,
-        onTap: widget.enabled ? widget.onTap : null,
-        onLongPress: widget.enabled ? widget.onLongPress : null,
-        child: widget.builder?.call(context, _pressed) ?? widget.child,
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: widget.enabled ? _down : null,
+      onPointerUp: _up,
+      onPointerCancel: _cancel,
+      child: AnimatedScale(
+        scale: _pressed ? widget.pressScale : 1,
+        duration: AppMotion.fast,
+        curve: Curves.easeOut,
+        child: AnimatedContainer(
+          duration: AppMotion.fast,
+          curve: Curves.easeOut,
+          decoration: BoxDecoration(
+            color: _pressed ? widget.pressedColor : Colors.transparent,
+            shape: widget.pressedBorderRadius == null
+                ? BoxShape.circle
+                : BoxShape.rectangle,
+            borderRadius: widget.pressedBorderRadius,
+          ),
+          child: GestureDetector(
+            behavior: claimsTap
+                ? HitTestBehavior.opaque
+                : HitTestBehavior.translucent,
+            onTap: widget.enabled ? widget.onTap : null,
+            onLongPress: widget.enabled ? widget.onLongPress : null,
+            child: widget.builder?.call(context, _pressed) ?? widget.child,
+          ),
+        ),
       ),
     );
   }

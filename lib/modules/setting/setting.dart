@@ -197,8 +197,8 @@ class SettingViewState extends State<SettingView>
                           ),
                           SettingItem(
                             leadingIcon: Icons.notifications_active_outlined,
-                            title: "有人进出时播放提示音",
-                            subtitle: "只在 App 打开时响",
+                            title: "好友进入房间时轻响",
+                            subtitle: "一起听在线时播放，可随时关闭",
                             trailing: Switch(
                               value: PartyTone.instance.enabled,
                               onChanged: (v) async {

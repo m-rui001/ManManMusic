@@ -230,21 +230,18 @@ class PartySession {
         break;
       case PartyNoticeKind.left:
         BotToast.showText(text: "${_displayName(notice.name)} 离开了一起听");
-        PartyTone.instance.playLeave();
         break;
       case PartyNoticeKind.denied:
         BotToast.showText(
           text: "房主没把你加进一起听名单，进不去这个房间",
           duration: const Duration(seconds: 4),
         );
-        PartyTone.instance.playLeave();
         break;
       case PartyNoticeKind.hostLeft:
         BotToast.showText(
           text: "房主下线了，一起听结束",
           duration: const Duration(seconds: 4),
         );
-        PartyTone.instance.playLeave();
         break;
       case PartyNoticeKind.blocked:
         // 房主这边：有人在敲门，但不在名单里

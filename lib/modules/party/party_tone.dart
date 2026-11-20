@@ -37,21 +37,38 @@ class PartyTone {
     await storage.setBool(_kEnabled, value);
   }
 
-  Future<void> _ensure() {
-    return _init ??= () async {
-      try {
-        _join = AudioPlayer();
-        _leave = AudioPlayer();
-        await _join!.setAsset(joinAsset);
-        await _leave!.setAsset(leaveAsset);
-        await _join!.setVolume(0.32);
-        await _leave!.setVolume(0.24);
-      } catch (_) {
-        _join = null;
-        _leave = null;
-      }
-    }();
-  }
+  Future<void> _ensure() => _init ??= () async {
+        final players = <AudioPlayer>[];
+        try {
+          // A cue must never steal focus or interrupt the music player.
+          final join = AudioPlayer(
+            handleInterruptions: false,
+            handleAudioSessionActivation: false,
+          );
+          players.add(join);
+          final leave = AudioPlayer(
+            handleInterruptions: false,
+            handleAudioSessionActivation: false,
+          );
+          players.add(leave);
+          await join.setAsset(joinAsset);
+          await leave.setAsset(leaveAsset);
+          await join.setVolume(0.32);
+          await leave.setVolume(0.24);
+          _join = join;
+          _leave = leave;
+        } catch (_) {
+          // A transient decoder/channel failure should not permanently disable
+          // all later arrival sounds.
+          _init = null;
+          _join = null;
+          _leave = null;
+          for (final player in players) {
+            await player.dispose();
+          }
+          rethrow;
+        }
+      }();
 
   Future<void> playJoin() => _play(join: true);
 

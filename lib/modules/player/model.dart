@@ -125,7 +125,10 @@ class PlayerModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void>? seek(Duration position) => _playerHandler?.seek(position);
+  Future<void>? seek(Duration position) {
+    if (PartyControl.blocked()) return null;
+    return _playerHandler?.seek(position);
+  }
 
   // 切换播放模式
   void togglePlayerMode({PlayerMode? mode}) {

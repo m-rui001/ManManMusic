@@ -3,6 +3,7 @@ import "dart:async";
 import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/history/play_history.dart";
 import "package:bobomusic/modules/music_order/collection_subtitle.dart";
+import "package:bobomusic/components/pressable.dart";
 import "package:bobomusic/modules/player/artwork.dart";
 import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/utils/clear_html_tags.dart";
@@ -170,58 +171,64 @@ class HistoryTabState extends State<HistoryTab> {
                             if (!_selected.remove(key)) _selected.add(key);
                           });
 
+                      final shape = RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
+                      );
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 3),
-                        child: ListTile(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                          contentPadding:
-                              const EdgeInsets.symmetric(horizontal: 9),
-                          selected: selected || current,
-                          selectedTileColor: selected
-                              ? colors.primaryContainer
-                              : colors.surfaceContainer,
-                          onTap: _selecting
-                              ? toggle
-                              : () => player.play(music: music),
-                          onLongPress:
-                              _selecting ? toggle : () => _enterSelect(entry),
-                          leading: _selecting
-                              ? Icon(selected
-                                  ? Icons.check_circle_rounded
-                                  : Icons.circle_outlined)
-                              : TrackArtwork(music: music, size: 47),
-                          title: Text(
-                            clearHtmlTags(music.name),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              fontWeight:
-                                  current ? FontWeight.w700 : FontWeight.w500,
+                        child: Pressable(
+                          pressScale: .985,
+                          pressedColor: colors.onSurface.withValues(alpha: .09),
+                          pressedBorderRadius: BorderRadius.circular(15),
+                          child: ListTile(
+                            shape: shape,
+                            contentPadding:
+                                const EdgeInsets.symmetric(horizontal: 9),
+                            selected: selected || current,
+                            selectedTileColor: selected
+                                ? colors.primaryContainer
+                                : colors.surfaceContainer,
+                            onTap: _selecting
+                                ? toggle
+                                : () => player.play(music: music),
+                            onLongPress:
+                                _selecting ? toggle : () => _enterSelect(entry),
+                            leading: _selecting
+                                ? Icon(selected
+                                    ? Icons.check_circle_rounded
+                                    : Icons.circle_outlined)
+                                : TrackArtwork(music: music, size: 47),
+                            title: Text(
+                              clearHtmlTags(music.name),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight:
+                                    current ? FontWeight.w700 : FontWeight.w500,
+                              ),
                             ),
-                          ),
-                          subtitle: CollectionSubtitle(
-                            music: music,
-                            description: clearHtmlTags(music.author),
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: colors.onSurfaceVariant,
+                            subtitle: CollectionSubtitle(
+                              music: music,
+                              description: clearHtmlTags(music.author),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colors.onSurfaceVariant,
+                              ),
+                              restoreLegacy: true,
                             ),
-                            restoreLegacy: true,
-                          ),
-                          trailing: _selecting
-                              ? null
-                              : current
-                                  ? Icon(player.isPlaying
-                                      ? Icons.graphic_eq_rounded
-                                      : Icons.pause_rounded)
-                                  : Text(
-                                      _relativeTime(entry.playedAt),
-                                      style:
-                                          theme.textTheme.labelSmall?.copyWith(
-                                        color: colors.onSurfaceVariant,
+                            trailing: _selecting
+                                ? null
+                                : current
+                                    ? Icon(player.isPlaying
+                                        ? Icons.graphic_eq_rounded
+                                        : Icons.pause_rounded)
+                                    : Text(
+                                        _relativeTime(entry.playedAt),
+                                        style: theme.textTheme.labelSmall
+                                            ?.copyWith(
+                                          color: colors.onSurfaceVariant,
+                                        ),
                                       ),
-                                    ),
+                          ),
                         ),
                       );
                     },

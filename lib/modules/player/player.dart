@@ -25,8 +25,106 @@ class PlayerView extends StatefulWidget {
   State<PlayerView> createState() => _PlayerViewState();
 }
 
-class _PlayerViewState extends State<PlayerView> {
-  double? _dragStart;
+class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
+  final GlobalKey _barKey = GlobalKey();
+  AnimationController? _unfold;
+  int? _pointer;
+  double _dragStartX = 0;
+  double _dragStartY = 0;
+  double _previousY = 0;
+  double _dragDistance = 0;
+  double _viewportHeight = 1;
+  double _dragVelocity = 0;
+  Duration _previousMoveAt = Duration.zero;
+  bool _routeOpenedByDrag = false;
+
+  @override
+  void dispose() {
+    _unfold?.dispose();
+    super.dispose();
+  }
+
+  void _onMiniPointerDown(PointerDownEvent event) {
+    _pointer = event.pointer;
+    _dragStartX = event.position.dx;
+    _dragStartY = event.position.dy;
+    _previousY = _dragStartY;
+    _previousMoveAt = event.timeStamp;
+    _viewportHeight = MediaQuery.sizeOf(context).height;
+    _dragDistance = 0;
+    _dragVelocity = 0;
+    _routeOpenedByDrag = false;
+  }
+
+  void _onMiniPointerMove(PointerMoveEvent event) {
+    if (event.pointer != _pointer) return;
+    final displacement = _dragStartY - event.position.dy;
+    if (!_routeOpenedByDrag &&
+        (displacement < 10 ||
+            displacement < (event.position.dx - _dragStartX).abs() * 1.1)) {
+      return;
+    }
+
+    _dragDistance = displacement.clamp(0.0, _viewportHeight);
+    final elapsed = event.timeStamp - _previousMoveAt;
+    if (elapsed.inMicroseconds > 0) {
+      _dragVelocity =
+          (event.position.dy - _previousY) / elapsed.inMicroseconds * 1000000;
+    }
+    _previousY = event.position.dy;
+    _previousMoveAt = event.timeStamp;
+
+    if (!_routeOpenedByDrag) {
+      _viewportHeight = MediaQuery.sizeOf(context).height;
+      _unfold = AnimationController(
+        vsync: this,
+        duration: AppMotion.unfold,
+        reverseDuration: AppMotion.medium,
+      );
+      _routeOpenedByDrag = true;
+      showPlayerCard(
+        context,
+        controller: _unfold,
+        sourceRect: _rectForKey(_barKey),
+      );
+    }
+    _unfold?.value = (_dragDistance / _viewportHeight).clamp(0.0, .94);
+  }
+
+  void _onMiniPointerCancel(PointerCancelEvent event) {
+    if (event.pointer != _pointer) return;
+    _pointer = null;
+    final controller = _unfold;
+    _unfold = null;
+    if (controller == null) return;
+    if (_routeOpenedByDrag) {
+      controller.fling(velocity: 1.1);
+    } else {
+      controller.dispose();
+    }
+  }
+
+  void _onMiniPointerEnd(PointerEvent event) {
+    if (event.pointer != _pointer) return;
+    _pointer = null;
+    final controller = _unfold;
+    _unfold = null;
+    if (controller == null) return;
+    if (!_routeOpenedByDrag) {
+      controller.dispose();
+      return;
+    }
+
+    final shouldExpand =
+        _dragDistance > _viewportHeight * .16 || _dragVelocity < -850;
+    if (shouldExpand) {
+      controller.fling(velocity: _dragVelocity < -850 ? 1.8 : 1.1);
+    } else {
+      controller.reverse().then((_) {
+        if (mounted) Navigator.of(context).pop();
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,18 +135,14 @@ class _PlayerViewState extends State<PlayerView> {
     return Padding(
       padding: EdgeInsets.fromLTRB(14, 4, 14, widget.cancelMargin ? 6 : 34),
       // 往上拖迷你播放器（含进度细线）直接展开播放页，和点一下等价
-      child: GestureDetector(
-        onVerticalDragStart: (details) =>
-            _dragStart = details.globalPosition.dy,
-        onVerticalDragEnd: (details) {
-          final start = _dragStart;
-          _dragStart = null;
-          final velocity = details.primaryVelocity ?? 0;
-          final distance =
-              start == null ? 0 : start - details.globalPosition.dy;
-          if (velocity < -300 || distance > 28) showPlayerCard(context);
-        },
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: _onMiniPointerDown,
+        onPointerMove: _onMiniPointerMove,
+        onPointerUp: _onMiniPointerEnd,
+        onPointerCancel: _onMiniPointerCancel,
         child: Material(
+          key: _barKey,
           color: colors.surfaceContainerHigh,
           shape: const ContinuousRounding(42),
           clipBehavior: Clip.antiAlias,
@@ -237,6 +331,8 @@ class PlayButton extends StatelessWidget {
           final colors = Theme.of(context).colorScheme;
           return Pressable(
             pressScale: .95,
+            pressedColor: colors.onSurface.withValues(alpha: .08),
+            pressedBorderRadius: BorderRadius.circular(38),
             child: IconButton.filled(
               tooltip: label,
               onPressed: toggle,
@@ -253,19 +349,40 @@ class PlayButton extends StatelessWidget {
             ),
           );
         }
+        if (flat) {
+          final colors = Theme.of(context).colorScheme;
+          return Pressable(
+            pressScale: .9,
+            pressedColor: (color ?? colors.onSurface).withValues(alpha: .15),
+            child: IconButton.filledTonal(
+              tooltip: label,
+              onPressed: toggle,
+              style: IconButton.styleFrom(
+                minimumSize: const Size.square(40),
+                padding: EdgeInsets.zero,
+                shape: const CircleBorder(),
+                backgroundColor: colors.onSurface.withValues(alpha: .11),
+                foregroundColor: color ?? colors.onSurface,
+              ),
+              iconSize: 23,
+              icon: morph(player.isPlaying
+                  ? Icons.pause_rounded
+                  : Icons.play_arrow_rounded),
+            ),
+          );
+        }
         return Pressable(
+          pressScale: .9,
+          pressedColor: (color ?? Theme.of(context).colorScheme.onSurface)
+              .withValues(alpha: .14),
           child: IconButton(
             tooltip: label,
             color: color ?? primaryColor,
             iconSize: size,
             padding: const EdgeInsets.only(bottom: 0),
-            icon: morph(flat
-                ? (player.isPlaying
-                    ? Icons.pause_rounded
-                    : Icons.play_arrow_rounded)
-                : (player.isPlaying
-                    ? Icons.pause_circle_filled
-                    : Icons.play_circle_filled)),
+            icon: morph(player.isPlaying
+                ? Icons.pause_circle_filled
+                : Icons.play_circle_filled),
             onPressed: toggle,
           ),
         );
@@ -396,29 +513,75 @@ Future<void> showPlayerList(BuildContext context) => showModalBottomSheet<void>(
 
 /// 显示播放卡片
 ///
-/// 从迷你播放器所在的矩形「展开」成整页，而不是整页从底部滑进来：
-/// 起点是用户刚点的那一块，视线不用重新找人。
-Future<void>? showPlayerCard(BuildContext context) {
+/// 迷你播放器和整页共享同一只动画控制器；上拉时它跟随手指展开，
+/// 点按则从同一胶囊位置柔和过渡到全屏。
+Future<void>? showPlayerCard(
+  BuildContext context, {
+  AnimationController? controller,
+  Rect? sourceRect,
+}) {
   final NavigatorState navigator = Navigator.of(context, rootNavigator: false);
   final player = Provider.of<PlayerModel>(context, listen: false);
   if (player.current == null) return null;
-  final source = _barRect(context);
+  final source = sourceRect ?? _barRect(context);
+  final animation = controller ??
+      AnimationController(
+        vsync: navigator,
+        duration: AppMotion.unfold,
+        reverseDuration: AppMotion.medium,
+      );
   AppHaptics.open();
-  return navigator.push(PageRouteBuilder<void>(
-    fullscreenDialog: true,
-    opaque: false,
-    pageBuilder: (_, __, ___) => const PlayerCard(),
-    transitionDuration: AppMotion.unfold,
-    reverseTransitionDuration: AppMotion.medium,
-    transitionsBuilder: (_, animation, __, child) => _UnfoldTransition(
-      animation: animation,
-      source: source,
-      child: child,
-    ),
-  ));
+  return navigator
+      .push(_PlayerCardRoute(
+        controller: animation,
+        source: source,
+        dragDriven: controller != null,
+      ))
+      .whenComplete(animation.dispose);
+}
+
+class _PlayerCardRoute extends PageRouteBuilder<void> {
+  _PlayerCardRoute({
+    required this.controller,
+    required this.source,
+    required this.dragDriven,
+  }) : super(
+          fullscreenDialog: true,
+          opaque: false,
+          pageBuilder: (_, __, ___) =>
+              PlayerCard(transitionController: controller),
+          transitionDuration: AppMotion.unfold,
+          reverseTransitionDuration: AppMotion.medium,
+          transitionsBuilder: (_, animation, __, child) => _UnfoldTransition(
+            animation: animation,
+            source: source,
+            interactive: dragDriven,
+            child: child,
+          ),
+        ) {
+    willDisposeAnimationController = false;
+  }
+
+  @override
+  final AnimationController controller;
+  final Rect? source;
+  final bool dragDriven;
+
+  @override
+  AnimationController createAnimationController() => controller;
+
+  @override
+  TickerFuture didPush() =>
+      dragDriven ? TickerFuture.complete() : super.didPush();
 }
 
 /// 被点的迷你播放器的屏幕矩形
+Rect? _rectForKey(GlobalKey key) {
+  final box = key.currentContext?.findRenderObject();
+  if (box is! RenderBox || !box.hasSize || !box.attached) return null;
+  return box.localToGlobal(Offset.zero) & box.size;
+}
+
 Rect? _barRect(BuildContext context) {
   RenderBox? box;
   context.visitAncestorElements((element) {
@@ -436,34 +599,52 @@ Rect? _barRect(BuildContext context) {
 class _UnfoldTransition extends StatelessWidget {
   final Animation<double> animation;
   final Rect? source;
+  final bool interactive;
   final Widget child;
 
   const _UnfoldTransition({
     required this.animation,
     required this.source,
+    required this.interactive,
     required this.child,
   });
 
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final target = Offset.zero & size;
+    // Cirro keeps a narrow rim around its full-screen player instead of
+    // flattening the corners against the device edge.
+    final target = Rect.fromLTRB(
+      8,
+      5,
+      size.width - 8,
+      size.height - 8,
+    );
     final from = source;
     return AnimatedBuilder(
       animation: animation,
       builder: (context, _) {
-        final t = AppMotion.emphasized.transform(animation.value);
+        final t = interactive
+            ? animation.value
+            : AppMotion.emphasized.transform(animation.value);
         final rect = from == null ? target : Rect.lerp(from, target, t)!;
+        final radius = 42 + (36 - 42) * t;
         // 内容晚一点浮现，先让容器长到位，避免小窗口里塞满字
         final opacity =
             from == null ? animation.value : ((t - .18) / .82).clamp(0.0, 1.0);
         return Stack(
           fit: StackFit.expand,
           children: [
+            ColoredBox(
+              color: Colors.black.withValues(alpha: .28 * t),
+            ),
             Positioned.fromRect(
               rect: rect,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(42 * (1 - t)),
+              child: ClipPath(
+                clipBehavior: Clip.antiAlias,
+                clipper: ShapeBorderClipper(
+                  shape: ContinuousRounding(radius),
+                ),
                 child: Opacity(
                   opacity: opacity,
                   child: OverflowBox(

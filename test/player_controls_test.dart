@@ -1,6 +1,7 @@
 import "dart:async";
 
 import "package:bobomusic/constants/theme_color.dart";
+import "package:bobomusic/components/pressable.dart";
 import "package:bobomusic/modules/player/const.dart";
 import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/modules/player/lyrics_card/lyric_scroller.dart";
@@ -33,6 +34,36 @@ class TestPlayer extends PlayerModel {
 }
 
 void main() {
+  testWidgets("按钮按下时立即缩小反馈，松开后复原", (tester) async {
+    var pressed = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: Pressable(
+              pressScale: .9,
+              onTap: () {},
+              builder: (context, value) {
+                pressed = value;
+                return const SizedBox(width: 80, height: 48);
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final gesture =
+        await tester.startGesture(tester.getCenter(find.byType(Pressable)));
+    await tester.pump();
+    expect(pressed, isTrue);
+    expect(tester.widget<AnimatedScale>(find.byType(AnimatedScale)).scale, .9);
+    await gesture.up();
+    await tester.pump();
+    expect(pressed, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
   test("顺序模式从第 1 集播到第 4 集后停止，循环模式回到第 1 集", () {
     int? next(int current, PlayerMode mode) => nextQueueIndex(
           length: 4,
@@ -249,9 +280,17 @@ void main() {
       ),
     );
     expect(find.byType(PlayerCard), findsNothing);
-    await tester.drag(
-        find.byType(LinearProgressIndicator), const Offset(0, -80));
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(LinearProgressIndicator)),
+    );
+    await gesture.moveBy(const Offset(0, -80));
     await tester.pump();
+    expect(find.byType(PlayerCard), findsOneWidget);
+    final transition = tester
+        .widget<PlayerCard>(find.byType(PlayerCard))
+        .transitionController!;
+    expect(transition.value, greaterThan(.05));
+    await gesture.up();
     await tester.pump(const Duration(milliseconds: 600));
     expect(find.byType(PlayerCard), findsOneWidget);
     expect(tester.takeException(), isNull);

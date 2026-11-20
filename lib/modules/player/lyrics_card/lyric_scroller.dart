@@ -32,6 +32,7 @@ class _LyricsScrollerState extends State<LyricsScroller> {
   String _text = "";
   LyricsReaderModel? _model;
   int _offset = 0;
+  String? _offsetTrackId;
   bool _matching = false;
   MusicItem? _attempted;
   _LyricStyle? _style;
@@ -125,6 +126,10 @@ class _LyricsScrollerState extends State<LyricsScroller> {
     final music = player.current;
     if (music == null) return const SizedBox.shrink();
     final colors = Theme.of(context).colorScheme;
+    if (_offsetTrackId != music.id) {
+      _offsetTrackId = music.id;
+      _offset = 0;
+    }
     final lyrics = music.lyric.trim();
     if (lyrics != _text) {
       _text = lyrics;
@@ -318,12 +323,12 @@ class _LyricStyle extends UINetease {
 
   _LyricStyle({required this.main, required this.highlightColor})
       : super(
-          defaultSize: 23,
-          otherMainSize: 18,
-          defaultExtSize: 14,
-          bias: .38,
-          lineGap: 20,
-          inlineGap: 16,
+          defaultSize: 28,
+          otherMainSize: 22,
+          defaultExtSize: 15,
+          bias: .34,
+          lineGap: 24,
+          inlineGap: 18,
           lyricAlign: LyricAlign.LEFT,
         );
 
@@ -331,7 +336,7 @@ class _LyricStyle extends UINetease {
   // 否则一行刚开头时反而比上下文暗，看不出唱到哪了。
   @override
   TextStyle getPlayingMainTextStyle() => TextStyle(
-        color: main.withValues(alpha: .58),
+        color: main.withValues(alpha: .78),
         fontSize: defaultSize,
         fontWeight: FontWeight.w700,
         height: 1.32,
@@ -339,7 +344,7 @@ class _LyricStyle extends UINetease {
 
   @override
   TextStyle getOtherMainTextStyle() => TextStyle(
-        color: main.withValues(alpha: .30),
+        color: main.withValues(alpha: .38),
         fontSize: otherMainSize,
         fontWeight: FontWeight.w600,
         height: 1.32,
