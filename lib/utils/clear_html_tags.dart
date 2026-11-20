@@ -1,9 +1,32 @@
+final _htmlTag = RegExp(r"</?[A-Za-z][A-Za-z0-9:-]*(?:\s[^<>]*)?\s*/?>");
+final _entity =
+    RegExp(r"&(nbsp|amp|quot|apos|lt|gt|#[0-9]+|#[xX][0-9a-fA-F]+);");
+const _namedEntities = {
+  "nbsp": " ",
+  "amp": "&",
+  "quot": '"',
+  "apos": "'",
+  "lt": "<",
+  "gt": ">",
+};
+
 String clearHtmlTags(String htmlText) {
-  RegExp exp = RegExp(r"<[^>]*>", multiLine: true, caseSensitive: true);
   return htmlText
-      .replaceAll(exp, "")
-      .replaceAll(RegExp(r"&nbsp;|&amp;"), " ")
-      .replaceAll(RegExp(r"】"), "-")
+      .replaceAll(_htmlTag, "")
+      .replaceAllMapped(_entity, (match) {
+        final token = match[1]!;
+        final named = _namedEntities[token];
+        if (named != null) return named;
+        final hex = token.startsWith("#x") || token.startsWith("#X");
+        final code =
+            int.tryParse(token.substring(hex ? 2 : 1), radix: hex ? 16 : 10);
+        if (code == null ||
+            code <= 0 ||
+            code > 0x10ffff ||
+            (code >= 0xd800 && code <= 0xdfff)) return match[0]!;
+        return code == 160 ? " " : String.fromCharCode(code);
+      })
+      .replaceAll("】", "-")
       .replaceAll("【", "");
 }
 

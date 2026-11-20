@@ -71,6 +71,11 @@ void main() {
   group("清理 html 标签", () {
     test("去掉标签并替换实体", () {
       expect(clearHtmlTags("<em>周杰伦</em>&nbsp;稻香"), "周杰伦 稻香");
+      expect(clearHtmlTags("R&amp;B &quot;Live&quot; &#39;24 &#x1F3B5;"),
+          'R&B "Live" \'24 🎵');
+      expect(clearHtmlTags("1 < 2 > 0 &lt;Live&gt;"), "1 < 2 > 0 <Live>");
+      expect(clearHtmlTags("&amp;lt; &#xD800; &#1114112;"),
+          "&lt; &#xD800; &#1114112;");
     });
   });
 
@@ -258,7 +263,8 @@ void main() {
       );
 
       expect(
-        PartyService.parseProbe([line(guestPing)], room: "bili_123", nowMs: now),
+        PartyService.parseProbe([line(guestPing)],
+            room: "bili_123", nowMs: now),
         isNull,
       );
     });
