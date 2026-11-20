@@ -38,6 +38,7 @@ class SearchOrderMusicViewState extends State<SearchOrderMusicView> {
   late final TextEditingController _keywordController;
   final _focusNode = FocusNode();
   bool _loading = false;
+  bool _searchFailed = false;
   int _generation = 0;
   final List<MusicItem> searchMusicList = [];
   List<String> _searchHistory = [];
@@ -49,6 +50,7 @@ class SearchOrderMusicViewState extends State<SearchOrderMusicView> {
     if (!clean) return;
     final generation = ++_generation;
     _debounceTimer?.cancel();
+    _searchFailed = false;
 
     if (keyword.isEmpty) {
       setState(() {
@@ -58,6 +60,7 @@ class SearchOrderMusicViewState extends State<SearchOrderMusicView> {
       return;
     }
 
+    _focusNode.unfocus();
     setState(() {
       _loading = true;
       searchMusicList.clear();
@@ -73,10 +76,12 @@ class SearchOrderMusicViewState extends State<SearchOrderMusicView> {
         _loading = false;
       });
       unawaited(updateSearchHistory(keyword));
-      _focusNode.unfocus();
     } catch (_) {
       if (mounted && generation == _generation) {
-        setState(() => _loading = false);
+        setState(() {
+          _loading = false;
+          _searchFailed = true;
+        });
       }
     }
   }
@@ -85,6 +90,7 @@ class SearchOrderMusicViewState extends State<SearchOrderMusicView> {
   void initState() {
     super.initState();
     _keywordController = TextEditingController(text: widget.initialQuery);
+    _focusNode.addListener(_refreshFocus);
     getSearchHistory();
     if (widget.searchOnOpen && widget.initialQuery.trim().isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -94,6 +100,8 @@ class SearchOrderMusicViewState extends State<SearchOrderMusicView> {
       _focusNode.requestFocus();
     }
   }
+
+  void _refreshFocus() => setState(() {});
 
   Future<void> getSearchHistory() async {
     final list = await getSearchHistoryData();
@@ -126,12 +134,15 @@ class SearchOrderMusicViewState extends State<SearchOrderMusicView> {
     _generation++;
     _debounceTimer?.cancel();
     _keywordController.dispose();
+    _focusNode.removeListener(_refreshFocus);
     _focusNode.dispose();
     super.dispose();
   }
 
   Timer? _debounceTimer;
   void _onInputChange(String value) {
+    _searchFailed = false;
+    searchMusicList.clear();
     _generation++;
     _debounceTimer?.cancel();
     final keyword = value.trim();
@@ -311,8 +322,21 @@ class SearchOrderMusicViewState extends State<SearchOrderMusicView> {
       if (_keywordController.text.trim().isEmpty) return buildSearchHistory();
       return buildSearchSuggest();
     }
-    if (searchMusicList.isEmpty && _focusNode.hasFocus) {
-      return buildSearchHistory();
+    if (_keywordController.text.trim().isEmpty) return buildSearchHistory();
+    if (searchMusicList.isEmpty) {
+      return Padding(
+        padding: EdgeInsets.only(
+            top: SearchOverlayScaffold.contentTopInset(context)),
+        child: Center(
+            child: _loading
+                ? const CircularProgressIndicator()
+                : _searchFailed
+                    ? TextButton.icon(
+                        onPressed: () => _searchHandler(true),
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text("资料库读取失败，点击重试"))
+                    : const Text("没有匹配的歌曲")),
+      );
     }
 
     return ListView.builder(
@@ -322,18 +346,8 @@ class SearchOrderMusicViewState extends State<SearchOrderMusicView> {
       ),
       itemCount: searchMusicList.length + 1,
       itemBuilder: (ctx, index) {
-        if (searchMusicList.isEmpty) {
-          return SizedBox(
-              height: MediaQuery.of(context).size.height - 200,
-              child: const Center(child: Text("没有匹配的歌曲")));
-        }
         if (index == searchMusicList.length) {
-          return SizedBox(
-            height: 40,
-            child: Center(
-              child: _loading ? const Text("加载中") : const Text("到底了"),
-            ),
-          );
+          return const SizedBox(height: 40, child: Center(child: Text("到底了")));
         }
         final item = searchMusicList[index];
 
