@@ -154,41 +154,47 @@ class _ContinuePlaying extends StatelessWidget {
           child: Row(
             children: [
               Expanded(
-                child: InkWell(
-                  onTap: () => showPlayerCard(context),
-                  child: Padding(
-                    padding: const EdgeInsets.all(13),
-                    child: Row(
-                      children: [
-                        TrackArtwork(music: music, size: 64, radius: 13),
-                        const SizedBox(width: 13),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                player.isPlaying ? "正在播放" : "继续播放",
-                                style: theme.textTheme.labelMedium?.copyWith(
-                                  color: foreground.withValues(alpha: .86),
+                child: Builder(
+                    builder: (cardContext) => InkWell(
+                          onTap: () => showPlayerCard(cardContext),
+                          child: Padding(
+                            padding: const EdgeInsets.all(13),
+                            child: Row(
+                              children: [
+                                TrackArtwork(
+                                    music: music, size: 64, radius: 13),
+                                const SizedBox(width: 13),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        player.isPlaying ? "正在播放" : "继续播放",
+                                        style: theme.textTheme.labelMedium
+                                            ?.copyWith(
+                                          color:
+                                              foreground.withValues(alpha: .86),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        clearHtmlTags(music.name),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: theme.textTheme.titleMedium
+                                            ?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                          color: foreground,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                clearHtmlTags(music.name),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  color: foreground,
-                                ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+                        )),
               ),
               PlayButton(size: 42, color: foreground),
               const SizedBox(width: 12),

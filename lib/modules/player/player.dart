@@ -181,7 +181,8 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
                       child: Pressable(
                         pressScale: .97,
                         child: InkWell(
-                          onTap: () => showPlayerCard(context),
+                          onTap: () => showPlayerCard(context,
+                              sourceRect: _rectForKey(_barKey)),
                           onLongPress: () => copyTrackName(music),
                           child: const PlayInfo(),
                         ),

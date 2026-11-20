@@ -1,3 +1,4 @@
+import "package:bobomusic/constants/motion.dart";
 import "dart:async";
 import "dart:ui" show SemanticsAction;
 
@@ -349,9 +350,28 @@ void main() {
         ),
       ),
     );
+    final bar = tester.getRect(find
+        .descendant(
+            of: find.byType(PlayerView), matching: find.byType(Material))
+        .first);
     await tester.tap(find.text(player.track.name));
     // 展开动画 520ms，等窗口长到位再断言
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    final window = find
+        .ancestor(
+            of: find.byType(PlayerCard), matching: find.byType(Positioned))
+        .first;
+    final opening = tester.getRect(window);
+    final progress = tester
+        .widget<PlayerCard>(find.byType(PlayerCard))
+        .transitionController!
+        .value;
+    final expected = Rect.lerp(bar, const Rect.fromLTRB(8, 5, 312, 582),
+        AppMotion.emphasized.transform(progress))!;
+    expect((opening.topLeft - expected.topLeft).distance, lessThan(.01));
+    expect(
+        (opening.bottomRight - expected.bottomRight).distance, lessThan(.01));
     await tester.pump(const Duration(milliseconds: 600));
     expect(find.byType(PlayerCard), findsOneWidget);
     expect(find.byType(LyricsScroller), findsNothing);
