@@ -30,8 +30,8 @@ class HistoryTabState extends State<HistoryTab> {
   StreamSubscription? _sub;
   StreamSubscription? _playerSub;
 
-  /// 多选模式下已选中的条目（用 id+时间戳做 key）
-  final Set<String> _selected = {};
+  /// 多选模式下已选中的条目
+  final Set<HistoryTrackKey> _selected = {};
   bool _selecting = false;
 
   @override
@@ -55,15 +55,12 @@ class HistoryTabState extends State<HistoryTab> {
     super.dispose();
   }
 
-  String _keyOf(HistoryEntry e) =>
-      "${e.music.id.isEmpty ? e.music.localPath : e.music.id}_${e.music.playId}_${e.playedAt.millisecondsSinceEpoch}";
-
   void _enterSelect(HistoryEntry e) {
     setState(() {
       _selecting = true;
       _selected
         ..clear()
-        ..add(_keyOf(e));
+        ..add(e.key);
     });
   }
 
@@ -77,7 +74,8 @@ class HistoryTabState extends State<HistoryTab> {
   Future<void> _deleteSelected() async {
     if (_selected.isEmpty) return;
 
-    final count = _selected.length;
+    final selection = Set.of(_selected);
+    final count = selection.length;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -101,13 +99,13 @@ class HistoryTabState extends State<HistoryTab> {
 
     if (ok != true) return;
 
-    await PlayHistory.instance.removeWhere(
-      (e) => _selected.contains(_keyOf(e)),
+    final removed = await PlayHistory.instance.removeWhere(
+      (e) => selection.contains(e.key),
     );
 
     if (!mounted) return;
     _exitSelect();
-    BotToast.showText(text: "已删除 $count 条记录");
+    BotToast.showText(text: "已删除 $removed 条记录");
   }
 
   Future<void> _clearAll() async {
@@ -164,7 +162,7 @@ class HistoryTabState extends State<HistoryTab> {
                     itemBuilder: (context, index) {
                       final entry = entries[index];
                       final music = entry.music;
-                      final key = _keyOf(entry);
+                      final key = entry.key;
                       final selected = _selected.contains(key);
                       final current = entry.matches(player.current);
                       void toggle() => setState(() {
@@ -282,7 +280,7 @@ class HistoryTabState extends State<HistoryTab> {
                 } else {
                   _selected
                     ..clear()
-                    ..addAll(entries.map(_keyOf));
+                    ..addAll(entries.map((entry) => entry.key));
                 }
               });
             },

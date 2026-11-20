@@ -179,6 +179,10 @@ void main() {
     expect(restored.music.localPath, track.localPath);
     expect(restored.matches(track), isTrue);
     expect(restored.matches(other), isFalse);
+    final selected = restored.key;
+    await history.record(track);
+    expect(await history.removeWhere((entry) => entry.key == selected), 1);
+    expect(history.entries.single.music.localPath, other.localPath);
   });
 
   testWidgets("合集副标题优先显示作品名，普通曲目仍然显示原副标题", (tester) async {

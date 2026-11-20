@@ -119,12 +119,14 @@ class PlayHistory {
   }
 
   /// 按条件批量删除
-  Future<void> removeWhere(bool Function(HistoryEntry entry) test) async {
+  Future<int> removeWhere(bool Function(HistoryEntry entry) test) async {
     final before = _entries.length;
     _entries.removeWhere(test);
-    if (_entries.length == before) return;
+    final removed = before - _entries.length;
+    if (removed == 0) return 0;
     _changes.add(null);
     await _persist();
+    return removed;
   }
 
   Future<void> clear() async {
@@ -142,6 +144,20 @@ class PlayHistory {
   }
 }
 
+typedef HistoryTrackKey = ({
+  OriginType origin,
+  String id,
+  String playId,
+  String path
+});
+
+HistoryTrackKey _historyKey(MusicItem music) => (
+      origin: music.origin,
+      id: music.id,
+      playId: music.id.isEmpty ? "" : music.playId,
+      path: music.id.isEmpty ? music.localPath : "",
+    );
+
 /// 一条历史记录
 class HistoryEntry {
   final MusicItem music;
@@ -156,15 +172,12 @@ class HistoryEntry {
     this.count = 1,
   });
 
-  bool matches(MusicItem? other) {
-    if (other == null || other.origin != music.origin) return false;
-    if (music.id.isEmpty) {
-      return other.id.isEmpty &&
-          music.localPath.isNotEmpty &&
-          music.localPath == other.localPath;
-    }
-    return music.id == other.id && music.playId == other.playId;
-  }
+  HistoryTrackKey get key => _historyKey(music);
+
+  bool matches(MusicItem? other) =>
+      other != null &&
+      (music.id.isNotEmpty || music.localPath.isNotEmpty) &&
+      key == _historyKey(other);
 
   Map<String, dynamic> toJson() {
     return {
