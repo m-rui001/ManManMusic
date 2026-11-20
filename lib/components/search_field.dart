@@ -165,7 +165,6 @@ class SearchOverlayScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      resizeToAvoidBottomInset: false,
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -235,7 +234,9 @@ class SearchOverlayScaffold extends StatelessWidget {
           ),
         ],
       ),
-      floatingActionButton: floatingActionButton,
+      floatingActionButton: MediaQuery.viewInsetsOf(context).bottom > 0
+          ? null
+          : floatingActionButton,
     );
   }
 }

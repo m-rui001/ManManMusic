@@ -162,4 +162,45 @@ void main() {
         closeTo(tester.getBottomLeft(scopes).dy + 14, .1));
     expect(tester.takeException(), isNull);
   });
+  testWidgets("Last result can be selected above the keyboard", (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 640);
+    addTearDown(tester.view.reset);
+    final controller = TextEditingController();
+    final focus = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focus.dispose);
+    int? selected;
+    await tester.pumpWidget(MaterialApp(
+        home: SearchOverlayScaffold(
+      keywordController: controller,
+      focusNode: focus,
+      hintText: "Search",
+      onSearch: () {},
+      onInput: (_) {},
+      scope: SearchScope.bili,
+      onScopeChanged: (_) {},
+      onClose: () {},
+      floatingActionButton: const Text("Mini player"),
+      body: ListView.builder(
+          itemCount: 30,
+          itemBuilder: (_, index) => ListTile(
+              title: Text("Result $index"), onTap: () => selected = index)),
+    )));
+    await tester.tap(find.byType(TextField));
+    tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+    await tester.pumpAndSettle();
+    expect(find.text("Mini player"), findsNothing);
+    await tester.scrollUntilVisible(find.text("Result 29"), 180,
+        scrollable: find.descendant(
+            of: find.byType(ListView), matching: find.byType(Scrollable)));
+    await tester.pumpAndSettle();
+    expect(tester.getBottomLeft(find.text("Result 29")).dy,
+        lessThanOrEqualTo(380));
+    await tester.tap(find.text("Result 29"));
+    expect(selected, 29);
+    tester.view.resetViewInsets();
+    await tester.pumpAndSettle();
+    expect(find.text("Mini player"), findsOneWidget);
+  });
 }
