@@ -24,6 +24,7 @@ class TestPlayer extends PlayerModel {
   final Duration? duration;
 
   Duration? seekTarget;
+  Completer<void>? pendingSeek;
 
   @override
   Duration get bufferedPosition => const Duration(seconds: 80);
@@ -31,6 +32,7 @@ class TestPlayer extends PlayerModel {
   @override
   Future<void> seek(Duration position) async {
     seekTarget = position;
+    await pendingSeek?.future;
   }
 }
 
@@ -110,6 +112,25 @@ void main() {
     await tester.pump();
     expect(player.seekTarget!.inMilliseconds, closeTo(50000, 500));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets("前一次跳转返回时保留正在拖动的新位置", (tester) async {
+    final player = TestPlayer(const Duration(seconds: 100));
+    final pending = player.pendingSeek = Completer<void>();
+    await showProgress(tester, player);
+    final slider = find.byType(Slider);
+    await tester.tap(slider);
+    final gesture = await tester.startGesture(tester.getCenter(slider));
+    await gesture.moveBy(const Offset(70, 0));
+    await tester.pump();
+    final dragged = tester.widget<Slider>(slider).value;
+    expect(dragged, greaterThan(.5));
+    pending.complete();
+    await tester.pump();
+    expect(tester.widget<Slider>(slider).value, dragged);
+    await gesture.up();
+    await tester.pump();
+    expect(player.seekTarget!.inMilliseconds, closeTo(dragged * 100000, 1));
   });
 
   testWidgets("读屏可识别播放进度并前后跳转", (tester) async {

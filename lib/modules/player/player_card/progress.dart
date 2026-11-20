@@ -39,7 +39,9 @@ class _PlayerProgressState extends State<PlayerProgress>
         await player.seek(
             Duration(milliseconds: (duration.inMilliseconds * value).round()));
       } catch (_) {
-        if (mounted) BotToast.showText(text: "跳转失败，请稍后再试");
+        if (mounted && request == _seekRequest) {
+          BotToast.showText(text: "跳转失败，请稍后再试");
+        }
       } finally {
         if (mounted && request == _seekRequest) {
           setState(() => _dragValue = null);
@@ -113,7 +115,10 @@ class _PlayerProgressState extends State<PlayerProgress>
                           "播放进度 ${seconds2duration((v * total / 1000).floor())} / ${seconds2duration(duration.inSeconds)}",
                       onChangeStart: locked || total <= 0
                           ? null
-                          : (v) => setState(() => _dragValue = v),
+                          : (v) {
+                              ++_seekRequest;
+                              setState(() => _dragValue = v);
+                            },
                       onChanged: locked || total <= 0
                           ? null
                           : (v) => setState(() => _dragValue = v),
