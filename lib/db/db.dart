@@ -156,15 +156,18 @@ abstract class BaseDatabaseHelper {
   Future<List<Map<String, dynamic>>> queryByParam(String tableName, String param) async {
     try {
       Database db = await database;
+      final literal = param.replaceAll("!", "!!").replaceAll("%", "!%").replaceAll("_", "!_");
+      final pattern = "%$literal%";
       return await db.rawQuery("""
         SELECT * FROM $tableName
         WHERE id IN (
           SELECT MIN(id) FROM $tableName
-          WHERE mid =? OR name LIKE? OR playId =? OR collectionName LIKE? OR author LIKE?
+          WHERE mid = ? OR name LIKE ? ESCAPE '!' OR playId = ?
+             OR collectionName LIKE ? ESCAPE '!' OR author LIKE ? ESCAPE '!'
           GROUP BY mid
         )
         ORDER BY name ASC
-      """, [param, "%$param%", param, "%$param%", "%$param%"]);
+      """, [param, pattern, param, pattern, pattern]);
     } catch (e) {
       print("Update error: $e");
       rethrow;
