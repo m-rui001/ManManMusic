@@ -275,7 +275,7 @@ abstract class BaseDatabaseHelper {
 
 class DBOrder extends BaseDatabaseHelper {
   DBOrder({
-    int version = 4,
+    int version = 5,
   }) : super._internal(DBName.orderName, version);
 
   @override
@@ -307,6 +307,13 @@ class DBOrder extends BaseDatabaseHelper {
           );
         }
       }
+    }
+    if (oldVersion < 5) {
+      await db.execute("""
+        UPDATE "${TableName.musicWaitPlay}"
+        SET playId = lower(hex(randomblob(16)))
+        WHERE playId IS NULL OR playId = ''
+      """);
     }
   }
 
@@ -438,7 +445,7 @@ Map<String, dynamic> musicItem2Row({required MusicItem music, String? prev, Stri
 
 MusicItem row2MusicItem({required Map<String, dynamic> dbRow, String? prev, String? next, String? isFirst, String? isLast, String? lyric}) {
   return MusicItem(
-    id: dbRow["mid"] as String,
+    id: dbRow["mid"] as String? ?? "",
     cover: dbRow["cover"] as String,
     name: dbRow["name"] as String,
     collectionName: dbRow["collectionName"] as String? ?? "",
@@ -447,7 +454,7 @@ MusicItem row2MusicItem({required Map<String, dynamic> dbRow, String? prev, Stri
     origin: OriginType.getByValue(dbRow["origin"]),
     orderName: dbRow["orderName"] as String,
     localPath: dbRow["localPath"] as String,
-    playId: dbRow["playId"] as String,
+    playId: dbRow["playId"] as String? ?? "",
     lyric: lyric ?? dbRow["lyric"] as String,
     prev: prev ?? dbRow["prev"] as String,
     next: next ?? dbRow["next"] as String,
