@@ -6,6 +6,7 @@ import "package:bobomusic/utils/check_music_local_repeat.dart";
 import "package:flutter/material.dart";
 import "package:bobomusic/components/sheet/bottom_sheet.dart";
 import "package:bobomusic/modules/player/model.dart";
+import "package:bobomusic/modules/player/const.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:provider/provider.dart";
 
@@ -41,18 +42,11 @@ class CurrentListState extends State<CurrentList> {
     final player = Provider.of<PlayerModel>(context, listen: false);
     if (player.current == null) return;
 
-    final index =
-        widget.musicList.indexWhere((item) => _isCurrent(item, player.current));
+    final index = queueEntryIndex(widget.musicList, player.current);
     if (index < 0 || !_scrollController.hasClients) return;
     _scrollController.jumpTo(
       (index * _rowHeight).clamp(0, _scrollController.position.maxScrollExtent),
     );
-  }
-
-  bool _isCurrent(MusicItem item, MusicItem? current) {
-    if (current == null) return false;
-    if (item.playId.isNotEmpty) return item.playId == current.playId;
-    return item.id == current.id && item.orderName == current.orderName;
   }
 
   @override
@@ -61,6 +55,7 @@ class CurrentListState extends State<CurrentList> {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final items = widget.musicList;
+    final currentIndex = queueEntryIndex(items, player.current);
     return Column(
       children: [
         Padding(
@@ -86,10 +81,7 @@ class CurrentListState extends State<CurrentList> {
                 else
                   IconButton(
                     tooltip: "定位到当前曲目",
-                    onPressed:
-                        items.any((item) => _isCurrent(item, player.current))
-                            ? _scrollToCurrentSong
-                            : null,
+                    onPressed: currentIndex >= 0 ? _scrollToCurrentSong : null,
                     icon: const Icon(Icons.my_location_rounded, size: 19),
                   ),
               ],
@@ -111,7 +103,7 @@ class CurrentListState extends State<CurrentList> {
                   itemCount: items.length,
                   itemBuilder: (context, index) {
                     final item = items[index];
-                    final active = _isCurrent(item, player.current);
+                    final active = index == currentIndex;
                     void overflow() => showItemSheet(context, item, player);
                     return Padding(
                       key: ValueKey(item.playId.isEmpty

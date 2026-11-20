@@ -56,6 +56,17 @@ void main() {
     expect(await openBilibiliVideo("BV123", (_) async => false), isFalse);
   });
 
+  test("队列优先定位相同曲目的实际条目，并识别重载后的待播放记录", () {
+    final song = LyricTestPlayer(const Stream.empty()).track;
+    final duplicate = song.copyWith();
+    expect(queueEntryIndex([song, duplicate], duplicate), 1);
+    final a = song.copyWith(playId: "a");
+    final b = song.copyWith(playId: "b");
+    expect(queueEntryIndex([a, b], b.copyWith()), 1);
+    expect(queueEntryIndex([a], b), -1);
+    expect(queueEntryIndex([a], null), -1);
+  });
+
   testWidgets("按钮按下时立即缩小反馈，松开后复原", (tester) async {
     var pressed = false;
     await tester.pumpWidget(

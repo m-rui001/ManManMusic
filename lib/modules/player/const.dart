@@ -1,6 +1,7 @@
 import "dart:math";
 
 import "package:flutter/material.dart";
+import "package:bobomusic/origin_sdk/origin_types.dart";
 
 /// 播放状态
 enum PlayerStatus {
@@ -46,6 +47,20 @@ enum PlayerMode {
   static PlayerMode getByValue(int value) {
     return values.firstWhere((element) => element.value == value);
   }
+}
+
+/// Collections can contain repeated tracks, including older entries without a playId.
+int queueEntryIndex(List<MusicItem> queue, MusicItem? current) {
+  if (current == null) return -1;
+  final exact = queue.indexWhere((entry) => identical(entry, current));
+  if (exact >= 0) return exact;
+  return queue.indexWhere((entry) {
+    if (entry.orderName != current.orderName || entry.origin != current.origin)
+      return false;
+    if (current.playId.isNotEmpty) return entry.playId == current.playId;
+    if (current.id.isNotEmpty) return entry.id == current.id;
+    return current.localPath.isNotEmpty && entry.localPath == current.localPath;
+  });
 }
 
 // Returns null when sequential playback reaches the edge of a queue.

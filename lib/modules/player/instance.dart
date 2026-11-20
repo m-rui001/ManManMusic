@@ -247,12 +247,7 @@ class BBPlayer {
       return;
     }
 
-    int indexOf(MusicItem track) => queue.indexWhere((entry) =>
-        identical(entry, track) ||
-        (track.playId.isNotEmpty && entry.playId == track.playId) ||
-        (track.playId.isEmpty &&
-            entry.orderName == track.orderName &&
-            _track(entry) == _track(track)));
+    int indexOf(MusicItem track) => queueEntryIndex(queue, track);
     final index = indexOf(music);
     int? previous;
     if (playerMode == PlayerMode.random && offset < 0) {
