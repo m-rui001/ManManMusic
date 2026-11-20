@@ -9,6 +9,7 @@ import "package:bobomusic/components/sheet/bottom_sheet.dart";
 import "package:bobomusic/modules/player/const.dart";
 import "package:bobomusic/modules/player/utils.dart";
 import "package:bobomusic/modules/player/model.dart";
+import "package:bobomusic/modules/player/instance.dart" show AutoCloseMusic;
 import "package:bobomusic/modules/player/lyrics_card/lyric_scroller.dart";
 import "package:bobomusic/modules/player/player.dart";
 import "package:bobomusic/modules/player/player_card/card.dart";
@@ -82,6 +83,30 @@ void main() {
           restoredQueueIndex([a, b], MusicItem.fromJson(b.toJson()), index), 1);
     }
     expect(restoredQueueIndex([a], b, 0), -1);
+  });
+
+  testWidgets("定时暂停支持改期、到期播完本首和取消", (tester) async {
+    var pauses = 0;
+    final timer = AutoCloseMusic(onPause: () => pauses++);
+    timer.close(const Duration(minutes: 15));
+    timer.close(const Duration(minutes: 30));
+    await tester.pump(const Duration(minutes: 15));
+    expect(pauses, 0);
+    await tester.pump(const Duration(minutes: 15));
+    expect(pauses, 1);
+    expect(timer.closeTime, isNull);
+    timer.togglePlayDoneAutoClose();
+    timer.close(const Duration(minutes: 1));
+    await tester.pump(const Duration(minutes: 1));
+    expect(timer.isPlayDoneAutoClose, isTrue);
+    expect(pauses, 1);
+    timer.cancel();
+    expect(timer.isPlayDoneAutoClose, isFalse);
+    timer.close(const Duration(minutes: 1));
+    timer.cancel();
+    await tester.pump(const Duration(minutes: 2));
+    expect(timer.isPlayDoneAutoClose, isFalse);
+    expect(pauses, 1);
   });
 
   testWidgets("操作菜单键盘焦点跳过禁用项并可执行", (tester) async {

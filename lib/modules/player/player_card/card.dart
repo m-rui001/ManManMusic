@@ -255,6 +255,46 @@ class PlayerCardState extends State<PlayerCard> {
     setState(() => _lyrics = !_lyrics);
   }
 
+  void _showSleepTimer() {
+    final player = context.read<PlayerModel>();
+    final deadline = player.sleepDeadline;
+    final time = deadline == null
+        ? null
+        : TimeOfDay.fromDateTime(deadline).format(context);
+    openBottomSheet(
+        context,
+        [
+          for (final minutes in [15, 30, 60])
+            SheetItem(
+                title: "$minutes 分钟后",
+                icon: Icons.timer_outlined,
+                onPressed: () {
+                  player.autoCloseHandler(Duration(minutes: minutes));
+                  BotToast.showText(text: "已设置 $minutes 分钟定时暂停");
+                }),
+          SheetItem(
+              title: "到时播完本首再暂停",
+              icon: player.playDoneAutoClose
+                  ? Icons.check_box
+                  : Icons.check_box_outline_blank,
+              onPressed: player.waitingForTrackEnd
+                  ? null
+                  : player.togglePlayDoneAutoClose),
+          if (time != null || player.waitingForTrackEnd)
+            SheetItem(
+                title: "取消定时",
+                icon: Icons.timer_off_outlined,
+                onPressed: player.cancelSleepTimer),
+        ],
+        header: SheetHeader(
+            title: "定时暂停",
+            subtitle: player.waitingForTrackEnd
+                ? "将在本首结束时暂停"
+                : time == null
+                    ? null
+                    : "定时到期时间 $time"));
+  }
+
   Widget _moreActions(MusicItem music) {
     return Pressable(
       child: IconButton(
@@ -263,6 +303,10 @@ class PlayerCardState extends State<PlayerCard> {
         onPressed: () => openBottomSheet(
           context,
           [
+            SheetItem(
+                title: "定时暂停",
+                icon: Icons.bedtime_outlined,
+                onPressed: _showSleepTimer),
             if (music.localPath.isEmpty)
               SheetItem(
                 title: "下载",

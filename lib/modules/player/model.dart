@@ -159,12 +159,22 @@ class PlayerModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  get playDoneAutoClose {
+  bool get playDoneAutoClose {
     return _playerHandler?.player.autoClose.openPlayDoneAutoClose ?? false;
   }
 
-  autoCloseHandler(Duration duration) {
-    return _playerHandler?.player.autoClose.close(duration);
+  DateTime? get sleepDeadline => _playerHandler?.player.autoClose.closeTime;
+  bool get waitingForTrackEnd =>
+      _playerHandler?.player.autoClose.isPlayDoneAutoClose ?? false;
+
+  void autoCloseHandler(Duration duration) {
+    _playerHandler?.player.autoClose.close(duration);
+    notifyListeners();
+  }
+
+  void cancelSleepTimer() {
+    _playerHandler?.player.autoClose.cancel();
+    notifyListeners();
   }
 
   // 监听播放进度

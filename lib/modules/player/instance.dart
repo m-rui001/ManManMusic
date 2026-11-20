@@ -536,11 +536,12 @@ class AutoCloseMusic {
       autoCloseTimer!.cancel();
     }
 
-    // 设置时间为 5 min 后
     final now = DateTime.now();
     closeTime = now.add(duration);
 
     autoCloseTimer = Timer(duration, () {
+      autoCloseTimer = null;
+      closeTime = null;
       if (openPlayDoneAutoClose) {
         isPlayDoneAutoClose = true;
       } else {
@@ -552,8 +553,7 @@ class AutoCloseMusic {
   void cancel() {
     closeTime = null;
     isPlayDoneAutoClose = false;
-    if (autoCloseTimer != null) {
-      autoCloseTimer!.cancel();
-    }
+    autoCloseTimer?.cancel();
+    autoCloseTimer = null;
   }
 }
