@@ -53,6 +53,8 @@ class SearchViewState extends State<SearchView> {
   String _query = "";
   bool _hasMore = true;
   bool _loading = false;
+  bool _searchFailed = false;
+  int _playRequest = 0;
   final List<SearchItem> _searchItemList = [];
   List<String> _searchHistory = [];
   List<String> _searchSuggest = [];
@@ -80,6 +82,7 @@ class SearchViewState extends State<SearchView> {
     final page = _current + 1;
     setState(() {
       _loading = true;
+      _searchFailed = false;
       if (clean) _searchItemList.clear();
     });
     try {
@@ -98,7 +101,7 @@ class SearchViewState extends State<SearchView> {
       }
     } catch (_) {
       if (mounted && generation == _generation) {
-        BotToast.showText(text: "搜索暂时失败，请再试一次");
+        setState(() => _searchFailed = true);
       }
     } finally {
       if (mounted && generation == _generation) {
@@ -109,17 +112,19 @@ class SearchViewState extends State<SearchView> {
 
   // 轻点音频直接切换播放；曲目选项保留给长按。
   Future<void> _onClickMusic(SearchItem item) async {
+    final request = ++_playRequest;
     try {
       // 搜索摘要没有每一 P 的 cid，详情才包含可播放的真实音轨。
       final detail = await service.searchDetail(item.id);
-      if (!mounted) return;
+      if (!mounted || request != _playRequest) return;
       final tracks = _musicListFromSearch(detail);
       await context.read<PlayerModel>().play(
             music: tracks.first,
             collection: tracks.length > 1 ? tracks : null,
           );
     } catch (_) {
-      if (mounted) BotToast.showText(text: "音频详情加载失败");
+      if (mounted && request == _playRequest)
+        BotToast.showText(text: "音频详情加载失败");
     }
   }
 
@@ -322,6 +327,7 @@ class SearchViewState extends State<SearchView> {
     _keywordController = TextEditingController(text: widget.initialQuery);
     _scrollController.addListener(() {
       if (_scrollController.hasClients &&
+          !_searchFailed &&
           _scrollController.position.extentAfter < 160) {
         unawaited(_searchHandler(false));
       }
@@ -383,6 +389,7 @@ class SearchViewState extends State<SearchView> {
     setState(() {
       _searchItemList.clear();
       _query = "";
+      _searchFailed = false;
       _current = 0;
       _hasMore = true;
       _loading = false;
@@ -488,6 +495,12 @@ class SearchViewState extends State<SearchView> {
     );
   }
 
+  Widget _retrySearch(bool clean) => TextButton.icon(
+        onPressed: () => _searchHandler(clean),
+        icon: const Icon(Icons.refresh_rounded),
+        label: Text(clean ? "搜索失败，点击重试" : "加载失败，点击重试"),
+      );
+
   Widget buildBody(BuildContext context) {
     if (_focusNode.hasFocus && _searchSuggest.isNotEmpty) {
       return buildSearchSuggest();
@@ -504,7 +517,9 @@ class SearchViewState extends State<SearchView> {
         return Padding(
           padding: EdgeInsets.only(
               top: SearchOverlayScaffold.contentTopInset(context)),
-          child: const Center(child: Text("没有找到相关视频")),
+          child: Center(
+              child:
+                  _searchFailed ? _retrySearch(true) : const Text("没有找到相关视频")),
         );
       }
       return buildSearchHistory();
@@ -523,13 +538,15 @@ class SearchViewState extends State<SearchView> {
         }
         if (index == _searchItemList.length) {
           return SizedBox(
-            height: 40,
+            height: 48,
             child: Center(
               child: _loading
                   ? const CircularProgressIndicator(strokeWidth: 2)
-                  : !_hasMore
-                      ? const Text("到底了")
-                      : null,
+                  : _searchFailed
+                      ? _retrySearch(false)
+                      : !_hasMore
+                          ? const Text("到底了")
+                          : null,
             ),
           );
         }
