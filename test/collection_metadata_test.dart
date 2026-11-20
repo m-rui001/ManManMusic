@@ -11,6 +11,24 @@ import "package:flutter_test/flutter_test.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
 void main() {
+  test("合集按接口页大小加载并保留跨页顺序", () async {
+    final calls = <int>[];
+    final season = await loadSeasonPages((page, size) async {
+      calls.add(page);
+      expect(page, lessThanOrEqualTo(2));
+      return {
+        "meta": {"mid": 1, "season_id": 2, "name": "演出"},
+        "page": {"total": 4, "page_size": 2},
+        "archives": [
+          for (final id in page == 1 ? [1, 2] : [2, 3])
+            {"aid": id, "bvid": "BV$id", "title": "曲目$id"},
+        ],
+      };
+    });
+    expect(calls, [1, 2]);
+    expect(season.musicList.map((track) => track.name), ["曲目1", "曲目2", "曲目3"]);
+  });
+
   test("合集保留可播放的无标题条目并跳过无效视频标识", () {
     final season = BiliSearchSeasonItem.fromJson({
       "meta": {"mid": 1, "season_id": 7, "name": "<em>合集</em>"},

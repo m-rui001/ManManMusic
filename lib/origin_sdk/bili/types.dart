@@ -194,6 +194,33 @@ class BiliSearchSeasonItem {
   }
 }
 
+Future<BiliSearchSeasonItem> loadSeasonPages(
+  Future<Map<String, dynamic>> Function(int page, int size) fetch,
+) async {
+  const size = 30;
+  final tracks = <String, MusicItem>{};
+  Meta? meta;
+  for (var page = 1; ; page++) {
+    final data = await fetch(page, size);
+    final parsed = BiliSearchSeasonItem.fromJson(data);
+    meta ??= parsed.meta;
+    final before = tracks.length;
+    for (final track in parsed.musicList) {
+      tracks.putIfAbsent(track.id, () => track);
+    }
+    final rawCount = (data["archives"] as List?)?.length ?? 0;
+    final paging = data["page"];
+    final total = paging is Map ? int.tryParse("${paging["total"]}") : null;
+    final pageSize = paging is Map ? int.tryParse("${paging["page_size"]}") : null;
+    final limit = pageSize != null && pageSize > 0 ? pageSize : size;
+    if (rawCount == 0 || (total != null && page * limit >= total) ||
+        (total == null && rawCount < limit) ||
+        (total == null && page > 1 && before == tracks.length)) {
+      return BiliSearchSeasonItem(meta: meta, musicList: tracks.values.toList());
+    }
+  }
+}
+
 class Meta {
   final int mid;
   final String name;

@@ -292,22 +292,21 @@ class BiliClient implements OriginService {
     await init();
     const url =
         "https://api.bilibili.com/x/polymer/web-space/seasons_archives_list";
-    Map<String, String> query = _signParams({
-      "mid": "$mid",
-      "season_id": "$seasonId",
-      "page_num": "1",
-      "page_size": "30",
+    return loadSeasonPages((page, size) async {
+      final query = _signParams({
+        "mid": "$mid",
+        "season_id": "$seasonId",
+        "page_num": "$page",
+        "page_size": "$size",
+      });
+      final response = await dio.get(
+        Uri.parse(url).replace(queryParameters: query).toString(),
+      );
+      if (response.statusCode != 200 || response.data["data"] is! Map<String, dynamic>) {
+        throw StateError("合集加载失败");
+      }
+      return response.data["data"] as Map<String, dynamic>;
     });
-    final response = await dio.get(
-      Uri.parse(url).replace(queryParameters: query).toString(),
-    );
-
-    if (response.statusCode == 200) {
-      final data = response.data["data"];
-      return BiliSearchSeasonItem.fromJson(data);
-    } else {
-      throw response.data;
-    }
   }
 
   // 搜索建议
