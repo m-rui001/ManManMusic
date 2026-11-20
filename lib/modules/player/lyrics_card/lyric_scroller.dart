@@ -33,7 +33,8 @@ class _LyricsScrollerState extends State<LyricsScroller> {
   LyricsReaderModel? _model;
   int _offset = 0;
   String? _offsetTrackId;
-  bool _matching = false;
+  MusicItem? _matchingTrack;
+  int _matchRequest = 0;
   MusicItem? _attempted;
   _LyricStyle? _style;
   ({Color text, Color highlight})? _styleSeed;
@@ -51,18 +52,25 @@ class _LyricsScrollerState extends State<LyricsScroller> {
   }
 
   Future<void> _autoMatch(MusicItem music) async {
-    setState(() => _matching = true);
+    if (!_isCurrent(music) || identical(_matchingTrack, music)) return;
+    final request = ++_matchRequest;
+    setState(() => _matchingTrack = music);
     try {
       final lrc = await service.getSubtitleLrc(music.id);
       if (lrc == null || lrc.isEmpty || !mounted) return;
-      if (!identical(music, context.read<PlayerModel>().current)) return;
+      if (request != _matchRequest || !_isCurrent(music)) return;
       await context.read<PlayerModel>().setLyrics(music, lrc);
     } catch (_) {
       // 自动匹配失败不打扰，面板里还能再试一次
     } finally {
-      if (mounted) setState(() => _matching = false);
+      if (mounted && request == _matchRequest) {
+        setState(() => _matchingTrack = null);
+      }
     }
   }
+
+  bool _isCurrent(MusicItem music) =>
+      mounted && identical(music, context.read<PlayerModel>().current);
 
   void _openOptions(MusicItem music) {
     openBottomSheet(
@@ -71,18 +79,18 @@ class _LyricsScrollerState extends State<LyricsScroller> {
         SheetItem(
           title: "歌词前移 0.5 秒",
           icon: Icons.fast_forward_rounded,
-          onPressed: () => _shift(500),
+          onPressed: () => _shift(music, 500),
         ),
         SheetItem(
           title: "歌词后移 0.5 秒",
           icon: Icons.fast_rewind_rounded,
-          onPressed: () => _shift(-500),
+          onPressed: () => _shift(music, -500),
         ),
         SheetItem(
           title: "重置偏移",
           subtitle: _offset == 0 ? null : "当前 ${_offsetLabel()}",
           icon: Icons.restart_alt_rounded,
-          onPressed: _offset == 0 ? null : () => setState(() => _offset = 0),
+          onPressed: _offset == 0 ? null : () => _shift(music, -_offset),
         ),
         SheetItem(
           title: "重新匹配字幕",
@@ -95,6 +103,12 @@ class _LyricsScrollerState extends State<LyricsScroller> {
           icon: Icons.delete_outline_rounded,
           destructive: true,
           onPressed: () async {
+            if (!_isCurrent(music)) return;
+            ++_matchRequest;
+            setState(() {
+              _matchingTrack = null;
+              _attempted = music;
+            });
             try {
               await context.read<PlayerModel>().setLyrics(music, "");
             } catch (_) {
@@ -115,7 +129,8 @@ class _LyricsScrollerState extends State<LyricsScroller> {
     return "${seconds > 0 ? "+" : ""}${seconds.toStringAsFixed(1)} 秒";
   }
 
-  void _shift(int delta) {
+  void _shift(MusicItem music, int delta) {
+    if (!_isCurrent(music)) return;
     setState(() => _offset += delta);
     BotToast.showText(text: "歌词偏移 ${_offsetLabel()}");
   }
@@ -143,7 +158,9 @@ class _LyricsScrollerState extends State<LyricsScroller> {
       final matchable = music.origin == OriginType.bili &&
           music.localPath.isEmpty &&
           int.tryParse(music.id.split("_").first) != null;
-      if (!_matching && matchable && !identical(_attempted, music)) {
+      if (!identical(_matchingTrack, music) &&
+          matchable &&
+          !identical(_attempted, music)) {
         _attempted = music;
         WidgetsBinding.instance.addPostFrameCallback((_) => _autoMatch(music));
       }
@@ -275,7 +292,7 @@ class _LyricsScrollerState extends State<LyricsScroller> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (_matching) ...[
+          if (identical(_matchingTrack, music)) ...[
             SizedBox(
               width: 22,
               height: 22,
