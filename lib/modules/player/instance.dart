@@ -78,7 +78,15 @@ class BBPlayer {
     autoClose.cancel();
   }
 
-  Future<void> play({MusicItem? music, List<MusicItem>? collection}) async {
+  final _shuffleHistory = <MusicItem>[];
+
+  Future<void> play({MusicItem? music, List<MusicItem>? collection}) =>
+      _selectTrack(music: music, collection: collection);
+
+  Future<void> _selectTrack(
+      {MusicItem? music,
+      List<MusicItem>? collection,
+      bool queueStep = false}) async {
     final selected =
         music ?? current ?? (playerList.isEmpty ? null : playerList.first);
     if (selected == null) return;
@@ -95,6 +103,8 @@ class BBPlayer {
       } else {
         await _play();
       }
+      if (!queueStep && (!sameEntry || collection != null))
+        _shuffleHistory.clear();
       current = selected;
       if (collection != null) {
         collectionQueue = List.unmodifiable(collection);
@@ -126,6 +136,7 @@ class BBPlayer {
       await _load(music, isCurrent: isCurrent);
       if (!isCurrent()) return;
       collectionQueue = const [];
+      _shuffleHistory.clear();
       eventBus.fire(RefreshPlayerCard());
     }
     if (!isCurrent()) return;
@@ -236,18 +247,31 @@ class BBPlayer {
       return;
     }
 
-    final index = queue.indexWhere((entry) =>
-        identical(entry, music) ||
-        (music.playId.isNotEmpty && entry.playId == music.playId) ||
-        (music.playId.isEmpty &&
-            entry.orderName == music.orderName &&
-            _track(entry) == _track(music)));
-    final nextIndex = nextQueueIndex(
-      length: queue.length,
-      current: index,
-      offset: offset,
-      mode: playerMode,
-    );
+    int indexOf(MusicItem track) => queue.indexWhere((entry) =>
+        identical(entry, track) ||
+        (track.playId.isNotEmpty && entry.playId == track.playId) ||
+        (track.playId.isEmpty &&
+            entry.orderName == track.orderName &&
+            _track(entry) == _track(track)));
+    final index = indexOf(music);
+    int? previous;
+    if (playerMode == PlayerMode.random && offset < 0) {
+      while (_shuffleHistory.isNotEmpty) {
+        final candidate = indexOf(_shuffleHistory.last);
+        if (candidate >= 0 && candidate != index) {
+          previous = candidate;
+          break;
+        }
+        _shuffleHistory.removeLast();
+      }
+    }
+    final nextIndex = previous ??
+        nextQueueIndex(
+          length: queue.length,
+          current: index,
+          offset: offset,
+          mode: playerMode,
+        );
     if (nextIndex == null) {
       if (completed) await pause();
       return;
@@ -256,7 +280,17 @@ class BBPlayer {
       await audio.seek(Duration.zero);
       _startPlayback();
     } else {
-      await play(music: queue[nextIndex]);
+      final next = queue[nextIndex];
+      await _selectTrack(music: next, queueStep: true);
+      if (!identical(current, next) || playerMode != PlayerMode.random) return;
+      if (offset > 0 && index >= 0) {
+        _shuffleHistory.add(music);
+        if (_shuffleHistory.length > 1000) _shuffleHistory.removeAt(0);
+      } else if (previous != null &&
+          _shuffleHistory.isNotEmpty &&
+          indexOf(_shuffleHistory.last) == previous) {
+        _shuffleHistory.removeLast();
+      }
     }
   }
 
@@ -280,6 +314,7 @@ class BBPlayer {
       }
     }
 
+    if (playerMode != PlayerMode.random) _shuffleHistory.clear();
     _updateLocalStorage();
     // notifyListeners();
   }
