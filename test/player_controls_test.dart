@@ -71,6 +71,19 @@ void main() {
     expect(queueEntryIndex([a], null), -1);
   });
 
+  test("重启时恢复重复条目的位置并兼容失效索引", () {
+    final track = LyricTestPlayer(const Stream.empty()).track;
+    final saved = MusicItem.fromJson(track.toJson());
+    expect(restoredQueueIndex([track, track.copyWith()], saved, 1), 1);
+    final a = track.copyWith(playId: "a");
+    final b = track.copyWith(playId: "b");
+    for (final index in [null, -1, 0, 9]) {
+      expect(
+          restoredQueueIndex([a, b], MusicItem.fromJson(b.toJson()), index), 1);
+    }
+    expect(restoredQueueIndex([a], b, 0), -1);
+  });
+
   testWidgets("操作菜单键盘焦点跳过禁用项并可执行", (tester) async {
     int? selected;
     await tester.pumpWidget(MaterialApp(

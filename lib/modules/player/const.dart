@@ -63,6 +63,18 @@ int queueEntryIndex(List<MusicItem> queue, MusicItem? current) {
   });
 }
 
+/// Prefer the saved occurrence when repeated entries have no playback ID.
+int restoredQueueIndex(
+    List<MusicItem> entries, MusicItem saved, Object? index) {
+  if (index is int &&
+      index >= 0 &&
+      index < entries.length &&
+      queueEntryIndex([entries[index]], saved) == 0) {
+    return index;
+  }
+  return queueEntryIndex(entries, saved);
+}
+
 // Returns null when sequential playback reaches the edge of a queue.
 int? nextQueueIndex({
   required int length,

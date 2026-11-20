@@ -452,7 +452,7 @@ class BBPlayer {
                   ...music.toJson(),
                   if (collectionQueue.isNotEmpty) "collection": collectionQueue,
                   if (collectionQueue.isNotEmpty)
-                    "collectionIndex": collectionQueue.indexOf(music),
+                    "collectionIndex": queueEntryIndex(collectionQueue, music),
                 }));
       localStorage.setString(
         _storageKeyPlayerMode,
@@ -486,19 +486,19 @@ class BBPlayer {
       var saved = MusicItem.fromJson(data);
       final collection = data["collection"];
       final index = data["collectionIndex"];
-      if (collection is List &&
-          index is int &&
-          index >= 0 &&
-          index < collection.length) {
+      if (collection is List && collection.isNotEmpty) {
         final entries = collection
             .cast<Map<String, dynamic>>()
             .map(MusicItem.fromJson)
             .toList();
-        if (_track(entries[index]) == _track(saved)) {
-          entries[index] = saved;
+        final restoredIndex = restoredQueueIndex(entries, saved, index);
+        if (restoredIndex >= 0) {
+          entries[restoredIndex] = saved;
           collectionQueue = List.unmodifiable(entries);
-          saved = collectionQueue[index];
         }
+      } else if (saved.orderName == TableName.musicWaitPlay) {
+        final restoredIndex = queueEntryIndex(playerList, saved);
+        if (restoredIndex >= 0) saved = playerList[restoredIndex];
       }
       current = saved;
       await _play(music: saved, isPlay: false);
