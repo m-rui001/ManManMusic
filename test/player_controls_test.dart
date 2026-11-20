@@ -302,6 +302,30 @@ void main() {
     expect(find.byType(PlayerCard), findsNothing);
     expect(tester.takeException(), isNull);
   });
+  testWidgets("Short drags settle after a pause or pointer cancellation",
+      (tester) async {
+    final player = LayoutPlayer(playing: false);
+    await tester.pumpWidget(ChangeNotifierProvider<PlayerModel>.value(
+      value: player,
+      child: const MaterialApp(home: Scaffold(body: PlayerView())),
+    ));
+    for (final cancel in [false, true]) {
+      final gesture = await tester
+          .startGesture(tester.getCenter(find.byType(LinearProgressIndicator)));
+      await gesture.moveBy(const Offset(0, -36),
+          timeStamp: const Duration(milliseconds: 20));
+      await tester.pump();
+      expect(find.byType(PlayerCard), findsOneWidget);
+      if (cancel) {
+        await gesture.cancel();
+      } else {
+        await gesture.up(timeStamp: const Duration(milliseconds: 220));
+      }
+      await tester.pumpAndSettle();
+      expect(find.byType(PlayerCard), findsNothing);
+      expect(tester.takeException(), isNull);
+    }
+  });
 }
 
 class LyricTestPlayer extends PlayerModel {

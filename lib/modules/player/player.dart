@@ -10,6 +10,7 @@ import "package:bobomusic/utils/clear_html_tags.dart";
 import "package:bobomusic/utils/copy_track_name.dart";
 import "package:bobomusic/utils/haptics.dart";
 import "package:bot_toast/bot_toast.dart";
+import "package:flutter/gestures.dart";
 import "package:flutter/material.dart";
 import "package:bobomusic/modules/player/player_card/card.dart";
 import "package:bobomusic/modules/player/list.dart";
@@ -65,7 +66,7 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
     if (event.pointer != _pointer) return;
     final displacement = _dragStartY - event.position.dy;
     if (!_routeOpenedByDrag &&
-        (displacement < 10 ||
+        (displacement <= kTouchSlop ||
             displacement < (event.position.dx - _dragStartX).abs() * 1.1)) {
       return;
     }
@@ -131,7 +132,10 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
     _pointer = null;
     final controller = _unfold;
     if (controller == null) return;
-    if (_dragDistance > _viewportHeight * .16 || _dragVelocity < -850) {
+    final recentMove = event.timeStamp - _previousMoveAt;
+    final flick =
+        recentMove <= const Duration(milliseconds: 100) && _dragVelocity < -850;
+    if (_dragDistance > _viewportHeight * .16 || flick) {
       _removePreview();
       _unfold = null;
       if (showPlayerCard(context,
