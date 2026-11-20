@@ -632,7 +632,7 @@ class _UnfoldTransition extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
+    final size = MediaQuery.sizeOf(context);
     // Cirro keeps a narrow rim around its full-screen player instead of
     // flattening the corners against the device edge.
     final target = Rect.fromLTRB(
@@ -644,13 +644,13 @@ class _UnfoldTransition extends StatelessWidget {
     final from = source;
     return AnimatedBuilder(
       animation: animation,
-      builder: (context, _) {
+      child: RepaintBoundary(child: child),
+      builder: (context, page) {
         final t = interactive
             ? animation.value
             : AppMotion.emphasized.transform(animation.value);
         final rect = from == null ? target : Rect.lerp(from, target, t)!;
         final radius = 42 + (36 - 42) * t;
-        // 内容晚一点浮现，先让容器长到位，避免小窗口里塞满字
         final opacity = from == null ? animation.value : t;
         return Stack(
           fit: StackFit.expand,
@@ -669,16 +669,14 @@ class _UnfoldTransition extends StatelessWidget {
                   opacity: opacity,
                   child: OverflowBox(
                     alignment: Alignment.topLeft,
+                    minWidth: size.width,
                     maxWidth: size.width,
+                    minHeight: size.height,
                     maxHeight: size.height,
                     // 内容钉在屏幕原位，只有窗口在长大，字不会跟着跑
                     child: Transform.translate(
                       offset: -rect.topLeft,
-                      child: SizedBox(
-                        width: size.width,
-                        height: size.height,
-                        child: child,
-                      ),
+                      child: page,
                     ),
                   ),
                 ),
