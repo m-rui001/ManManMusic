@@ -124,4 +124,42 @@ void main() {
       ),
     );
   });
+  testWidgets("Scaled search controls leave room for the first result",
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 640);
+    addTearDown(tester.view.reset);
+    final controller = TextEditingController();
+    final focus = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focus.dispose);
+    await tester.pumpWidget(MaterialApp(
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context)
+            .copyWith(textScaler: const TextScaler.linear(2)),
+        child: child!,
+      ),
+      home: SearchOverlayScaffold(
+        keywordController: controller,
+        focusNode: focus,
+        hintText: "Search",
+        onSearch: () {},
+        onInput: (_) {},
+        scope: SearchScope.library,
+        onScopeChanged: (_) {},
+        onClose: () {},
+        body: Builder(
+            builder: (context) => ListView(
+                  padding: EdgeInsets.only(
+                      top: SearchOverlayScaffold.contentTopInset(context)),
+                  children: const [Text("First result")],
+                )),
+      ),
+    ));
+    expect(tester.getSize(find.byType(TextField)).height, greaterThan(56));
+    final scopes = find.byType(AnimatedContainer).last;
+    expect(tester.getTopLeft(find.text("First result")).dy,
+        closeTo(tester.getBottomLeft(scopes).dy + 14, .1));
+    expect(tester.takeException(), isNull);
+  });
 }

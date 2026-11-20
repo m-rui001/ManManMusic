@@ -5,6 +5,13 @@ import "package:flutter/material.dart";
 /// Search destinations share one field and retain its query/focus while switching.
 enum SearchScope { bili, library }
 
+// Keep the default geometry while reserving a full scaled text line.
+double _controlHeight(BuildContext context, double base) =>
+    base +
+    (MediaQuery.textScalerOf(context).scale(16) - 16)
+            .clamp(0, double.infinity) *
+        1.5;
+
 /// A pill-shaped search input used by the search overlays.
 class SearchField extends StatelessWidget {
   final TextEditingController keywordController;
@@ -36,7 +43,8 @@ class SearchField extends StatelessWidget {
       decoration: InputDecoration(
         filled: true,
         fillColor: Colors.transparent,
-        constraints: const BoxConstraints(minHeight: 56, maxHeight: 56),
+        constraints:
+            BoxConstraints.tightFor(height: _controlHeight(context, 56)),
         prefixIcon: Icon(Icons.search_rounded,
             size: 26, color: colors.onSurfaceVariant),
         prefixIconConstraints: const BoxConstraints(minWidth: 54),
@@ -44,6 +52,7 @@ class SearchField extends StatelessWidget {
           borderSide: BorderSide.none,
           borderRadius: BorderRadius.circular(32),
         ),
+        hintMaxLines: 1,
         hintText: hintText,
         hintStyle: TextStyle(fontSize: 16, color: colors.onSurfaceVariant),
         contentPadding: const EdgeInsets.symmetric(vertical: 16),
@@ -83,7 +92,12 @@ class SearchOverlayScaffold extends StatelessWidget {
   /// Initial list padding that lets results scroll up and visibly pass behind
   /// the translucent header instead of starting beneath a separate app bar.
   static double contentTopInset(BuildContext context) =>
-      MediaQuery.paddingOf(context).top + 8 + 56 + 12 + 52 + 14;
+      MediaQuery.paddingOf(context).top +
+      8 +
+      _controlHeight(context, 56) +
+      12 +
+      _controlHeight(context, 52) +
+      14;
 
   Widget _blurredSurface({
     required BuildContext context,
@@ -126,7 +140,7 @@ class SearchOverlayScaffold extends StatelessWidget {
           onTap: () => onScopeChanged(value),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 160),
-            height: 52,
+            height: _controlHeight(context, 52),
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: selected
