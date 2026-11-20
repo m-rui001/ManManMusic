@@ -162,29 +162,33 @@ class BiliSearchSeasonItem {
 
   factory BiliSearchSeasonItem.fromJson(Map<String, dynamic> json) {
     final jsonMeta = json["meta"];
-    final jsonArchives = json["archives"];
+    final archives = json["archives"] as List? ?? const [];
     final collectionName = clearHtmlTags("${jsonMeta["name"] ?? ""}").trim();
-    List<MusicItem> musicList = [];
+    final musicList = <MusicItem>[];
 
-    for (var archive in jsonArchives) {
+    for (final archive in archives.whereType<Map>()) {
+      final aid = int.tryParse("${archive["aid"]}");
+      final bvid = archive["bvid"];
+      if (aid == null || aid <= 0 || bvid is! String || bvid.trim().isEmpty) continue;
+      final title = clearHtmlTags("${archive["title"] ?? ""}").trim();
       musicList.add(
         MusicItem(
           id: BiliId(
-            aid: "${archive["aid"]}",
-            bvid: "${archive["bvid"]}",
+            aid: "$aid",
+            bvid: bvid.trim(),
           ).decode(),
           cover: firstBiliCover([archive["pic"], archive["cover"], jsonMeta["cover"]]),
-          name: clearHtmlTags(archive["title"]),
+          name: title.isEmpty ? bvid.trim() : title,
           collectionName: collectionName,
           duration: _durationSeconds(archive["duration"]),
-          author: archive["author"] ?? "",
+          author: archive["author"] is String ? archive["author"] : "",
           origin: OriginType.bili,
         )
       );
     }
 
     return BiliSearchSeasonItem(
-      meta: Meta(mid: jsonMeta["mid"], name: jsonMeta["name"], seasonId: jsonMeta["season_id"], cover: firstBiliCover([jsonMeta["cover"]])),
+      meta: Meta(mid: jsonMeta["mid"], name: collectionName, seasonId: jsonMeta["season_id"], cover: firstBiliCover([jsonMeta["cover"]])),
       musicList: musicList,
     );
   }

@@ -11,6 +11,22 @@ import "package:flutter_test/flutter_test.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
 void main() {
+  test("合集保留可播放的无标题条目并跳过无效视频标识", () {
+    final season = BiliSearchSeasonItem.fromJson({
+      "meta": {"mid": 1, "season_id": 7, "name": "<em>合集</em>"},
+      "archives": [
+        null,
+        {"title": "缺标识"},
+        {"aid": "2", "bvid": "BVSecond"},
+        {"aid": 3, "bvid": "BVThird", "title": "终曲"},
+      ],
+    });
+    expect(season.meta.name, "合集");
+    expect(
+        season.musicList.map((item) => item.id), ["2_BVSecond", "3_BVThird"]);
+    expect(season.musicList.map((item) => item.name), ["BVSecond", "终曲"]);
+  });
+
   test("搜索保留缺时长的视频并跳过不可播放条目", () {
     final page = BiliSearchResponse.fromJson({
       "data": {
