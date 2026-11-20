@@ -11,9 +11,9 @@
 </div>
 
 <div align="center">
-<img src="./screenshot/v2.9.7-home.png" width="220" alt="首页与最近播放" />
-<img src="./screenshot/v2.9.7-player.png" width="220" alt="随封面变色的播放器与波动进度条" />
-<img src="./screenshot/v2.9.7-queue.png" width="220" alt="当前列表与待播放队列" />
+<img src="./screenshot/v3.0.6-home.jpg" width="220" alt="首页、继续播放与最近播放" />
+<img src="./screenshot/v3.0.6-player.jpg" width="220" alt="随封面变色的播放器与波形进度条" />
+<img src="./screenshot/v3.0.6-party.jpg" width="220" alt="一起听房间与好友名单" />
 </div>
 
 ## 你可以用它做什么
