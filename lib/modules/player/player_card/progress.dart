@@ -110,7 +110,7 @@ class _PlayerProgressState extends State<PlayerProgress>
                       secondaryTrackValue:
                           progress(buffer.data ?? Duration.zero),
                       semanticFormatterCallback: (v) =>
-                          seconds2duration((v * duration.inSeconds).round()),
+                          "播放进度 ${seconds2duration((v * total / 1000).floor())} / ${seconds2duration(duration.inSeconds)}",
                       onChangeStart: locked || total <= 0
                           ? null
                           : (v) => setState(() => _dragValue = v),

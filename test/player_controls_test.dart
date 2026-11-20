@@ -1,4 +1,5 @@
 import "dart:async";
+import "dart:ui" show SemanticsAction;
 
 import "package:bobomusic/constants/theme_color.dart";
 import "package:bobomusic/components/pressable.dart";
@@ -109,6 +110,22 @@ void main() {
     await tester.pump();
     expect(player.seekTarget!.inMilliseconds, closeTo(50000, 500));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets("读屏可识别播放进度并前后跳转", (tester) async {
+    final player = TestPlayer(const Duration(seconds: 100));
+    await showProgress(tester, player);
+    final node = tester.getSemantics(find.byType(Slider));
+    expect(node.value, startsWith("播放进度 "));
+    expect(node.value, contains(" / 01:40"));
+    final owner = tester.binding.renderViews.single.owner!.semanticsOwner!;
+    owner.performAction(node.id, SemanticsAction.increase);
+    await tester.pump();
+    expect(player.seekTarget, isNotNull);
+    final later = player.seekTarget!;
+    owner.performAction(node.id, SemanticsAction.decrease);
+    await tester.pump();
+    expect(player.seekTarget, lessThan(later));
   });
 
   testWidgets("反向布局从右侧开始，时长未知时禁用跳转", (tester) async {
