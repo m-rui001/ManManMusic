@@ -9,6 +9,7 @@ import "package:bobomusic/components/sheet/bottom_sheet.dart";
 import "package:bobomusic/modules/player/const.dart";
 import "package:bobomusic/modules/player/utils.dart";
 import "package:bobomusic/modules/player/model.dart";
+import "package:bobomusic/modules/player/source.dart" show music2mediaItem;
 import "package:bobomusic/modules/player/audio_options.dart";
 import "package:bobomusic/modules/player/instance.dart" show AutoCloseMusic;
 import "package:bobomusic/modules/player/lyrics_card/lyric_scroller.dart";
@@ -84,6 +85,30 @@ void main() {
           restoredQueueIndex([a, b], MusicItem.fromJson(b.toJson()), index), 1);
     }
     expect(restoredQueueIndex([a], b, 0), -1);
+  });
+
+  test("System media metadata uses clean titles, collection and HTTPS artwork",
+      () {
+    final song = LayoutPlayer().track.copyWith(
+        name: "<em>Prelude</em>",
+        author: "<b>Artist</b>",
+        collectionName: "Suite",
+        cover: "//i0.hdslb.com/test.jpg");
+    final item = music2mediaItem(song);
+    expect(item.title, "Prelude");
+    expect(item.artist, "Artist");
+    expect(item.album, "Suite");
+    expect(item.artUri.toString(), "https://i0.hdslb.com/test.jpg");
+    final local = music2mediaItem(song.copyWith(
+        id: "",
+        localPath: "song.mp3",
+        cover: "",
+        collectionName: "",
+        duration: 0));
+    expect(local.id, "song.mp3");
+    expect(local.artUri, isNull);
+    expect(local.album, isNull);
+    expect(local.duration, isNull);
   });
 
   testWidgets("音质详情区分尚未载入、本地、缓存和在线来源", (tester) async {

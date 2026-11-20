@@ -3,6 +3,8 @@ import "dart:io";
 
 import "package:audio_service/audio_service.dart";
 import "package:bobomusic/origin_sdk/bili/auth.dart";
+import "package:bobomusic/origin_sdk/bili/utils.dart";
+import "package:bobomusic/utils/clear_html_tags.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:bobomusic/origin_sdk/service.dart";
 import "package:flutter_cache_manager/flutter_cache_manager.dart";
@@ -42,12 +44,21 @@ typedef _CachedTrack = ({
   String? variant,
 });
 
-Stream<PlaybackSource> musicSources(MusicItem music) async* {
-  final tag = MediaItem(
-    id: music.id,
-    title: music.name,
-    artUri: Uri.tryParse(music.cover),
+MediaItem music2mediaItem(MusicItem music) {
+  final cover = firstBiliCover([music.cover]);
+  final album = clearHtmlTags(music.collectionName).trim();
+  return MediaItem(
+    id: music.id.isEmpty ? music.localPath : music.id,
+    title: clearHtmlTags(music.name).trim(),
+    artist: clearHtmlTags(music.author).trim(),
+    album: album.isEmpty ? null : album,
+    duration: music.duration > 0 ? Duration(seconds: music.duration) : null,
+    artUri: cover.isEmpty ? null : Uri.parse(cover),
   );
+}
+
+Stream<PlaybackSource> musicSources(MusicItem music) async* {
+  final tag = music2mediaItem(music);
   await for (final candidate in musicAudioCandidates(music)) {
     final file = candidate.file;
     if (file != null) {

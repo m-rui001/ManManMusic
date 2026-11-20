@@ -4,6 +4,7 @@ import "package:audio_service/audio_service.dart";
 import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/party/party_service.dart";
 import "package:bobomusic/modules/player/instance.dart";
+import "package:bobomusic/modules/player/source.dart" show music2mediaItem;
 import "package:just_audio/just_audio.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 
@@ -74,6 +75,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
       if (player.current == null) return; // 无当前音乐时返回
       await player.resume();
     }
+    _updateMediaItem();
     _updatePosition();
   }
 
@@ -164,14 +166,4 @@ class AudioPlayerHandler extends BaseAudioHandler {
       queueIndex: _audioEvent.currentIndex,
     ));
   }
-}
-
-MediaItem music2mediaItem(MusicItem music) {
-  return MediaItem(
-    id: music.id,
-    title: music.name,
-    album: music.author,
-    artist: music.author,
-    duration: Duration(seconds: music.duration),
-  );
 }
