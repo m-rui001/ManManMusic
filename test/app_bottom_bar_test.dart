@@ -1,3 +1,5 @@
+import "dart:ui" show SemanticsFlag;
+
 import "package:bobomusic/modules/tabbar/app_bottom_bar.dart";
 import "package:flutter/material.dart";
 import "package:flutter_test/flutter_test.dart";
@@ -38,6 +40,11 @@ void main() {
       ),
     );
 
+    final home = tester.getSemantics(find.bySemanticsLabel("主页"));
+    final settings = tester.getSemantics(find.bySemanticsLabel("设置"));
+    expect(home.hasFlag(SemanticsFlag.isSelected), isTrue);
+    expect(settings.hasFlag(SemanticsFlag.isSelected), isFalse);
+
     final offsets = tester.widgetList<Transform>(find.byType(Transform)).where(
           (transform) => transform.transform.getTranslation().x != 0,
         );
@@ -51,6 +58,9 @@ void main() {
     final icons = tester.widgetList<Icon>(find.byType(Icon)).toList();
     expect(icons[0].color!.a, closeTo(.5, .01));
     expect(icons[1].color!.a, closeTo(.5, .01));
+    await tester.longPress(find.byTooltip("设置"));
+    await tester.pumpAndSettle();
+    expect(find.text("设置"), findsOneWidget);
   });
 }
 

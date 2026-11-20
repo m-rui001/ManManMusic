@@ -103,36 +103,42 @@ class AppBottomBar extends StatelessWidget {
       button: true,
       selected: selected,
       label: menu.label,
-      child: InkWell(
-        customBorder: shape,
-        onTap: () => onItemTap(index),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Transform.translate(
-                offset: Offset(iconOffset, 0),
-                child: SizedBox.square(
-                  dimension: 26,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Transform.scale(
-                        scale: .88 + .12 * (1 - active),
-                        child: Icon(menu.icon,
-                            color: ink.withValues(alpha: 1 - active), size: 22),
-                      ),
-                      Transform.scale(
-                        scale: .88 + .12 * active,
-                        child: Icon(menu.activeIcon,
-                            color: ink.withValues(alpha: active), size: 22),
-                      ),
-                    ],
+      child: Tooltip(
+        message: menu.label,
+        excludeFromSemantics: true,
+        preferBelow: false,
+        child: InkWell(
+          customBorder: shape,
+          onTap: () => onItemTap(index),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Transform.translate(
+                  offset: Offset(iconOffset, 0),
+                  child: SizedBox.square(
+                    dimension: 26,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Transform.scale(
+                          scale: .88 + .12 * (1 - active),
+                          child: Icon(menu.icon,
+                              color: ink.withValues(alpha: 1 - active),
+                              size: 22),
+                        ),
+                        Transform.scale(
+                          scale: .88 + .12 * active,
+                          child: Icon(menu.activeIcon,
+                              color: ink.withValues(alpha: active), size: 22),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
