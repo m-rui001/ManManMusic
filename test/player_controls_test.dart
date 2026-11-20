@@ -9,6 +9,7 @@ import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/modules/player/lyrics_card/lyric_scroller.dart";
 import "package:bobomusic/modules/player/player.dart";
 import "package:bobomusic/modules/player/player_card/card.dart";
+import "package:bobomusic/modules/player/player_card/current_list.dart";
 import "package:bobomusic/modules/player/player_card/progress.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:bot_toast/bot_toast.dart";
@@ -65,6 +66,30 @@ void main() {
     expect(queueEntryIndex([a, b], b.copyWith()), 1);
     expect(queueEntryIndex([a], b), -1);
     expect(queueEntryIndex([a], null), -1);
+  });
+
+  testWidgets("大字号下队列容纳标题和作者并定位当前行", (tester) async {
+    final player = LayoutPlayer(playing: false);
+    final tracks =
+        List.generate(30, (index) => player.track.copyWith(name: "曲目 $index"));
+    tracks[18] = player.track;
+    await tester.pumpWidget(ChangeNotifierProvider<PlayerModel>.value(
+      value: player,
+      child: MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: const TextScaler.linear(2.5)),
+          child: child!,
+        ),
+        home: Scaffold(body: CurrentList(musicList: tracks)),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final list = tester.widget<ListView>(find.byType(ListView));
+    expect(list.itemExtent, greaterThan(66));
+    expect(list.controller!.offset, closeTo(list.itemExtent! * 18, .1));
+    expect(find.text(player.track.name).hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets("按钮按下时立即缩小反馈，松开后复原", (tester) async {

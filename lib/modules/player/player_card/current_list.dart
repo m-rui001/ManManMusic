@@ -1,3 +1,5 @@
+import "dart:math" as math;
+
 import "package:bobomusic/modules/player/artwork.dart";
 import "package:bobomusic/utils/clear_html_tags.dart";
 import "package:bobomusic/modules/download/model.dart";
@@ -21,7 +23,16 @@ class CurrentList extends StatefulWidget {
 
 class CurrentListState extends State<CurrentList> {
   final ScrollController _scrollController = ScrollController();
-  static const _rowHeight = 66.0;
+  double _rowHeight(BuildContext context) {
+    final theme = Theme.of(context).textTheme;
+    final scaler = MediaQuery.textScalerOf(context);
+    double lineHeight(TextStyle style) =>
+        scaler.scale(style.fontSize!) * (style.height ?? 1.2);
+    return math.max(
+        66,
+        (lineHeight(theme.titleSmall!) + lineHeight(theme.bodySmall!) + 12)
+            .ceilToDouble());
+  }
 
   @override
   void initState() {
@@ -45,7 +56,8 @@ class CurrentListState extends State<CurrentList> {
     final index = queueEntryIndex(widget.musicList, player.current);
     if (index < 0 || !_scrollController.hasClients) return;
     _scrollController.jumpTo(
-      (index * _rowHeight).clamp(0, _scrollController.position.maxScrollExtent),
+      (index * _rowHeight(context))
+          .clamp(0, _scrollController.position.maxScrollExtent),
     );
   }
 
@@ -98,7 +110,7 @@ class CurrentListState extends State<CurrentList> {
                 )
               : ListView.builder(
                   controller: _scrollController,
-                  itemExtent: _rowHeight,
+                  itemExtent: _rowHeight(context),
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                   itemCount: items.length,
                   itemBuilder: (context, index) {
