@@ -78,6 +78,21 @@ void main() {
     await temporary.delete(recursive: true);
   });
 
+  test("下载文件优先播放，文件缺失时恢复缓存或在线音轨", () async {
+    final file = await File(path.join(temporary.path, "download.m4a"))
+        .writeAsString("audio");
+    final downloaded = music.copyWith(localPath: file.path);
+    expect(
+        (await musicAudioCandidates(downloaded).first).file?.path, file.path);
+    await file.delete();
+    audioService.available = _aac;
+    final recovered = await musicAudioCandidates(downloaded).toList();
+    expect(recovered.first.file?.path, legacy.path);
+    expect(recovered.any((candidate) => candidate.remote == _aac), isTrue);
+    await expectLater(musicAudioCandidates(downloaded.copyWith(id: "")).first,
+        throwsA(isA<StateError>()));
+  });
+
   test("本地播放源区分同名文件并识别同一文件的历史副本", () {
     final first = music.copyWith(id: "", localPath: "/a/intro.mp3");
     final second = first.copyWith(localPath: "/b/intro.mp3");

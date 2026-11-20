@@ -96,8 +96,14 @@ Stream<PlaybackSource> musicSources(MusicItem music) async* {
 
 Stream<AudioCandidate> musicAudioCandidates(MusicItem music) async* {
   if (music.localPath.isNotEmpty) {
-    yield AudioCandidate.local(File(music.localPath), "本地文件");
-    return;
+    final file = File(music.localPath);
+    final canRecover = music.origin == OriginType.bili && music.id.isNotEmpty;
+    if (await file.exists()) {
+      yield AudioCandidate.local(file, "本地文件");
+      if (!canRecover) return;
+    } else if (!canRecover) {
+      throw StateError("本地音频文件不存在，可能已移动或删除");
+    }
   }
 
   final auth = BiliAuth.instance;
