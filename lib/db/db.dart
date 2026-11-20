@@ -189,21 +189,21 @@ abstract class BaseDatabaseHelper {
   }
 
   Future<int> update(String tableName, Map<String, dynamic> row) async {
-    try {
-      Database db = await database;
-      String mid = row["mid"];
-      String playId = row["playId"];
-
-      return await db.update(
-        tableName,
-        row,
-        where: "mid =? OR playId =?",
-        whereArgs: [mid, playId],
-      );
-    } catch (e) {
-      print("Update error: $e");
-      rethrow;
+    final db = await database;
+    final playId = row["playId"] as String?;
+    if (playId != null && playId.isNotEmpty) {
+      return db.update(tableName, row, where: "playId = ?", whereArgs: [playId]);
     }
+    final mid = row["mid"] as String?;
+    final path = row["localPath"] as String?;
+    final hasMid = mid != null && mid.isNotEmpty;
+    if (!hasMid && (path == null || path.isEmpty)) return 0;
+    return db.update(
+      tableName,
+      row,
+      where: "COALESCE(playId, '') = '' AND origin = ? AND ${hasMid ? 'mid' : 'localPath'} = ?",
+      whereArgs: [row["origin"], hasMid ? mid : path],
+    );
   }
 
   Future<int> delete(String tableName, String param) async {

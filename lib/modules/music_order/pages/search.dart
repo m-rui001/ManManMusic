@@ -1,3 +1,4 @@
+import "package:bobomusic/modules/player/const.dart";
 import "dart:async";
 
 import "package:bobomusic/components/music_list_tile/music_list_tile.dart";
@@ -285,8 +286,7 @@ class SearchOrderMusicViewState extends State<SearchOrderMusicView> {
                         await db.update(
                             TableName.musicLocal, musicItem2Row(music: music));
 
-                        if (player.current != null &&
-                            player.current!.playId == music.playId) {
+                        if (queueEntryIndex([data], player.current) == 0) {
                           player.current = music;
                         }
 

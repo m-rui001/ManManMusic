@@ -1,3 +1,4 @@
+import "package:bobomusic/modules/player/const.dart";
 import "dart:async";
 
 import "package:bobomusic/components/music_list_tile/music_list_tile.dart";
@@ -173,7 +174,7 @@ class MusicListCommonState extends State<MusicListCommon> {
                       onOk: (music) async {
                         await db.update(widget.tabName, musicItem2Row(music: music));
 
-                        if (player.current != null && player.current!.playId == music.playId) {
+                        if (queueEntryIndex([musicItem], player.current) == 0) {
                           player.current = music;
                         }
 
