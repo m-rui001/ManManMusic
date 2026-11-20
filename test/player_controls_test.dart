@@ -2,6 +2,7 @@ import "dart:async";
 import "dart:ui" show SemanticsAction;
 
 import "package:bobomusic/constants/theme_color.dart";
+import "package:bobomusic/modules/player/player_card/vinyl_record.dart";
 import "package:bobomusic/components/pressable.dart";
 import "package:bobomusic/modules/player/const.dart";
 import "package:bobomusic/modules/player/utils.dart";
@@ -66,6 +67,38 @@ void main() {
     expect(queueEntryIndex([a, b], b.copyWith()), 1);
     expect(queueEntryIndex([a], b), -1);
     expect(queueEntryIndex([a], null), -1);
+  });
+
+  testWidgets("黑胶唱片暂停和减少动态效果时保持角度", (tester) async {
+    Future<void> show({bool playing = true, bool reduced = false}) =>
+        tester.pumpWidget(MaterialApp(
+            home: MediaQuery(
+          data: MediaQueryData(disableAnimations: reduced),
+          child: Center(
+              child: VinylRecordWidget(
+                  imageInfo: null,
+                  imageProvider: null,
+                  errorCoverUrl: "assets/logo.png",
+                  isPlaying: playing)),
+        )));
+    await show();
+    final rotation = tester
+        .widget<RotationTransition>(find.descendant(
+            of: find.byType(VinylRecordWidget),
+            matching: find.byType(RotationTransition)))
+        .turns;
+    await tester.pump(const Duration(seconds: 2));
+    final angle = rotation.value;
+    expect(angle, greaterThan(0));
+    await show(reduced: true);
+    await tester.pump(const Duration(seconds: 2));
+    expect(rotation.value, angle);
+    await show(playing: false);
+    await tester.pump(const Duration(seconds: 2));
+    expect(rotation.value, angle);
+    await show();
+    await tester.pump(const Duration(seconds: 1));
+    expect(rotation.value, greaterThan(angle));
   });
 
   testWidgets("大字号下队列容纳标题和作者并定位当前行", (tester) async {

@@ -21,58 +21,37 @@ class VinylRecordWidget extends StatefulWidget {
 
 class VinylRecordWidgetState extends State<VinylRecordWidget>
     with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _rotationAnimation;
-  ImageProvider? _imageProvider;
-  ImageStream? _imageStream;
-  ImageInfo? _imageInfo;
-  late ImageStreamListener _imageStreamListener;
+  late final _rotation = AnimationController(
+    duration: const Duration(seconds: 30),
+    vsync: this,
+  );
 
   @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(seconds: 30),
-      vsync: this,
-    );
-
-    _rotationAnimation = CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.linear,
-    );
-
-    if (widget.isPlaying) {
-      _animationController.repeat(reverse: false);
-    }
-
-    _imageProvider = widget.imageProvider;
-    _imageInfo = widget.imageInfo;
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncRotation();
   }
 
   @override
   void didUpdateWidget(covariant VinylRecordWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isPlaying != oldWidget.isPlaying) {
-      if (widget.isPlaying) {
-        _animationController.repeat();
-      } else {
-        _animationController.stop();
-      }
-    }
+    if (oldWidget.isPlaying != widget.isPlaying) _syncRotation();
+  }
 
-    if (widget.imageInfo != oldWidget.imageInfo) {
-      _imageInfo = widget.imageInfo;
-    }
-
-    if (widget.imageProvider != oldWidget.imageProvider) {
-      _imageProvider = widget.imageProvider;
+  void _syncRotation() {
+    final rotate = widget.isPlaying &&
+        TickerMode.of(context) &&
+        !MediaQuery.disableAnimationsOf(context);
+    if (rotate && !_rotation.isAnimating) {
+      _rotation.repeat();
+    } else if (!rotate && _rotation.isAnimating) {
+      _rotation.stop();
     }
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
-    _imageStream?.removeListener(_imageStreamListener);
+    _rotation.dispose();
     super.dispose();
   }
 
@@ -106,15 +85,16 @@ class VinylRecordWidgetState extends State<VinylRecordWidget>
                       ),
                     ],
                     borderRadius: const BorderRadius.all(Radius.circular(4)),
-                    image: _imageInfo != null
-                        ? DecorationImage(
-                            image: _imageProvider!,
-                            fit: BoxFit.cover,
-                          )
-                        : DecorationImage(
-                            image: AssetImage(widget.errorCoverUrl),
-                            fit: BoxFit.cover,
-                          ),
+                    image:
+                        widget.imageProvider != null && widget.imageInfo != null
+                            ? DecorationImage(
+                                image: widget.imageProvider!,
+                                fit: BoxFit.cover,
+                              )
+                            : DecorationImage(
+                                image: AssetImage(widget.errorCoverUrl),
+                                fit: BoxFit.cover,
+                              ),
                   ),
                 ),
                 ClipRect(
@@ -122,15 +102,16 @@ class VinylRecordWidgetState extends State<VinylRecordWidget>
                     alignment: Alignment.centerRight,
                     widthFactor: 0.5,
                     child: RotationTransition(
-                      turns: _rotationAnimation,
-                      child: CustomPaint(
+                      turns: _rotation,
+                      child: RepaintBoundary(
+                          child: CustomPaint(
                         size: Size(recordSize, recordSize),
                         painter: VinylRecordPainter(
-                          imageInfo: _imageInfo,
+                          imageInfo: widget.imageInfo,
                           albumCoverSize: Size(containerSize, containerSize),
                           localImagePath: widget.errorCoverUrl,
                         ),
-                      ),
+                      )),
                     ),
                   ),
                 )
