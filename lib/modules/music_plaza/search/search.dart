@@ -58,6 +58,7 @@ class SearchViewState extends State<SearchView> {
   bool _loading = false;
   bool _searchFailed = false;
   int _playRequest = 0;
+  int _seasonRequest = 0;
   final List<SearchItem> _searchItemList = [];
   List<String> _searchHistory = [];
   List<String> _searchSuggest = [];
@@ -193,23 +194,17 @@ class SearchViewState extends State<SearchView> {
             });
           },
         ),
-        if (detail.isSeasonDisplay)
+        if (detail.isSeasonDisplay && detail.ugcSeason != null)
           SheetItem(
             title: "查看所在合集",
             icon: Icons.video_library_outlined,
-            onPressed: () async {
-              final result = await getVideoDetail(detail);
-              viewCollectionList(result);
-            },
+            onPressed: () => _openSeason(detail, collect: false),
           ),
-        if (detail.isSeasonDisplay)
+        if (detail.isSeasonDisplay && detail.ugcSeason != null)
           SheetItem(
             title: "收藏所在合集",
             icon: Icons.library_add_outlined,
-            onPressed: () async {
-              final result = await getVideoDetail(detail);
-              await collectionList(result);
-            },
+            onPressed: () => _openSeason(detail, collect: true),
           ),
       ],
       header: SheetHeader(
@@ -261,13 +256,25 @@ class SearchViewState extends State<SearchView> {
     );
   }
 
-  /// 获取视频所在合集
-  Future<SearchItem> getVideoDetail(SearchItem detail) async {
+  Future<void> _openSeason(SearchItem detail, {required bool collect}) async {
     final season = detail.ugcSeason;
-    if (season == null) return detail;
-    final collection = await service.searchSeason(season.mid, season.seasonId);
-    if (collection == null) return detail;
-    final result = SearchItem(
+    if (season == null) return;
+    final request = ++_seasonRequest;
+    final generation = _generation;
+    bool active() =>
+        mounted &&
+        request == _seasonRequest &&
+        generation == _generation &&
+        ModalRoute.of(context)?.isCurrent == true;
+    try {
+      final collection =
+          await service.searchSeason(season.mid, season.seasonId);
+      if (!active()) return;
+      if (collection == null) {
+        BotToast.showText(text: "合集加载失败，请重试");
+        return;
+      }
+      final result = SearchItem(
         id: "${collection.meta.seasonId}",
         cover: collection.meta.cover,
         name: collection.meta.name,
@@ -275,9 +282,16 @@ class SearchViewState extends State<SearchView> {
         author: "",
         origin: OriginType.bili,
         isSeasonDisplay: false,
-        musicList: collection.musicList);
-
-    return result;
+        musicList: collection.musicList,
+      );
+      if (collect) {
+        await collectionList(result);
+      } else {
+        viewCollectionList(result);
+      }
+    } catch (_) {
+      if (active()) BotToast.showText(text: "合集加载失败，请重试");
+    }
   }
 
   /// 查看合集详情
@@ -311,8 +325,15 @@ class SearchViewState extends State<SearchView> {
     }
 
     EasyLoading.show(maskType: EasyLoadingMaskType.black);
-    final added = await addToMyMusic(list);
-    EasyLoading.dismiss();
+    final int added;
+    try {
+      added = await addToMyMusic(list);
+    } catch (_) {
+      if (mounted) BotToast.showText(text: "收藏失败，请重试");
+      return;
+    } finally {
+      EasyLoading.dismiss();
+    }
 
     BotToast.showText(
       text: added > 0 ? "已收藏 $added 首" : "这些曲目已收藏",
