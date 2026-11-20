@@ -53,6 +53,11 @@ void main() {
   group("时间转换", () {
     test("mm:ss 转秒", () {
       expect(duration2seconds("03:20"), 200);
+      expect(duration2seconds("1:02:03"), 3723);
+      expect(duration2seconds("62:03"), 3723);
+      expect(duration2seconds(" 3723 "), 3723);
+      expect(duration2seconds("1:60:03"), 0);
+      expect(duration2seconds("abc:12"), 0);
       expect(duration2seconds("00:00"), 0);
     });
 

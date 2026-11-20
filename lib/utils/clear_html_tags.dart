@@ -30,21 +30,20 @@ String clearHtmlTags(String htmlText) {
       .replaceAll("【", "");
 }
 
-/// 将 mm:ss 格式的时间转换为 秒
+/// Parses seconds, minutes:seconds, or hours:minutes:seconds from video metadata.
 int duration2seconds(String durationStr) {
-  if (durationStr.isEmpty) {
-    return 0;
+  final parts = durationStr.trim().split(":");
+  if (parts.length > 3) return 0;
+  var total = 0;
+  for (var i = 0; i < parts.length; i++) {
+    final value = int.tryParse(parts[i], radix: 10);
+    if (value == null || value < 0 || (i > 0 && value >= 60)) return 0;
+    total = total * 60 + value;
   }
-  List<String> parts = durationStr.split(":");
-  if (parts.length < 2) {
-    return 0;
-  }
-  int minutes = int.tryParse(parts[0]) ?? 0;
-  int seconds = int.tryParse(parts[1]) ?? 0;
-  return minutes * 60 + seconds;
+  return total;
 }
 
-/// 将 mm:ss 格式的时间转换为 秒
+/// Formats playback time in minutes and seconds.
 String seconds2duration(int seconds) {
   int minutes = (seconds / 60).floor();
   int remainingSeconds = seconds % 60;
