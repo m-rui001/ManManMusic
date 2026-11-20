@@ -1,22 +1,17 @@
+import "package:bobomusic/origin_sdk/bili/utils.dart";
 import "package:bobomusic/components/continuous_rounding.dart";
 import "package:bobomusic/constants/app_info.dart";
 import "package:bobomusic/modules/music_order/track_metadata.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:flutter/material.dart";
 
-ImageProvider? musicArtwork(String cover) {
-  final value = cover.trim();
-  final uri = Uri.tryParse(value.startsWith("//") ? "https:$value" : value);
-  if (uri == null || !uri.hasAuthority) return null;
-  if (uri.scheme != "http" && uri.scheme != "https") return null;
-
-  final secure = uri.replace(scheme: "https");
-  return NetworkImage(
-    secure.toString(),
-    headers: secure.host.endsWith(".hdslb.com")
-        ? const {"Referer": "https://www.bilibili.com/"}
-        : null,
-  );
+NetworkImage? musicArtwork(String cover) {
+  final url = firstBiliCover([cover]);
+  if (url.isEmpty) return null;
+  return NetworkImage(url,
+      headers: Uri.parse(url).host.endsWith(".hdslb.com")
+          ? const {"Referer": "https://www.bilibili.com/"}
+          : null);
 }
 
 class TrackArtwork extends StatelessWidget {

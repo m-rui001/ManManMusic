@@ -2,6 +2,9 @@
 
 import "dart:async";
 
+import "package:bobomusic/modules/player/artwork.dart";
+import "package:bobomusic/constants/app_info.dart";
+
 import "package:bobomusic/components/pressable.dart";
 import "package:bobomusic/components/sheet/bottom_sheet.dart";
 import "package:bobomusic/components/search_field.dart";
@@ -551,12 +554,11 @@ class SearchViewState extends State<SearchView> {
           );
         }
         final item = _searchItemList[index];
-        String cover = item.cover;
-        String name = item.name;
-        final List<String> tags = [item.origin.name, item.author];
-        if (cover.startsWith("//")) {
-          cover = "http:$cover";
-        }
+        final cover = musicArtwork(item.cover);
+        final pixels = (50 * MediaQuery.devicePixelRatioOf(context)).round();
+        final placeholder =
+            Image.asset(appLogoAsset, fit: BoxFit.cover, cacheWidth: pixels);
+        final tags = [item.origin.name, item.author];
 
         return Pressable(
           pressScale: .985,
@@ -568,15 +570,21 @@ class SearchViewState extends State<SearchView> {
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             leading: ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: CachedNetworkImage(
-                imageUrl: cover,
-                width: 50,
-                height: 50,
-                fit: BoxFit.cover,
-              ),
+              child: SizedBox.square(
+                  dimension: 50,
+                  child: cover == null
+                      ? placeholder
+                      : CachedNetworkImage(
+                          imageUrl: cover.url,
+                          httpHeaders: cover.headers,
+                          memCacheWidth: pixels,
+                          placeholder: (_, __) => placeholder,
+                          errorWidget: (_, __, ___) => placeholder,
+                          fit: BoxFit.cover,
+                        )),
             ),
             title: Text(
-              name,
+              clearHtmlTags(item.name),
               overflow: TextOverflow.ellipsis,
               maxLines: 1,
             ),
