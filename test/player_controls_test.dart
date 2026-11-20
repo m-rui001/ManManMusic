@@ -227,6 +227,14 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  test("歌词行跳转抵消显示偏移，并限制在可播放范围", () {
+    const duration = Duration(seconds: 100);
+    expect(lyricSeekPosition(25000, 500, duration).inMilliseconds, 24500);
+    expect(lyricSeekPosition(25000, -500, null).inMilliseconds, 25500);
+    expect(lyricSeekPosition(0, 500, duration), Duration.zero);
+    expect(lyricSeekPosition(99900, -500, duration), duration);
+  });
+
   testWidgets("歌词在暂停时跟随真实跳转位置", (tester) async {
     final positions = StreamController<Duration>();
     final player = LyricTestPlayer(positions.stream);

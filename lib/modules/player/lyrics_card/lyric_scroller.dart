@@ -16,6 +16,14 @@ import "package:flutter_lyric/lyrics_reader_model.dart";
 import "package:flutter_lyric/lyrics_reader_widget.dart";
 import "package:provider/provider.dart";
 
+/// Translate a displayed lyric timestamp back to the audio timeline.
+Duration lyricSeekPosition(int lineMs, int offsetMs, Duration? duration) {
+  final position = math.max(0, lineMs - offsetMs);
+  final limit = duration?.inMilliseconds ?? 0;
+  return Duration(
+      milliseconds: limit > 0 ? math.min(position, limit) : position);
+}
+
 /// 播放页的歌词模式
 ///
 /// 歌词来自这条视频自己的 B 站字幕，切歌后静默自动匹配，
@@ -239,8 +247,7 @@ class _LyricsScrollerState extends State<LyricsScroller> {
     int startTime,
     VoidCallback cancel,
   ) {
-    final stamp = Duration(milliseconds: startTime);
-    String two(int value) => value.toString().padLeft(2, "0");
+    final stamp = lyricSeekPosition(startTime, _offset, player.duration);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 22),
       child: Row(
@@ -253,16 +260,20 @@ class _LyricsScrollerState extends State<LyricsScroller> {
               foregroundColor: colors.onSurface,
               minimumSize: const Size.square(38),
             ),
-            onPressed: () {
+            onPressed: () async {
               AppHaptics.action();
               cancel();
-              player.seek(stamp);
+              try {
+                await player.seek(stamp);
+              } catch (_) {
+                if (mounted) BotToast.showText(text: "跳转失败，请稍后再试");
+              }
             },
             icon: const Icon(Icons.play_arrow_rounded),
           ),
           const SizedBox(width: 10),
           Text(
-            "${two(stamp.inMinutes)}:${two(stamp.inSeconds % 60)}",
+            seconds2duration(stamp.inSeconds),
             style: TextStyle(
               fontSize: 12,
               fontFeatures: const [FontFeature.tabularFigures()],
