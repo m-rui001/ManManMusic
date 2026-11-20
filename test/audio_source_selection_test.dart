@@ -78,6 +78,18 @@ void main() {
     await temporary.delete(recursive: true);
   });
 
+  test("本地播放源区分同名文件并识别同一文件的历史副本", () {
+    final first = music.copyWith(id: "", localPath: "/a/intro.mp3");
+    final second = first.copyWith(localPath: "/b/intro.mp3");
+    expect(playbackSourceKey(first), isNot(playbackSourceKey(second)));
+    expect(playbackSourceKey(first),
+        playbackSourceKey(first.copyWith(name: "新标题")));
+    expect(
+        playbackSourceKey(music),
+        isNot(playbackSourceKey(
+            music.copyWith(localPath: "/download/intro.mp3"))));
+  });
+
   test("账号获得无损后可以升级旧 AAC 缓存，失效时仍有旧 AAC 回退", () async {
     audioService.available = _upgraded;
     final candidates = await musicAudioCandidates(music).toList();

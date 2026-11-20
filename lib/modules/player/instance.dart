@@ -37,9 +37,8 @@ class BBPlayer {
   MusicItem? current;
   final List<MusicItem> playerList = [];
   List<MusicItem> collectionQueue = const [];
-  String? _loadedTrack;
+  PlaybackSourceKey? _loadedTrack;
   String sourceDescription = "";
-  static String _track(MusicItem item) => "${item.origin.value}:${item.id}";
   PlayerMode playerMode = PlayerMode.listLoop;
 
   /// 开始播放时的回调（用于记录历史播放）
@@ -92,11 +91,12 @@ class BBPlayer {
     if (selected == null) return;
 
     try {
-      final sameEntry = current?.id == selected.id &&
-          current?.origin == selected.origin &&
-          current?.orderName == selected.orderName &&
-          current?.playId == selected.playId;
-      if (!sameEntry || _loadedTrack != _track(selected)) {
+      final previous = current;
+      final sameEntry = previous != null &&
+          playbackSourceKey(previous) == playbackSourceKey(selected) &&
+          previous.orderName == selected.orderName &&
+          previous.playId == selected.playId;
+      if (!sameEntry || _loadedTrack != playbackSourceKey(selected)) {
         await _play(music: selected);
       } else if (isPlaying) {
         await audio.pause();
@@ -131,7 +131,7 @@ class BBPlayer {
       return;
     }
     if (!isCurrent()) return;
-    final changed = _loadedTrack != _track(music);
+    final changed = _loadedTrack != playbackSourceKey(music);
     if (changed) {
       await _load(music, isCurrent: isCurrent);
       if (!isCurrent()) return;
@@ -152,7 +152,8 @@ class BBPlayer {
     final music = current;
     if (music == null || audio.playing) return;
     try {
-      await _play(music: _loadedTrack == _track(music) ? null : music);
+      await _play(
+          music: _loadedTrack == playbackSourceKey(music) ? null : music);
     } on PlayerInterruptedException {
       return;
     } catch (error) {
@@ -397,7 +398,7 @@ class BBPlayer {
           continue;
         }
         if (!canLoad()) throw PlayerInterruptedException("歌曲已切换");
-        _loadedTrack = _track(music);
+        _loadedTrack = playbackSourceKey(music);
         sourceDescription = source.description;
         current = music;
         return;

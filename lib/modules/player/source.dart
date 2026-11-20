@@ -19,6 +19,11 @@ const _uuid = Uuid();
 
 String music2cacheKey(MusicItem music) => "${music.origin.value}-${music.id}";
 
+typedef PlaybackSourceKey = ({OriginType origin, String id, String localPath});
+
+PlaybackSourceKey playbackSourceKey(MusicItem music) =>
+    (origin: music.origin, id: music.id, localPath: music.localPath);
+
 typedef PlaybackSource = ({AudioSource audio, String description});
 
 class AudioCandidate {
