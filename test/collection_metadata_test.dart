@@ -11,6 +11,37 @@ import "package:flutter_test/flutter_test.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
 void main() {
+  test("搜索保留缺时长的视频并跳过不可播放条目", () {
+    final page = BiliSearchResponse.fromJson({
+      "data": {
+        "page": 1,
+        "numResults": 4,
+        "pagesize": 20,
+        "result": [
+          null,
+          {"type": "ketang"},
+          {"aid": 2, "title": "缺标识"},
+          {
+            "aid": 1,
+            "bvid": "BV123",
+            "title": "演出",
+            "is_season_display": 0,
+            "pages": [
+              null,
+              {},
+              {"cid": 3, "duration": "01:02:03"}
+            ]
+          }
+        ],
+      }
+    });
+    expect(page.data, hasLength(1));
+    expect(page.data.single.duration, 0);
+    final part = page.data.single.musicList!.single;
+    expect(part.name, "演出");
+    expect(part.duration, 3723);
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const video = {

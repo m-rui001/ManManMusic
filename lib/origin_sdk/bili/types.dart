@@ -38,6 +38,11 @@ class SpiData {
   }
 }
 
+int _durationSeconds(Object? value) {
+  if (value is num && value.isFinite && value > 0) return value.toInt();
+  return value is String ? duration2seconds(value) : 0;
+}
+
 /// 搜索结果
 class BiliSearchResponse extends SearchResponse {
   BiliSearchResponse({
@@ -47,12 +52,13 @@ class BiliSearchResponse extends SearchResponse {
     required super.data,
   });
   factory BiliSearchResponse.fromJson(Map<String, dynamic> json) {
-    var result = json["data"]["result"].toList();
-    List<BiliSearchItem> data = [];
-    for (var j in result) {
-      if (j["type"] != "ketang") {
-        data.add(BiliSearchItem.fromJson(j));
-      }
+    final result = json["data"]["result"] as List? ?? const [];
+    final data = <BiliSearchItem>[];
+    for (final row in result.whereType<Map<String, dynamic>>()) {
+      final bvid = row["bvid"];
+      if (row["type"] == "ketang" || bvid is! String || bvid.isEmpty ||
+          row["aid"] == null || row["title"] is! String) continue;
+      data.add(BiliSearchItem.fromJson(row));
     }
     return BiliSearchResponse(
       current: json["data"]["page"],
@@ -91,7 +97,8 @@ class BiliSearchItem extends SearchItem {
     final pages = json["pages"];
     if (pages is List) {
       final owner = json["owner"];
-      for (var j in pages) {
+      for (final j in pages.whereType<Map>()) {
+        if (j["cid"] == null) continue;
         final mid = BiliId(
           aid: aid,
           bvid: bvid,
@@ -105,9 +112,9 @@ class BiliSearchItem extends SearchItem {
             json["pic"],
             if (season is Map) season["cover"],
           ]),
-          name: j["part"],
+          name: j["part"] is String ? j["part"] : title,
           collectionName: pages.length > 1 ? title : "",
-          duration: j["duration"],
+          duration: _durationSeconds(j["duration"]),
           author: owner is Map ? "${owner["name"] ?? ""}" : "",
           origin: OriginType.bili,
         );
@@ -127,14 +134,12 @@ class BiliSearchItem extends SearchItem {
       id: id,
       cover: firstBiliCover([json["pic"]]),
       name: title,
-      duration: json["duration"] is String
-        ? duration2seconds(json["duration"])
-        : json["duration"],
+      duration: _durationSeconds(json["duration"]),
       author: json["author"] ?? "",
       origin: OriginType.bili,
       type: type,
       musicList: musicList,
-      isSeasonDisplay: json["is_season_display"] ?? false,
+      isSeasonDisplay: json["is_season_display"] == true || json["is_season_display"] == 1,
       ugcSeason: season is Map && season["mid"] is int && season["id"] is int
           ? UgcSeason(
               mid: season["mid"],
@@ -171,9 +176,7 @@ class BiliSearchSeasonItem {
           cover: firstBiliCover([archive["pic"], archive["cover"], jsonMeta["cover"]]),
           name: clearHtmlTags(archive["title"]),
           collectionName: collectionName,
-          duration: archive["duration"] is String
-            ? duration2seconds(archive["duration"])
-            : archive["duration"],
+          duration: _durationSeconds(archive["duration"]),
           author: archive["author"] ?? "",
           origin: OriginType.bili,
         )
