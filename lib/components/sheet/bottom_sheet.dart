@@ -64,19 +64,13 @@ class _ActionSheet extends StatelessWidget {
     final maxHeight = MediaQuery.of(context).size.height * .72;
     return ConstrainedBox(
       constraints: BoxConstraints(maxHeight: maxHeight),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: ListView(
+        shrinkWrap: true,
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom + 8),
         children: [
           if (header != null) _header(context, header!),
-          Flexible(
-            child: ListView(
-              shrinkWrap: true,
-              padding: const EdgeInsets.only(bottom: 8),
-              children: [
-                for (final item in items) _row(context, item, colors, theme),
-              ],
-            ),
-          ),
+          for (final item in items) _row(context, item, colors, theme),
         ],
       ),
     );

@@ -49,11 +49,11 @@ class _PressableState extends State<Pressable> {
   }
 
   void _up(PointerEvent _) {
-    if (_pressed) setState(() => _pressed = false);
+    if (mounted && _pressed) setState(() => _pressed = false);
   }
 
   void _cancel(PointerCancelEvent _) {
-    if (_pressed) setState(() => _pressed = false);
+    if (mounted && _pressed) setState(() => _pressed = false);
   }
 
   @override

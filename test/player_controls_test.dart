@@ -4,6 +4,7 @@ import "dart:ui" show SemanticsAction;
 import "package:bobomusic/constants/theme_color.dart";
 import "package:bobomusic/modules/player/player_card/vinyl_record.dart";
 import "package:bobomusic/components/pressable.dart";
+import "package:bobomusic/components/sheet/bottom_sheet.dart";
 import "package:bobomusic/modules/player/const.dart";
 import "package:bobomusic/modules/player/utils.dart";
 import "package:bobomusic/modules/player/model.dart";
@@ -67,6 +68,39 @@ void main() {
     expect(queueEntryIndex([a, b], b.copyWith()), 1);
     expect(queueEntryIndex([a], b), -1);
     expect(queueEntryIndex([a], null), -1);
+  });
+
+  testWidgets("横屏操作菜单能滚过标题并在系统导航栏上方点选末项", (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(640, 300);
+    tester.view.padding = const FakeViewPadding(bottom: 24);
+    addTearDown(tester.view.reset);
+    int? selected;
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: Builder(
+                builder: (context) => TextButton(
+                    onPressed: () => openBottomSheet(
+                          context,
+                          List.generate(
+                              12,
+                              (index) => SheetItem(
+                                  title: "操作 $index",
+                                  onPressed: () => selected = index)),
+                          header:
+                              const SheetHeader(title: "歌曲", subtitle: "作者"),
+                        ),
+                    child: const Text("打开"))))));
+    await tester.tap(find.text("打开"));
+    await tester.pumpAndSettle();
+    await tester.fling(find.byType(ListView), const Offset(0, -600), 1200);
+    await tester.pumpAndSettle();
+    expect(find.text("歌曲").hitTestable(), findsNothing);
+    expect(tester.getBottomLeft(find.text("操作 11")).dy, lessThan(276));
+    await tester.tap(find.text("操作 11"));
+    await tester.pumpAndSettle();
+    expect(selected, 11);
+    expect(find.byType(BottomSheet), findsNothing);
   });
 
   testWidgets("黑胶唱片暂停和减少动态效果时保持角度", (tester) async {
