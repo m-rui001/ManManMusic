@@ -193,17 +193,18 @@ class _ActionSheet extends StatelessWidget {
             clipBehavior: Clip.antiAlias,
             child: Pressable(
               pressScale: .98,
-              onTap: enabled
-                  ? () {
-                      Navigator.of(context).pop();
-                      item.onPressed!();
-                    }
-                  : null,
-              builder: (context, pressed) => AnimatedContainer(
-                duration: const Duration(milliseconds: 120),
-                color: pressed
-                    ? colors.onSurface.withValues(alpha: .07)
-                    : Colors.transparent,
+              enabled: enabled,
+              child: InkWell(
+                customBorder: shape,
+                splashFactory: NoSplash.splashFactory,
+                highlightColor: colors.onSurface.withValues(alpha: .07),
+                focusColor: colors.onSurface.withValues(alpha: .14),
+                onTap: enabled
+                    ? () {
+                        Navigator.of(context).pop();
+                        item.onPressed!();
+                      }
+                    : null,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(minHeight: 56),
                   child:

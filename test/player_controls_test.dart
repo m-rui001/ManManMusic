@@ -70,6 +70,34 @@ void main() {
     expect(queueEntryIndex([a], null), -1);
   });
 
+  testWidgets("操作菜单键盘焦点跳过禁用项并可执行", (tester) async {
+    int? selected;
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: Builder(
+                builder: (context) => TextButton(
+                    onPressed: () => openBottomSheet(context, [
+                          SheetItem(
+                              title: "第一项", onPressed: () => selected = 1),
+                          SheetItem(title: "禁用项"),
+                          SheetItem(
+                              title: "第三项", onPressed: () => selected = 3),
+                        ]),
+                    child: const Text("打开"))))));
+    await tester.tap(find.text("打开"));
+    await tester.pumpAndSettle();
+    final first = tester.element(find.text("第一项"));
+    Focus.of(first).requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    expect(Focus.of(tester.element(find.text("第三项"))).hasPrimaryFocus, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(selected, 3);
+    expect(find.byType(BottomSheet), findsNothing);
+  });
+
   testWidgets("横屏操作菜单能滚过标题并在系统导航栏上方点选末项", (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(640, 300);
