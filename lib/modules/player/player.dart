@@ -28,6 +28,8 @@ class PlayerView extends StatefulWidget {
 class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
   final GlobalKey _barKey = GlobalKey();
   AnimationController? _unfold;
+  OverlayEntry? _preview;
+  Rect? _source;
   int? _pointer;
   double _dragStartX = 0;
   double _dragStartY = 0;
@@ -40,11 +42,14 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _preview?.remove();
+    _preview?.dispose();
     _unfold?.dispose();
     super.dispose();
   }
 
   void _onMiniPointerDown(PointerDownEvent event) {
+    if (_pointer != null || _unfold != null) return;
     _pointer = event.pointer;
     _dragStartX = event.position.dx;
     _dragStartY = event.position.dy;
@@ -77,16 +82,22 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
     if (!_routeOpenedByDrag) {
       _viewportHeight = MediaQuery.sizeOf(context).height;
       _unfold = AnimationController(
-        vsync: this,
+        vsync: Navigator.of(context),
         duration: AppMotion.unfold,
         reverseDuration: AppMotion.medium,
       );
       _routeOpenedByDrag = true;
-      showPlayerCard(
-        context,
-        controller: _unfold,
-        sourceRect: _rectForKey(_barKey),
-      );
+      _source = _rectForKey(_barKey);
+      final animation = _unfold!;
+      _preview = OverlayEntry(
+          builder: (_) => IgnorePointer(
+                child: _UnfoldTransition(
+                    animation: animation,
+                    source: _source,
+                    interactive: true,
+                    child: PlayerCard(transitionController: animation)),
+              ));
+      Navigator.of(context).overlay!.insert(_preview!);
     }
     _unfold?.value = (_dragDistance / _viewportHeight).clamp(0.0, .94);
   }
@@ -95,34 +106,43 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
     if (event.pointer != _pointer) return;
     _pointer = null;
     final controller = _unfold;
-    _unfold = null;
-    if (controller == null) return;
-    if (_routeOpenedByDrag) {
-      controller.fling(velocity: 1.1);
-    } else {
-      controller.dispose();
+    if (controller != null) _dismissPreview(controller);
+  }
+
+  void _removePreview() {
+    _preview?.remove();
+    _preview?.dispose();
+    _preview = null;
+  }
+
+  Future<void> _dismissPreview(AnimationController controller) async {
+    try {
+      await controller.reverse().orCancel;
+    } on TickerCanceled {
+      return;
     }
+    _removePreview();
+    _unfold = null;
+    controller.dispose();
   }
 
   void _onMiniPointerEnd(PointerEvent event) {
     if (event.pointer != _pointer) return;
     _pointer = null;
     final controller = _unfold;
-    _unfold = null;
     if (controller == null) return;
-    if (!_routeOpenedByDrag) {
-      controller.dispose();
-      return;
-    }
-
-    final shouldExpand =
-        _dragDistance > _viewportHeight * .16 || _dragVelocity < -850;
-    if (shouldExpand) {
-      controller.fling(velocity: _dragVelocity < -850 ? 1.8 : 1.1);
+    if (_dragDistance > _viewportHeight * .16 || _dragVelocity < -850) {
+      _removePreview();
+      _unfold = null;
+      if (showPlayerCard(context,
+              controller: controller, sourceRect: _source) ==
+          null) {
+        controller.dispose();
+      } else {
+        controller.forward();
+      }
     } else {
-      controller.reverse().then((_) {
-        if (mounted) Navigator.of(context).pop();
-      });
+      _dismissPreview(controller);
     }
   }
 
@@ -338,7 +358,7 @@ class PlayButton extends StatelessWidget {
               onPressed: toggle,
               style: IconButton.styleFrom(
                 minimumSize: const Size(0, 68),
-                shape: const StadiumBorder(),
+                shape: const ContinuousRounding(22),
                 backgroundColor: colors.onSurface,
                 foregroundColor: colors.surface,
               ),
@@ -531,13 +551,11 @@ Future<void>? showPlayerCard(
         reverseDuration: AppMotion.medium,
       );
   AppHaptics.open();
-  return navigator
-      .push(_PlayerCardRoute(
-        controller: animation,
-        source: source,
-        dragDriven: controller != null,
-      ))
-      .whenComplete(animation.dispose);
+  return navigator.push(_PlayerCardRoute(
+    controller: animation,
+    source: source,
+    dragDriven: controller != null,
+  ));
 }
 
 class _PlayerCardRoute extends PageRouteBuilder<void> {
@@ -558,9 +576,7 @@ class _PlayerCardRoute extends PageRouteBuilder<void> {
             interactive: dragDriven,
             child: child,
           ),
-        ) {
-    willDisposeAnimationController = false;
-  }
+        );
 
   @override
   final AnimationController controller;
@@ -630,8 +646,7 @@ class _UnfoldTransition extends StatelessWidget {
         final rect = from == null ? target : Rect.lerp(from, target, t)!;
         final radius = 42 + (36 - 42) * t;
         // 内容晚一点浮现，先让容器长到位，避免小窗口里塞满字
-        final opacity =
-            from == null ? animation.value : ((t - .18) / .82).clamp(0.0, 1.0);
+        final opacity = from == null ? animation.value : t;
         return Stack(
           fit: StackFit.expand,
           children: [

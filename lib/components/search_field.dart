@@ -35,7 +35,7 @@ class SearchField extends StatelessWidget {
       style: TextStyle(fontSize: 16, color: colors.onSurface),
       decoration: InputDecoration(
         filled: true,
-        fillColor: colors.onSurface.withValues(alpha: .06),
+        fillColor: Colors.transparent,
         constraints: const BoxConstraints(minHeight: 56, maxHeight: 56),
         prefixIcon: Icon(Icons.search_rounded,
             size: 26, color: colors.onSurfaceVariant),
@@ -97,7 +97,14 @@ class SearchOverlayScaffold extends StatelessWidget {
         filter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: color.withValues(alpha: .72),
+            gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  color.withValues(alpha: .65),
+                  color.withValues(alpha: .32)
+                ]),
+            border: Border.all(color: Colors.white.withValues(alpha: .18)),
             borderRadius: borderRadius,
           ),
           child: child,

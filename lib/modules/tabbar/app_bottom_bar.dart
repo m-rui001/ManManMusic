@@ -1,3 +1,4 @@
+import "dart:ui" as ui;
 import "package:bobomusic/components/continuous_rounding.dart";
 import "package:flutter/material.dart";
 
@@ -37,46 +38,51 @@ class AppBottomBar extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 1, 14, 5),
         child: Material(
-          color: colors.surfaceContainerHigh,
+          color: Colors.transparent,
           shape: const ContinuousRounding(40),
           clipBehavior: Clip.antiAlias,
-          child: SizedBox(
-            height: 62,
-            child: LayoutBuilder(builder: (context, constraints) {
-              const inset = 5.0;
-              final count = menus.length;
-              final slot = (constraints.maxWidth - inset * 2) / count;
-              final progress = (page ?? currentIndex.toDouble())
-                  .clamp(0.0, (count - 1).toDouble());
-              return Stack(
-                children: [
-                  Positioned(
-                    left: inset + slot * progress,
-                    top: inset,
-                    bottom: inset,
-                    width: slot,
-                    child: DecoratedBox(
-                      decoration: ShapeDecoration(
-                        color: colors.secondaryContainer,
-                        shape: const ContinuousRounding(27),
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(inset),
-                    child: Row(
-                      children: [
-                        for (var i = 0; i < count; i++)
-                          Expanded(
-                            child: _destination(context, menus[i], i, progress),
+          child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: ColoredBox(
+                  color: colors.surfaceContainerHigh.withValues(alpha: .64),
+                  child: SizedBox(
+                    height: 58,
+                    child: LayoutBuilder(builder: (context, constraints) {
+                      const inset = 5.0;
+                      final count = menus.length;
+                      final slot = (constraints.maxWidth - inset * 2) / count;
+                      final progress = (page ?? currentIndex.toDouble())
+                          .clamp(0.0, (count - 1).toDouble());
+                      return Stack(
+                        children: [
+                          Positioned(
+                            left: inset + slot * progress,
+                            top: inset,
+                            bottom: inset,
+                            width: slot,
+                            child: DecoratedBox(
+                              decoration: ShapeDecoration(
+                                color: colors.onSurface.withValues(alpha: .10),
+                                shape: const ContinuousRounding(27),
+                              ),
+                            ),
                           ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-            }),
-          ),
+                          Padding(
+                            padding: const EdgeInsets.all(inset),
+                            child: Row(
+                              children: [
+                                for (var i = 0; i < count; i++)
+                                  Expanded(
+                                    child: _destination(
+                                        context, menus[i], i, progress),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    }),
+                  ))),
         ),
       ),
     );
@@ -96,6 +102,7 @@ class AppBottomBar extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
+      label: menu.label,
       child: InkWell(
         customBorder: shape,
         onTap: () => onItemTap(index),
@@ -123,16 +130,6 @@ class AppBottomBar extends StatelessWidget {
                       ),
                     ],
                   ),
-                ),
-              ),
-              const SizedBox(height: 1),
-              Text(
-                menu.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: ink,
-                  fontWeight: active > .55 ? FontWeight.w700 : FontWeight.w500,
                 ),
               ),
             ],

@@ -17,7 +17,6 @@ import "package:bobomusic/modules/music_order/track_metadata.dart";
 import "package:bobomusic/modules/player/artwork.dart";
 import "package:bobomusic/modules/player/audio_options.dart";
 import "package:bobomusic/modules/player/lyrics_card/lyric_scroller.dart";
-import "package:bobomusic/modules/player/player_card/backdrop.dart";
 import "package:bobomusic/modules/player/player_card/progress.dart";
 import "package:bobomusic/modules/player/player_card/vinyl_record.dart";
 import "package:bobomusic/modules/player/utils.dart";
@@ -298,32 +297,8 @@ class PlayerCardState extends State<PlayerCard> {
     final stage = _lyrics
         ? _buildLyricsStage(music)
         : LayoutBuilder(builder: (context, constraints) {
-            final mirrored = !wide && !_vinyl;
-            final gap = mirrored ? 6.0 : 0.0;
-            final reflectionHeight =
-                mirrored ? (constraints.maxHeight * .17).clamp(0.0, 58.0) : 0.0;
-            final side = math
-                .min(constraints.maxWidth,
-                    constraints.maxHeight - reflectionHeight - gap)
-                .clamp(0.0, 484.0);
-            return GestureDetector(
-              onTap: _toggleStage,
-              behavior: HitTestBehavior.opaque,
-              child: Column(
-                children: [
-                  Expanded(child: _buildArtwork(player, side)),
-                  if (reflectionHeight > 0) ...[
-                    SizedBox(height: gap),
-                    ArtworkReflection(
-                      provider: _imageProvider,
-                      width: side,
-                      height: reflectionHeight,
-                      fallback: const SizedBox.shrink(),
-                    ),
-                  ],
-                ],
-              ),
-            );
+            final side = math.min(constraints.maxWidth, constraints.maxHeight);
+            return Center(child: _buildArtwork(player, side));
           });
     return GestureDetector(
       onVerticalDragUpdate: (details) {
@@ -363,22 +338,7 @@ class PlayerCardState extends State<PlayerCard> {
   }
 
   Widget _buildLyricsStage(MusicItem music) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-          child: Tooltip(
-            message: "回到封面",
-            child: GestureDetector(
-              onTap: _toggleStage,
-              child: TrackArtwork(music: music, size: 46, radius: 12),
-            ),
-          ),
-        ),
-        const Expanded(child: LyricsScroller()),
-      ],
-    );
+    return const LyricsScroller();
   }
 
   Widget _buildArtwork(PlayerModel player, double size) {
@@ -435,6 +395,10 @@ class PlayerCardState extends State<PlayerCard> {
     final colors = theme.colorScheme;
     return Row(
       children: [
+        if (_lyrics) ...[
+          TrackArtwork(music: music, size: 46, radius: 9),
+          const SizedBox(width: 10)
+        ],
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -443,9 +407,12 @@ class PlayerCardState extends State<PlayerCard> {
                 onLongPress: () => copyTrackName(music),
                 child: Text(
                   clearHtmlTags(music.name),
-                  maxLines: 2,
+                  maxLines: _lyrics ? 1 : 2,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.headlineSmall?.copyWith(
+                  style: (_lyrics
+                          ? theme.textTheme.titleMedium
+                          : theme.textTheme.headlineSmall)
+                      ?.copyWith(
                     color: colors.onSurface,
                     fontWeight: FontWeight.w700,
                     height: 1.13,

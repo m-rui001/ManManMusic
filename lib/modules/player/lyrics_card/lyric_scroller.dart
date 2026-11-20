@@ -174,7 +174,7 @@ class _LyricsScrollerState extends State<LyricsScroller> {
                 builder: (context, snapshot) => KeyedSubtree(
                   key: ValueKey(lyrics),
                   child: LyricsReader(
-                    padding: const EdgeInsets.symmetric(horizontal: 26),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
                     model: model,
                     position: math.max(
                       0,
@@ -203,16 +203,10 @@ class _LyricsScrollerState extends State<LyricsScroller> {
                       TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
                 ),
               const Spacer(),
-              TextButton.icon(
+              IconButton.filledTonal(
+                tooltip: "歌词设置",
                 onPressed: () => _openOptions(music),
-                icon: const Icon(Icons.tune_rounded, size: 16),
-                label: const Text("歌词", style: TextStyle(fontSize: 12)),
-                style: TextButton.styleFrom(
-                  foregroundColor: colors.onSurfaceVariant,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  minimumSize: const Size(0, 34),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
+                icon: const Icon(Icons.tune_rounded, size: 18),
               ),
             ],
           ),
@@ -324,9 +318,9 @@ class _LyricStyle extends UINetease {
   _LyricStyle({required this.main, required this.highlightColor})
       : super(
           defaultSize: 28,
-          otherMainSize: 22,
+          otherMainSize: 27,
           defaultExtSize: 15,
-          bias: .34,
+          bias: .24,
           lineGap: 24,
           inlineGap: 18,
           lyricAlign: LyricAlign.LEFT,

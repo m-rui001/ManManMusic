@@ -290,9 +290,16 @@ void main() {
         .widget<PlayerCard>(find.byType(PlayerCard))
         .transitionController!;
     expect(transition.value, greaterThan(.05));
+    final first = transition.value;
+    await gesture.moveBy(const Offset(0, -96));
+    await tester.pump();
+    expect(transition.value, greaterThan(first));
     await gesture.up();
-    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
     expect(find.byType(PlayerCard), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded));
+    await tester.pumpAndSettle();
+    expect(find.byType(PlayerCard), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }
