@@ -297,6 +297,25 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
     expect(find.byType(PlayerCard), findsOneWidget);
+    final stage = find
+        .descendant(
+            of: find.byType(PlayerCard),
+            matching: find.byWidgetPredicate((widget) =>
+                widget is GestureDetector &&
+                widget.onVerticalDragUpdate != null))
+        .first;
+    final pull = await tester.startGesture(tester.getCenter(stage));
+    await pull.moveBy(const Offset(0, 30));
+    await pull.moveBy(const Offset(0, 80));
+    await tester.pump();
+    final lowered = transition.value;
+    expect(lowered, lessThan(1));
+    await pull.moveBy(const Offset(0, -40));
+    await tester.pump();
+    expect(transition.value, greaterThan(lowered));
+    await pull.cancel();
+    await tester.pumpAndSettle();
+    expect(transition.value, 1);
     await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded));
     await tester.pumpAndSettle();
     expect(find.byType(PlayerCard), findsNothing);

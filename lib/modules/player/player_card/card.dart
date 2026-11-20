@@ -302,19 +302,22 @@ class PlayerCardState extends State<PlayerCard> {
           });
     return GestureDetector(
       onVerticalDragUpdate: (details) {
-        if (details.delta.dy > 0) {
-          final controller = widget.transitionController;
-          if (controller != null) {
-            controller.value = (controller.value -
-                    details.delta.dy / MediaQuery.sizeOf(context).height)
-                .clamp(0.0, 1.0);
-          }
+        final controller = widget.transitionController;
+        if (controller == null) return;
+        controller.value = (controller.value -
+                details.delta.dy / MediaQuery.sizeOf(context).height)
+            .clamp(0.0, 1.0);
+      },
+      onVerticalDragCancel: () {
+        if (ModalRoute.of(context)?.isCurrent == true) {
+          widget.transitionController?.forward();
         }
       },
       onVerticalDragEnd: (details) {
         final controller = widget.transitionController;
         if (controller == null) return;
-        if (controller.value < .78 || (details.primaryVelocity ?? 0) > 500) {
+        final velocity = details.primaryVelocity ?? 0;
+        if (velocity > 500 || (velocity >= -500 && controller.value < .78)) {
           Navigator.of(context).maybePop();
         } else {
           controller.fling(velocity: 1.5);
