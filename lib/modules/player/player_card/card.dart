@@ -57,6 +57,7 @@ class PlayerCardState extends State<PlayerCard> {
   bool _vinyl = false;
   bool _lyrics = false;
   bool _savingLike = false;
+  int _favoriteRead = 0;
   static const _fallbackTone = Color(0xFF81ADA1);
   Color _artTone = _fallbackTone;
   final List<StreamSubscription?> _subscriptions = [];
@@ -88,11 +89,17 @@ class PlayerCardState extends State<PlayerCard> {
     final current = context.read<PlayerModel>().current;
     if (current == null) return;
 
-    final liked = await FavSyncService.isInMyMusic(current.id);
-    if (!mounted || !identical(current, context.read<PlayerModel>().current)) {
-      return;
+    final request = ++_favoriteRead;
+    try {
+      final liked = await FavSyncService.isInMyMusic(current.id);
+      if (mounted &&
+          request == _favoriteRead &&
+          identical(current, context.read<PlayerModel>().current)) {
+        setState(() => isLike = liked);
+      }
+    } catch (_) {
+      // A tap retries the lookup before changing the library.
     }
-    setState(() => isLike = liked);
   }
 
   Future<void> _initCover() async {
@@ -463,14 +470,15 @@ class PlayerCardState extends State<PlayerCard> {
   Future<void> _toggleLike(MusicItem music) async {
     AppHaptics.action();
     setState(() => _savingLike = true);
-    final like = !isLike;
     try {
+      final like = !await FavSyncService.isInMyMusic(music.id);
       if (like) {
         await FavSyncService.addMusic(music);
       } else {
         await FavSyncService.removeMusic(music.id);
       }
       if (mounted && identical(music, context.read<PlayerModel>().current)) {
+        ++_favoriteRead;
         setState(() => isLike = like);
       }
       eventBus.fire(RefreshMusicList(tabName: TableName.myMusic));

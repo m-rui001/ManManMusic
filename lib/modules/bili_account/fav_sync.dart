@@ -171,7 +171,10 @@ class FavSyncService {
 
   static Future<bool> isInMyMusic(String mid) async {
     if (mid.isEmpty) return false;
-    return (await existingMids()).contains(mid);
+    final db = await _db.database;
+    final rows = await db.query(TableName.myMusic,
+        columns: ["mid"], where: "mid = ?", whereArgs: [mid], limit: 1);
+    return rows.isNotEmpty;
   }
 
   /// 加一首进满满音乐（已存在就不重复加）
@@ -179,7 +182,7 @@ class FavSyncService {
   /// 返回 true 表示真的新加了。
   static Future<bool> addMusic(MusicItem music) async {
     if (music.id.isEmpty) return false;
-    if ((await existingMids()).contains(music.id)) return false;
+    if (await isInMyMusic(music.id)) return false;
 
     await _db.insert(
       TableName.myMusic,
