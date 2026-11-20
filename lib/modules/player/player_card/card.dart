@@ -27,7 +27,6 @@ import "package:bobomusic/utils/clear_html_tags.dart";
 import "package:bobomusic/utils/copy_track_name.dart";
 import "package:bobomusic/utils/haptics.dart";
 import "package:bot_toast/bot_toast.dart";
-import "package:flutter/cupertino.dart";
 import "package:flutter/material.dart";
 import "package:bobomusic/modules/player/player.dart";
 import "package:bobomusic/modules/player/model.dart";
@@ -256,7 +255,7 @@ class PlayerCardState extends State<PlayerCard> {
     setState(() => _lyrics = !_lyrics);
   }
 
-  Widget _moreActions(PlayerModel player, MusicItem music) {
+  Widget _moreActions(MusicItem music) {
     return Pressable(
       child: IconButton(
         tooltip: "更多播放选项",
@@ -282,7 +281,7 @@ class PlayerCardState extends State<PlayerCard> {
                 icon: Icons.smart_display_outlined,
                 onPressed: () {
                   final bv = RegExp(r"BV[0-9A-Za-z]+").firstMatch(music.id);
-                  if (bv != null) _launchBilibiliVideo(bv.group(0)!, player);
+                  if (bv != null) _launchBilibiliVideo(bv.group(0)!);
                 },
               ),
             SheetItem(
@@ -462,7 +461,7 @@ class PlayerCardState extends State<PlayerCard> {
           ),
         ),
         const SizedBox(width: 4),
-        _moreActions(player, music),
+        _moreActions(music),
       ],
     );
   }
@@ -490,57 +489,37 @@ class PlayerCardState extends State<PlayerCard> {
     }
   }
 
-  Future<void> _launchBilibiliVideo(String bvId, PlayerModel player) async {
+  Future<void> _launchBilibiliVideo(String bvId) async {
     try {
-      final res = await getLaunchBilibiliConfirm();
-
-      if (res) {
-        showDialog(
-            context: context,
-            builder: (ctx) => Container(
-                  alignment: Alignment.bottomCenter,
-                  child: CupertinoActionSheet(
-                    title: const Text("打开哔哩哔哩",
-                        style: TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.bold)),
-                    message: Container(
-                      margin: const EdgeInsets.only(top: 6),
-                      child: const Text("请授权始终打开，授权后需要重新操作",
-                          style: TextStyle(fontSize: 10)),
-                    ),
-                    actions: [
-                      CupertinoActionSheetAction(
-                          onPressed: () async {
-                            Navigator.of(context).pop();
-                            setLaunchBilibiliConfirm(confirm: false);
-                            final url = "bilibili://video/$bvId";
-                            await launchUrl(Uri.parse(url));
-                          },
-                          child: Text("确认且不再提示",
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: Theme.of(ctx).colorScheme.primary))),
-                    ],
-                    cancelButton: CupertinoActionSheetAction(
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                        },
-                        child: Text("取消",
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: Theme.of(ctx)
-                                    .colorScheme
-                                    .onSurfaceVariant))),
-                  ),
-                ));
-      } else {
-        final url = "bilibili://video/$bvId";
-        await launchUrl(Uri.parse(url));
+      final needsConfirmation = await getLaunchBilibiliConfirm();
+      if (!mounted) return;
+      if (needsConfirmation) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text("打开哔哩哔哩"),
+            content: const Text("将打开当前视频。未安装哔哩哔哩时，会使用网页。"),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text("取消")),
+              FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text("打开且不再提示")),
+            ],
+          ),
+        );
+        if (confirmed != true || !mounted) return;
       }
-    } catch (error) {
-      final webUrl =
-          "https://www.bilibili.com/video/$bvId/?spm_id_from=333.1007.tianma.1-2-2.click";
-      await launchUrl(Uri.parse(webUrl));
+      final opened = await openBilibiliVideo(
+          bvId, (uri) => launchUrl(uri, mode: LaunchMode.externalApplication));
+      if (!opened) {
+        if (mounted) BotToast.showText(text: "无法打开视频，请检查浏览器是否可用");
+        return;
+      }
+      if (needsConfirmation) await setLaunchBilibiliConfirm(confirm: false);
+    } catch (_) {
+      if (mounted) BotToast.showText(text: "打开视频时遇到问题");
     }
   }
 

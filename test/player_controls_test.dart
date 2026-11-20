@@ -4,6 +4,7 @@ import "dart:ui" show SemanticsAction;
 import "package:bobomusic/constants/theme_color.dart";
 import "package:bobomusic/components/pressable.dart";
 import "package:bobomusic/modules/player/const.dart";
+import "package:bobomusic/modules/player/utils.dart";
 import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/modules/player/lyrics_card/lyric_scroller.dart";
 import "package:bobomusic/modules/player/player.dart";
@@ -37,6 +38,24 @@ class TestPlayer extends PlayerModel {
 }
 
 void main() {
+  test("打开视频时按客户端结果决定是否使用网页", () async {
+    for (final outcome in ["opened", "declined", "exception"]) {
+      final urls = <Uri>[];
+      final opened = await openBilibiliVideo("BV123", (uri) async {
+        urls.add(uri);
+        if (uri.scheme == "https") return true;
+        if (outcome == "exception") throw StateError("unavailable");
+        return outcome == "opened";
+      });
+      expect(opened, isTrue);
+      expect(urls.map((uri) => uri.toString()), [
+        "bilibili://video/BV123",
+        if (outcome != "opened") "https://www.bilibili.com/video/BV123/",
+      ]);
+    }
+    expect(await openBilibiliVideo("BV123", (_) async => false), isFalse);
+  });
+
   testWidgets("按钮按下时立即缩小反馈，松开后复原", (tester) async {
     var pressed = false;
     await tester.pumpWidget(

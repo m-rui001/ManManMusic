@@ -12,6 +12,16 @@ setLaunchBilibiliConfirm({required bool confirm}) async {
   await localStorage.setBool(CacheKey.launchBilibiliConfirm, confirm);
 }
 
+Future<bool> openBilibiliVideo(
+    String bvId, Future<bool> Function(Uri) launch) async {
+  try {
+    if (await launch(Uri.parse("bilibili://video/$bvId"))) return true;
+  } catch (_) {
+    // Platforms can report a missing app by throwing or returning false.
+  }
+  return launch(Uri.https("www.bilibili.com", "/video/$bvId/"));
+}
+
 List<Map<String, dynamic>> parseLyrics(String lyrics) {
   List<Map<String, dynamic>> parsedLyrics = [];
   List<String> lines = lyrics.split('\n');
@@ -25,7 +35,8 @@ List<Map<String, dynamic>> parseLyrics(String lyrics) {
       int milliseconds = int.parse(match.group(3)!);
       String text = match.group(4)!;
       if (text.trim().isNotEmpty) {
-        int totalMilliseconds = (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
+        int totalMilliseconds =
+            (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
         parsedLyrics.add({
           'time': totalMilliseconds,
           'text': text,
