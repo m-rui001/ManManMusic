@@ -10,6 +10,7 @@ String? subtitleToLrc(Map<String, dynamic> json) {
     final from = item["from"];
     final content = item["content"];
     if (from is! num || content is! String || content.trim().isEmpty) continue;
+    if (!from.isFinite || from < 0) continue;
     final total = from.toDouble();
     var minutes = total ~/ 60;
     var seconds = total.floor() % 60;
@@ -23,8 +24,8 @@ String? subtitleToLrc(Map<String, dynamic> json) {
       seconds -= 60;
       minutes += 1;
     }
-    buffer
-        .writeln("[${_two(minutes)}:${_two(seconds)}.${_two(centis)}]$content");
+    final line = content.trim().replaceAll(RegExp(r"[\r\n]+"), " ");
+    buffer.writeln("[${_two(minutes)}:${_two(seconds)}.${_two(centis)}]$line");
   }
   final lrc = buffer.toString().trim();
   return lrc.isEmpty ? null : lrc;

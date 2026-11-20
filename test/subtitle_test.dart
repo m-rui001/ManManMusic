@@ -1,7 +1,26 @@
 import "package:bobomusic/origin_sdk/bili/subtitle.dart";
+import "package:bobomusic/modules/player/utils.dart";
 import "package:flutter_test/flutter_test.dart";
 
 void main() {
+  test("多行字幕往返转换保留时间和整句文本", () {
+    final lrc = subtitleToLrc({
+      "body": [
+        {"from": -1, "content": "无效"},
+        {"from": double.infinity, "content": "无效"},
+        {"from": 6001.34, "content": " 上半句\r\n下半句 "},
+      ]
+    });
+    expect(lrc, "[100:01.34]上半句 下半句");
+    expect(parseLyrics(lrc!), [
+      {"time": 6001340, "text": "上半句 下半句"}
+    ]);
+    expect(
+        parseLyrics("[00:01.5]A\n[00:02.125]B\n[00:03]C")
+            .map((row) => row["time"]),
+        [1500, 2125, 3000]);
+  });
+
   test("B 站字幕时间戳转成 LRC，空字幕返回 null", () {
     final lrc = subtitleToLrc({
       "body": [

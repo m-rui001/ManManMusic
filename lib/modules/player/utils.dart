@@ -25,14 +25,14 @@ Future<bool> openBilibiliVideo(
 List<Map<String, dynamic>> parseLyrics(String lyrics) {
   List<Map<String, dynamic>> parsedLyrics = [];
   List<String> lines = lyrics.split('\n');
+  final timestamp = RegExp(r'^\[(\d+):(\d{2})(?:\.(\d{1,3}))?\](.*)$');
   for (String line in lines) {
     final newLine = line.replaceAll("&apos;", "'");
-    RegExp regExp = RegExp(r'\[(\d{2}):(\d{2})\.(\d{2})\](.*)');
-    Match? match = regExp.firstMatch(newLine);
+    final match = timestamp.firstMatch(newLine.trim());
     if (match != null) {
       int minutes = int.parse(match.group(1)!);
       int seconds = int.parse(match.group(2)!);
-      int milliseconds = int.parse(match.group(3)!);
+      int milliseconds = int.parse((match.group(3) ?? "").padRight(3, "0"));
       String text = match.group(4)!;
       if (text.trim().isNotEmpty) {
         int totalMilliseconds =
