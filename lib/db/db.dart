@@ -131,19 +131,28 @@ abstract class BaseDatabaseHelper {
     return result.isNotEmpty;
   }
 
+  // SQLite keeps integer row IDs distinct from non-empty text identifiers.
+  static const _trackGroup = "COALESCE(NULLIF(mid, ''), id)";
+  static const _queueGroup = "COALESCE(NULLIF(playId, ''), id)";
+
   /// 按 mid 去重后取出全部歌曲
   ///
   /// - [groupBy] 默认 mid：同一首歌只留最早插入的那一条
   /// - [needOrder] 为 false 时按插入顺序（id）返回，适合歌单/待播放这类有先后意义的列表
   Future<List<Map<String, dynamic>>> queryAll(String tableName, {String? groupBy = "mid", bool? needOrder}) async {
     final isOrder = needOrder ?? true;
+    final group = switch (groupBy) {
+      "mid" => _trackGroup,
+      "playId" => _queueGroup,
+      _ => groupBy,
+    };
     try {
       Database db = await database;
       return await db.rawQuery("""
         SELECT * FROM $tableName
         WHERE id IN (
           SELECT MIN(id) FROM $tableName
-          GROUP BY $groupBy
+          GROUP BY $group
         )
         ${isOrder ? "ORDER BY name ASC" : "ORDER BY id ASC"}
       """);
@@ -164,7 +173,7 @@ abstract class BaseDatabaseHelper {
           SELECT MIN(id) FROM $tableName
           WHERE mid = ? OR name LIKE ? ESCAPE '!' OR playId = ?
              OR collectionName LIKE ? ESCAPE '!' OR author LIKE ? ESCAPE '!'
-          GROUP BY mid
+          GROUP BY $_trackGroup
         )
         ORDER BY name ASC
       """, [param, pattern, param, pattern, pattern]);
