@@ -163,6 +163,24 @@ void main() {
     expect(history.entries.single.music.cover, first.cover);
   });
 
+  test("同名本地文件分别记入历史并保留可重播路径", () async {
+    final history = PlayHistory.instance;
+    await history.clear();
+    final track = BiliSearchItem.fromJson(video)
+        .musicList!
+        .first
+        .copyWith(id: "", localPath: "/album-a/intro.mp3");
+    final other = track.copyWith(localPath: "/album-b/intro.mp3");
+    await history.record(track);
+    await history.record(other);
+    await history.record(track.copyWith(playId: "another-queue-entry"));
+    expect(history.entries.map((entry) => entry.count), [2, 1]);
+    final restored = HistoryEntry.fromJson(history.entries.first.toJson());
+    expect(restored.music.localPath, track.localPath);
+    expect(restored.matches(track), isTrue);
+    expect(restored.matches(other), isFalse);
+  });
+
   testWidgets("合集副标题优先显示作品名，普通曲目仍然显示原副标题", (tester) async {
     final first = BiliSearchItem.fromJson(video).musicList!.first;
     await tester.pumpWidget(MaterialApp(

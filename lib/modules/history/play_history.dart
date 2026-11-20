@@ -40,7 +40,7 @@ class PlayHistory {
         _entries = list
             .whereType<Map>()
             .map((e) => HistoryEntry.fromJson(Map<String, dynamic>.from(e)))
-            .where((e) => e.music.id.isNotEmpty)
+            .where((e) => e.music.id.isNotEmpty || e.music.localPath.isNotEmpty)
             .toList();
       }
     } catch (_) {
@@ -50,11 +50,11 @@ class PlayHistory {
 
   /// 记一首歌。播放器每次真正开始播放时调用。
   Future<void> record(MusicItem music) async {
-    if (music.id.isEmpty) return;
+    if (music.id.isEmpty && music.localPath.isEmpty) return;
     await init();
 
     final same = _entries.indexWhere(
-      (e) => e.music.id == music.id && e.music.playId == music.playId,
+      (e) => e.matches(music),
     );
 
     final saved = same >= 0 ? _entries[same].music : null;
@@ -156,6 +156,16 @@ class HistoryEntry {
     this.count = 1,
   });
 
+  bool matches(MusicItem? other) {
+    if (other == null || other.origin != music.origin) return false;
+    if (music.id.isEmpty) {
+      return other.id.isEmpty &&
+          music.localPath.isNotEmpty &&
+          music.localPath == other.localPath;
+    }
+    return music.id == other.id && music.playId == other.playId;
+  }
+
   Map<String, dynamic> toJson() {
     return {
       "music": {
@@ -169,6 +179,7 @@ class HistoryEntry {
         "origin": music.origin.value,
         "playId": music.playId,
         "orderName": music.orderName,
+        if (music.localPath.isNotEmpty) "localPath": music.localPath,
       },
       "at": playedAt.millisecondsSinceEpoch,
       "count": count,
@@ -192,6 +203,7 @@ class HistoryEntry {
         ),
         playId: "${map["playId"] ?? ""}",
         orderName: "${map["orderName"] ?? ""}",
+        localPath: "${map["localPath"] ?? ""}",
       ),
       playedAt: DateTime.fromMillisecondsSinceEpoch(
         (json["at"] is int) ? json["at"] : 0,

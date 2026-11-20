@@ -56,7 +56,7 @@ class HistoryTabState extends State<HistoryTab> {
   }
 
   String _keyOf(HistoryEntry e) =>
-      "${e.music.id}_${e.music.playId}_${e.playedAt.millisecondsSinceEpoch}";
+      "${e.music.id.isEmpty ? e.music.localPath : e.music.id}_${e.music.playId}_${e.playedAt.millisecondsSinceEpoch}";
 
   void _enterSelect(HistoryEntry e) {
     setState(() {
@@ -166,7 +166,7 @@ class HistoryTabState extends State<HistoryTab> {
                       final music = entry.music;
                       final key = _keyOf(entry);
                       final selected = _selected.contains(key);
-                      final current = player.current?.id == music.id;
+                      final current = entry.matches(player.current);
                       void toggle() => setState(() {
                             if (!_selected.remove(key)) _selected.add(key);
                           });
