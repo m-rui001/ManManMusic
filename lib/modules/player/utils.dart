@@ -34,13 +34,15 @@ List<Map<String, dynamic>> parseLyrics(String lyrics) {
       int seconds = int.parse(match.group(2)!);
       int milliseconds = int.parse((match.group(3) ?? "").padRight(3, "0"));
       String text = match.group(4)!;
+      final totalMilliseconds = (minutes * 60 + seconds) * 1000 + milliseconds;
       if (text.trim().isNotEmpty) {
-        int totalMilliseconds =
-            (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
         parsedLyrics.add({
           'time': totalMilliseconds,
           'text': text,
         });
+      } else if (parsedLyrics.isNotEmpty &&
+          totalMilliseconds > parsedLyrics.last['time']) {
+        parsedLyrics.last.putIfAbsent('end', () => totalMilliseconds);
       }
     }
   }

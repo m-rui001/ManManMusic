@@ -11,24 +11,21 @@ String? subtitleToLrc(Map<String, dynamic> json) {
     final content = item["content"];
     if (from is! num || content is! String || content.trim().isEmpty) continue;
     if (!from.isFinite || from < 0) continue;
-    final total = from.toDouble();
-    var minutes = total ~/ 60;
-    var seconds = total.floor() % 60;
-    var centis = ((total - total.floorToDouble()) * 100).round();
-    // 1.999 秒会进位成 100 百分秒，逐级进上去
-    if (centis >= 100) {
-      centis -= 100;
-      seconds += 1;
-    }
-    if (seconds >= 60) {
-      seconds -= 60;
-      minutes += 1;
-    }
     final line = content.trim().replaceAll(RegExp(r"[\r\n]+"), " ");
-    buffer.writeln("[${_two(minutes)}:${_two(seconds)}.${_two(centis)}]$line");
+    buffer.writeln("${_timestamp(from)}$line");
+    final to = item["to"];
+    if (to is num && to.isFinite && to > from) {
+      // A timed empty LRC line marks the silence following this sentence.
+      buffer.writeln(_timestamp(to));
+    }
   }
   final lrc = buffer.toString().trim();
   return lrc.isEmpty ? null : lrc;
 }
 
 String _two(int value) => value.toString().padLeft(2, "0");
+
+String _timestamp(num seconds) {
+  final centis = (seconds * 100).round();
+  return "[${_two(centis ~/ 6000)}:${_two(centis ~/ 100 % 60)}.${_two(centis % 100)}]";
+}

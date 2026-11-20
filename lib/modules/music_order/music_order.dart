@@ -7,7 +7,7 @@ import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/bili_account/bili_fav_page.dart";
 import "package:bobomusic/modules/bili_account/bili_login_gate.dart";
 import "package:bobomusic/modules/music_order/pages/music_list_common.dart";
-import "package:bobomusic/modules/music_order/pages/search.dart";
+import "package:bobomusic/modules/music_plaza/search/search.dart";
 import "package:bobomusic/modules/music_order/utils.dart";
 import "package:bobomusic/modules/player/model.dart";
 import "package:bobomusic/origin_sdk/bili/auth.dart";
@@ -161,11 +161,11 @@ class UserMusicOrderView extends State<MusicOrderView> with AutomaticKeepAliveCl
                       ),
                     ),
                     IconButton(
-                      tooltip: "在歌单里搜歌",
+                      tooltip: "搜索 B 站",
                       onPressed: () {
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => const SearchOrderMusicView(),
+                            builder: (_) => const SearchView(),
                           ),
                         );
                       },

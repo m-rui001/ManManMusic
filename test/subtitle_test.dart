@@ -29,7 +29,9 @@ void main() {
         {"from": 61.5, "to": 64.0, "content": "第三句"},
       ],
     });
-    expect(lrc, "[00:00.00]第一句\n[00:25.34]第二句\n[01:01.50]第三句");
+    expect(lrc,
+        "[00:00.00]第一句\n[00:02.50]\n[00:25.34]第二句\n[00:28.00]\n[01:01.50]第三句\n[01:04.00]");
+    expect(parseLyrics(lrc!).map((row) => row["end"]), [2500, 28000, 64000]);
     expect(subtitleToLrc({"body": []}), isNull);
     expect(subtitleToLrc({}), isNull);
   });

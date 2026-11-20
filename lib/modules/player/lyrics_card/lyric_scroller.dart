@@ -3,17 +3,14 @@ import "dart:math" as math;
 
 import "package:bobomusic/components/sheet/bottom_sheet.dart";
 import "package:bobomusic/modules/player/model.dart";
+import "package:bobomusic/modules/player/utils.dart";
+import "package:bobomusic/modules/party/party_control.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:bobomusic/origin_sdk/service.dart";
 import "package:bobomusic/utils/clear_html_tags.dart";
 import "package:bobomusic/utils/haptics.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
-import "package:flutter_lyric/lyric_ui/lyric_ui.dart";
-import "package:flutter_lyric/lyric_ui/ui_netease.dart";
-import "package:flutter_lyric/lyrics_model_builder.dart";
-import "package:flutter_lyric/lyrics_reader_model.dart";
-import "package:flutter_lyric/lyrics_reader_widget.dart";
 import "package:provider/provider.dart";
 
 /// Translate a displayed lyric timestamp back to the audio timeline.
@@ -24,11 +21,7 @@ Duration lyricSeekPosition(int lineMs, int offsetMs, Duration? duration) {
       milliseconds: limit > 0 ? math.min(position, limit) : position);
 }
 
-/// 播放页的歌词模式
-///
-/// 歌词来自这条视频自己的 B 站字幕，切歌后静默自动匹配，
-/// 没有手动搜索——匹配不上就如实说没有。当前行放大加粗逐字点亮，
-/// 其余行压暗；上下边缘渐隐，拖动可以挑一句直接跳过去。
+/// Follow and seek the sentence timestamps supplied by the video.
 class LyricsScroller extends StatefulWidget {
   const LyricsScroller({super.key});
 
@@ -38,27 +31,12 @@ class LyricsScroller extends StatefulWidget {
 
 class _LyricsScrollerState extends State<LyricsScroller> {
   String _text = "";
-  LyricsReaderModel? _model;
+  List<Map<String, dynamic>> _lines = [];
   int _offset = 0;
   String? _offsetTrackId;
   MusicItem? _matchingTrack;
   int _matchRequest = 0;
   MusicItem? _attempted;
-  _LyricStyle? _style;
-  ({Color text, Color highlight})? _styleSeed;
-
-  _LyricStyle _styleFor(ColorScheme colors) {
-    // onSurface 在深浅主题里是写死的，只盯它会让换主题色后高亮色不更新
-    final seed = (text: colors.onSurface, highlight: colors.primary);
-    final cached = _style;
-    if (cached != null && _styleSeed == seed) return cached;
-    _styleSeed = seed;
-    return _style = _LyricStyle(
-      main: seed.text,
-      highlightColor: seed.highlight,
-    );
-  }
-
   Future<void> _autoMatch(MusicItem music) async {
     if (!_isCurrent(music) || identical(_matchingTrack, music)) return;
     final request = ++_matchRequest;
@@ -156,13 +134,10 @@ class _LyricsScrollerState extends State<LyricsScroller> {
     final lyrics = music.lyric.trim();
     if (lyrics != _text) {
       _text = lyrics;
-      _model = lyrics.isEmpty
-          ? null
-          : LyricsModelBuilder.create().bindLyricToMain(lyrics).getModel();
+      _lines = parseLyrics(lyrics);
     }
-    final model = _model;
 
-    if (model == null) {
+    if (_lines.isEmpty) {
       final matchable = music.origin == OriginType.bili &&
           music.localPath.isEmpty &&
           int.tryParse(music.id.split("_").first) != null;
@@ -196,23 +171,30 @@ class _LyricsScrollerState extends State<LyricsScroller> {
               child: StreamBuilder<Duration>(
                 stream: player.positions,
                 initialData: player.currentPosition,
-                builder: (context, snapshot) => KeyedSubtree(
-                  key: ValueKey(lyrics),
-                  child: LyricsReader(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    model: model,
-                    position: math.max(
-                      0,
+                key: ValueKey(music.id),
+                builder: (context, snapshot) {
+                  final position =
                       (snapshot.data ?? player.currentPosition).inMilliseconds +
-                          _offset,
-                    ),
-                    lyricUi: _styleFor(colors),
-                    playing: player.isPlaying,
-                    size: constraints.biggest,
-                    selectLineBuilder: (startTime, cancel) =>
-                        _seekBar(context, player, colors, startTime, cancel),
-                  ),
-                ),
+                          _offset;
+                  final index = _activeLine(position);
+                  final end = index < 0 ? null : _lines[index]["end"] as int?;
+                  return _SentenceList(
+                    key: ObjectKey(_lines),
+                    lines: _lines,
+                    active: index,
+                    highlighted: index >= 0 && (end == null || position < end),
+                    onSeek: (index) async {
+                      if (!_isCurrent(music) || PartyControl.blocked()) return;
+                      AppHaptics.action();
+                      try {
+                        await player.seek(lyricSeekPosition(
+                            _lines[index]["time"], _offset, player.duration));
+                      } catch (_) {
+                        if (mounted) BotToast.showText(text: "跳转失败，请稍后再试");
+                      }
+                    },
+                  );
+                },
               ),
             );
           }),
@@ -240,57 +222,18 @@ class _LyricsScrollerState extends State<LyricsScroller> {
     );
   }
 
-  Widget _seekBar(
-    BuildContext context,
-    PlayerModel player,
-    ColorScheme colors,
-    int startTime,
-    VoidCallback cancel,
-  ) {
-    final stamp = lyricSeekPosition(startTime, _offset, player.duration);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 22),
-      child: Row(
-        children: [
-          IconButton.filledTonal(
-            tooltip: "从这里播放",
-            iconSize: 20,
-            style: IconButton.styleFrom(
-              backgroundColor: colors.onSurface.withValues(alpha: .12),
-              foregroundColor: colors.onSurface,
-              minimumSize: const Size.square(38),
-            ),
-            onPressed: () async {
-              AppHaptics.action();
-              cancel();
-              try {
-                await player.seek(stamp);
-              } catch (_) {
-                if (mounted) BotToast.showText(text: "跳转失败，请稍后再试");
-              }
-            },
-            icon: const Icon(Icons.play_arrow_rounded),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            seconds2duration(stamp.inSeconds),
-            style: TextStyle(
-              fontSize: 12,
-              fontFeatures: const [FontFeature.tabularFigures()],
-              color: colors.onSurfaceVariant,
-            ),
-          ),
-          const Spacer(),
-          IconButton(
-            tooltip: "继续跟随播放",
-            iconSize: 18,
-            color: colors.onSurfaceVariant,
-            onPressed: cancel,
-            icon: const Icon(Icons.close_rounded),
-          ),
-        ],
-      ),
-    );
+  int _activeLine(int milliseconds) {
+    var low = 0;
+    var high = _lines.length;
+    while (low < high) {
+      final mid = (low + high) ~/ 2;
+      if (_lines[mid]["time"] <= milliseconds) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+    return low - 1;
   }
 
   Widget _empty(
@@ -338,53 +281,133 @@ class _LyricsScrollerState extends State<LyricsScroller> {
   }
 }
 
-/// 歌词排版：当前行大、亮、逐字点亮，其余行小、暗
-class _LyricStyle extends UINetease {
-  final Color main;
-  final Color highlightColor;
+class _SentenceList extends StatefulWidget {
+  const _SentenceList(
+      {super.key,
+      required this.lines,
+      required this.active,
+      required this.highlighted,
+      required this.onSeek});
 
-  _LyricStyle({required this.main, required this.highlightColor})
-      : super(
-          defaultSize: 28,
-          otherMainSize: 27,
-          defaultExtSize: 15,
-          bias: .24,
-          lineGap: 24,
-          inlineGap: 18,
-          lyricAlign: LyricAlign.LEFT,
-        );
-
-  // 当前行没唱到的部分也要比别的行亮，唱到的部分再点成主题色，
-  // 否则一行刚开头时反而比上下文暗，看不出唱到哪了。
-  @override
-  TextStyle getPlayingMainTextStyle() => TextStyle(
-        color: main.withValues(alpha: .78),
-        fontSize: defaultSize,
-        fontWeight: FontWeight.w700,
-        height: 1.32,
-      );
+  final List<Map<String, dynamic>> lines;
+  final int active;
+  final bool highlighted;
+  final ValueChanged<int> onSeek;
 
   @override
-  TextStyle getOtherMainTextStyle() => TextStyle(
-        color: main.withValues(alpha: .38),
-        fontSize: otherMainSize,
-        fontWeight: FontWeight.w600,
-        height: 1.32,
-      );
+  State<_SentenceList> createState() => _SentenceListState();
+}
+
+class _SentenceListState extends State<_SentenceList> {
+  final scroll = ScrollController(keepScrollOffset: false);
+  late final keys = List.generate(widget.lines.length, (_) => GlobalKey());
+  late int anchor = math.max(0, widget.active);
+  Timer? resume;
+  bool browsing = false;
+  int viewportGeneration = 0;
 
   @override
-  TextStyle getPlayingExtTextStyle() =>
-      TextStyle(color: main.withValues(alpha: .3), fontSize: defaultExtSize);
+  void didUpdateWidget(_SentenceList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active != oldWidget.active && !browsing) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _follow());
+    }
+  }
+
+  void _follow() {
+    if (!mounted || browsing) return;
+    final index = math.max(0, widget.active);
+    final row = keys[index].currentContext;
+    if (row == null) {
+      // A seek can jump well outside the lazily built rows.
+      setState(() {
+        anchor = index;
+        viewportGeneration++;
+      });
+    } else {
+      Scrollable.ensureVisible(row,
+          alignment: .24,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOut);
+    }
+  }
+
+  bool _onScroll(ScrollNotification notification) {
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+      resume?.cancel();
+      browsing = true;
+    } else if (notification is ScrollEndNotification && browsing) {
+      resume?.cancel();
+      resume = Timer(const Duration(seconds: 3), () {
+        browsing = false;
+        _follow();
+      });
+    }
+    return false;
+  }
 
   @override
-  TextStyle getOtherExtTextStyle() =>
-      TextStyle(color: main.withValues(alpha: .3), fontSize: defaultExtSize);
+  void dispose() {
+    resume?.cancel();
+    scroll.dispose();
+    super.dispose();
+  }
+
+  Widget _row(int index) {
+    final colors = Theme.of(context).colorScheme;
+    final selected = widget.highlighted && index == widget.active;
+    return Semantics(
+      key: keys[index],
+      button: true,
+      selected: selected,
+      child: InkWell(
+        onTap: () {
+          resume?.cancel();
+          browsing = false;
+          widget.onSeek(index);
+          if (selected) _follow();
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+          child: Text(
+            widget.lines[index]["text"].toString().trim(),
+            style: TextStyle(
+              fontSize: 26,
+              height: 1.32,
+              fontWeight: FontWeight.w700,
+              color: selected
+                  ? colors.onSurface
+                  : colors.onSurface.withValues(alpha: .43),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
-  Color getLyricHightlightColor() => highlightColor;
-
-  // 歌词比视口短时，包里的 baseOffset 会把可偏移上限算成正数，
-  // 随后 clamp(正数, 0) 直接抛 ArgumentError。关掉这个「保底半屏」即可。
-  @override
-  bool halfSizeLimit() => false;
+  Widget build(BuildContext context) {
+    final center = ValueKey(anchor);
+    return NotificationListener<ScrollNotification>(
+      onNotification: _onScroll,
+      child: CustomScrollView(
+        key: ValueKey(viewportGeneration),
+        controller: scroll,
+        primary: false,
+        anchor: .24,
+        center: center,
+        slivers: [
+          SliverList.builder(
+              itemCount: anchor, itemBuilder: (_, i) => _row(anchor - 1 - i)),
+          SliverList.builder(
+              key: center,
+              itemCount: widget.lines.length - anchor,
+              itemBuilder: (_, i) => _row(anchor + i)),
+          const SliverFillRemaining(
+              hasScrollBody: false, child: SizedBox.shrink()),
+        ],
+      ),
+    );
+  }
 }

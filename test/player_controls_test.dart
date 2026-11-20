@@ -1,4 +1,3 @@
-import "package:bobomusic/constants/motion.dart";
 import "dart:async";
 import "dart:ui" show SemanticsAction;
 
@@ -21,7 +20,6 @@ import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
-import "package:flutter_lyric/lyrics_reader_widget.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:provider/provider.dart";
 
@@ -485,16 +483,17 @@ void main() {
         .widget<PlayerCard>(find.byType(PlayerCard))
         .transitionController!
         .value;
-    final expected = Rect.lerp(bar, const Rect.fromLTRB(8, 5, 312, 582),
-        AppMotion.emphasized.transform(progress))!;
+    final expected =
+        Rect.lerp(bar, const Rect.fromLTRB(8, 5, 312, 582), progress)!;
     expect((opening.topLeft - expected.topLeft).distance, lessThan(.01));
     expect(
         (opening.bottomRight - expected.bottomRight).distance, lessThan(.01));
     await tester.pump(const Duration(milliseconds: 600));
     expect(find.byType(PlayerCard), findsOneWidget);
     expect(find.byType(LyricsScroller), findsNothing);
-    final close = find.byTooltip("收起播放器");
-    expect(tester.getTopLeft(close).dy, greaterThanOrEqualTo(28));
+    final cover = find.bySemanticsLabel("查看歌词");
+    expect(tester.getTopLeft(cover).dy, greaterThanOrEqualTo(28));
+    expect(find.byTooltip("收起播放器"), findsNothing);
     final play = find.descendant(
       of: find.byType(PlayerCard),
       matching: find.byTooltip("播放"),
@@ -506,7 +505,7 @@ void main() {
     addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    expect(Theme.of(tester.element(close)).brightness, Brightness.dark);
+    expect(Theme.of(tester.element(cover)).brightness, Brightness.dark);
 
     tester.view.physicalSize = const Size(800, 380);
     await tester.pump();
@@ -534,46 +533,68 @@ void main() {
       ),
     );
 
-    final reader = find.byType(LyricsReader);
-    expect(tester.widget<LyricsReader>(reader).position, 0);
+    double alpha(String line) =>
+        tester.widget<Text>(find.text(line)).style!.color!.a;
+    expect(alpha("第一行"), greaterThan(alpha("第二行")));
+    positions.add(const Duration(seconds: 4));
+    await tester.pump();
+    expect(alpha("第一行"), alpha("第二行"));
+    await tester.tap(find.text("第二行"));
+    expect(player.seekTarget, const Duration(seconds: 25));
     positions.add(const Duration(seconds: 26));
     await tester.pump();
-    expect(tester.widget<LyricsReader>(reader).position, 26000);
-    await tester.pump(const Duration(seconds: 1));
-    expect(tester.widget<LyricsReader>(reader).position, 26000);
+    expect(alpha("第二行"), greaterThan(alpha("第一行")));
+    positions.add(const Duration(seconds: 1));
+    await tester.pump();
+    expect(alpha("第一行"), greaterThan(alpha("第二行")));
     await tester.pumpWidget(const SizedBox.shrink());
     unawaited(positions.close());
   });
 
-  testWidgets("歌词当前行比其余行亮，换主题色后高亮跟着换", (tester) async {
+  testWidgets("长字幕列表跟随跨段跳转，手动浏览时保持位置", (tester) async {
     final positions = StreamController<Duration>();
     final player = LyricTestPlayer(positions.stream);
+    player.track.lyric = List.generate(
+            120,
+            (i) =>
+                "[${(i ~/ 60).toString().padLeft(2, '0')}:${(i % 60).toString().padLeft(2, '0')}]字幕 $i")
+        .join("\n");
+    await tester.pumpWidget(ChangeNotifierProvider<PlayerModel>.value(
+      value: player,
+      child: const MaterialApp(home: Scaffold(body: LyricsScroller())),
+    ));
+    Future<void> jump(int second) async {
+      positions.add(Duration(seconds: second));
+      await tester.pumpAndSettle();
+    }
 
-    Widget app(Color accent) => ChangeNotifierProvider<PlayerModel>.value(
-          value: player,
-          child: MaterialApp(
-            theme: buildAppTheme(accent, Brightness.light),
-            home: const Scaffold(body: LyricsScroller()),
-          ),
-        );
-
-    await tester.pumpWidget(app(Colors.blue));
-    final reader = find.byType(LyricsReader);
-    final blue = tester.widget<LyricsReader>(reader).ui;
-    expect(blue.getPlayingMainTextStyle().color!.a,
-        greaterThan(blue.getOtherMainTextStyle().color!.a));
-    expect(blue.getLyricHightlightColor(),
-        buildAppTheme(Colors.blue, Brightness.light).colorScheme.primary);
-
-    await tester.pumpWidget(app(Colors.red));
-    // MaterialApp 用 AnimatedTheme 过渡，单帧 pump 还停在旧主题上
-    await tester.pump(const Duration(milliseconds: 300));
-    final red = tester.widget<LyricsReader>(reader).ui;
-    expect(red.getLyricHightlightColor(),
-        buildAppTheme(Colors.red, Brightness.light).colorScheme.primary);
-
+    await jump(90);
+    expect(find.text("字幕 90").hitTestable(), findsOneWidget);
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -260));
+    await tester.pumpAndSettle();
+    await jump(2);
+    expect(find.text("字幕 2"), findsNothing);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    expect(find.text("字幕 2").hitTestable(), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     unawaited(positions.close());
+  });
+
+  testWidgets("轻点封面显示整句字幕，再点缩略图回到封面", (tester) async {
+    final player = LyricTestPlayer(const Stream.empty());
+    await tester.pumpWidget(ChangeNotifierProvider<PlayerModel>.value(
+      value: player,
+      child: const MaterialApp(home: Scaffold(body: PlayerCard())),
+    ));
+    await tester.tap(find.bySemanticsLabel("查看歌词"));
+    await tester.pumpAndSettle();
+    expect(find.text("第二行"), findsOneWidget);
+    expect(find.byTooltip("从这里播放"), findsNothing);
+    expect(find.byTooltip("继续跟随播放"), findsNothing);
+    await tester.tap(find.bySemanticsLabel("回到封面"));
+    await tester.pumpAndSettle();
+    expect(find.byType(LyricsScroller), findsNothing);
   });
 
   testWidgets("长按迷你播放器曲名复制干净文本", (tester) async {
@@ -610,7 +631,10 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider<PlayerModel>.value(
         value: player,
-        child: const MaterialApp(home: Scaffold(body: PlayerView())),
+        child: const MaterialApp(
+            home: Scaffold(
+                body: Align(
+                    alignment: Alignment.bottomCenter, child: PlayerView()))),
       ),
     );
     expect(find.byType(PlayerCard), findsNothing);
@@ -620,17 +644,34 @@ void main() {
     await gesture.moveBy(const Offset(0, -80));
     await tester.pump();
     expect(find.byType(PlayerCard), findsOneWidget);
+    final previewState = tester.state(find.byType(PlayerCard));
     final transition = tester
         .widget<PlayerCard>(find.byType(PlayerCard))
         .transitionController!;
     expect(transition.value, greaterThan(.05));
+    final window = find
+        .ancestor(
+            of: find.byType(PlayerCard), matching: find.byType(Positioned))
+        .first;
+    final top = tester.getTopLeft(window).dy;
+    final cover = find.bySemanticsLabel("查看歌词");
+    final initialWidth = tester.getRect(cover).width;
     final first = transition.value;
     await gesture.moveBy(const Offset(0, -96));
     await tester.pump();
     expect(transition.value, greaterThan(first));
+    expect(tester.getTopLeft(window).dy, closeTo(top - 96, .1));
+    expect(tester.getRect(cover).width, greaterThan(initialWidth));
+    expect(
+        find
+            .descendant(
+                of: find.byType(PlayerCard), matching: find.byTooltip("播放"))
+            .hitTestable(),
+        findsNothing);
     await gesture.up();
     await tester.pumpAndSettle();
     expect(find.byType(PlayerCard), findsOneWidget);
+    expect(tester.state(find.byType(PlayerCard)), same(previewState));
     final stage = find
         .descendant(
             of: find.byType(PlayerCard),
@@ -650,7 +691,13 @@ void main() {
     await pull.cancel();
     await tester.pumpAndSettle();
     expect(transition.value, 1);
-    await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded));
+    await tester.dragFrom(
+        tester.getTopLeft(stage) + const Offset(50, 50), const Offset(0, 220));
+    await tester.pumpAndSettle();
+    expect(find.byType(PlayerCard), findsNothing);
+    await tester.tap(find.text(player.track.name));
+    await tester.pumpAndSettle();
+    await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(find.byType(PlayerCard), findsNothing);
     expect(tester.takeException(), isNull);
@@ -681,8 +728,8 @@ void main() {
   });
 }
 
-class LyricTestPlayer extends PlayerModel {
-  LyricTestPlayer(this.positions);
+class LyricTestPlayer extends TestPlayer {
+  LyricTestPlayer(this.positions) : super(const Duration(seconds: 100));
 
   @override
   final Stream<Duration> positions;
@@ -697,7 +744,7 @@ class LyricTestPlayer extends PlayerModel {
     duration: 100,
     author: "",
     origin: OriginType.bili,
-    lyric: "[00:00.00] 第一行\n[00:25.00] 第二行",
+    lyric: "[00:00.00] 第一行\n[00:03.00]\n[00:25.00] 第二行",
   );
 }
 

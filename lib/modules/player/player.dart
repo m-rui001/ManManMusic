@@ -1,6 +1,6 @@
 import "dart:async";
 
-import "package:bobomusic/components/continuous_rounding.dart";
+import "package:bobomusic/components/glass_pill.dart";
 import "package:bobomusic/components/pressable.dart";
 import "package:bobomusic/constants/motion.dart";
 import "package:bobomusic/modules/party/party_control.dart";
@@ -30,6 +30,7 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
   final GlobalKey _barKey = GlobalKey();
   AnimationController? _unfold;
   OverlayEntry? _preview;
+  GlobalKey<PlayerCardState>? _previewKey;
   Rect? _source;
   int? _pointer;
   double _dragStartX = 0;
@@ -90,17 +91,22 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
       _routeOpenedByDrag = true;
       _source = _rectForKey(_barKey);
       final animation = _unfold!;
+      _previewKey = GlobalKey<PlayerCardState>();
       _preview = OverlayEntry(
           builder: (_) => IgnorePointer(
                 child: _UnfoldTransition(
                     animation: animation,
                     source: _source,
-                    interactive: true,
-                    child: PlayerCard(transitionController: animation)),
+                    child: PlayerCard(
+                        key: _previewKey, transitionController: animation)),
               ));
       Navigator.of(context).overlay!.insert(_preview!);
     }
-    _unfold?.value = (_dragDistance / _viewportHeight).clamp(0.0, .94);
+    _unfold?.value = (_dragDistance /
+            ((_source?.top ?? 0) > _viewportHeight * .5
+                ? _source!.top - 5
+                : _viewportHeight))
+        .clamp(0.0, 1.0);
   }
 
   void _onMiniPointerCancel(PointerCancelEvent event) {
@@ -114,6 +120,7 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
     _preview?.remove();
     _preview?.dispose();
     _preview = null;
+    _previewKey = null;
   }
 
   Future<void> _dismissPreview(AnimationController controller) async {
@@ -136,14 +143,13 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
     final flick =
         recentMove <= const Duration(milliseconds: 100) && _dragVelocity < -850;
     if (_dragDistance > _viewportHeight * .16 || flick) {
+      final key = _previewKey;
       _removePreview();
       _unfold = null;
       if (showPlayerCard(context,
-              controller: controller, sourceRect: _source) ==
+              controller: controller, sourceRect: _source, cardKey: key) ==
           null) {
         controller.dispose();
-      } else {
-        controller.forward();
       }
     } else {
       _dismissPreview(controller);
@@ -165,11 +171,8 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
         onPointerMove: _onMiniPointerMove,
         onPointerUp: _onMiniPointerEnd,
         onPointerCancel: _onMiniPointerCancel,
-        child: Material(
+        child: GlassPill(
           key: _barKey,
-          color: colors.surfaceContainerHigh,
-          shape: const ContinuousRounding(42),
-          clipBehavior: Clip.antiAlias,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -363,7 +366,8 @@ class PlayButton extends StatelessWidget {
               onPressed: toggle,
               style: IconButton.styleFrom(
                 minimumSize: const Size(0, 68),
-                shape: const ContinuousRounding(22),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18)),
                 backgroundColor: colors.onSurface,
                 foregroundColor: colors.surface,
               ),
@@ -544,6 +548,7 @@ Future<void>? showPlayerCard(
   BuildContext context, {
   AnimationController? controller,
   Rect? sourceRect,
+  GlobalKey<PlayerCardState>? cardKey,
 }) {
   final NavigatorState navigator = Navigator.of(context, rootNavigator: false);
   final player = Provider.of<PlayerModel>(context, listen: false);
@@ -559,7 +564,7 @@ Future<void>? showPlayerCard(
   return navigator.push(_PlayerCardRoute(
     controller: animation,
     source: source,
-    dragDriven: controller != null,
+    cardKey: cardKey,
   ));
 }
 
@@ -567,18 +572,17 @@ class _PlayerCardRoute extends PageRouteBuilder<void> {
   _PlayerCardRoute({
     required this.controller,
     required this.source,
-    required this.dragDriven,
+    required GlobalKey<PlayerCardState>? cardKey,
   }) : super(
           fullscreenDialog: true,
           opaque: false,
           pageBuilder: (_, __, ___) =>
-              PlayerCard(transitionController: controller),
+              PlayerCard(key: cardKey, transitionController: controller),
           transitionDuration: AppMotion.unfold,
           reverseTransitionDuration: AppMotion.medium,
           transitionsBuilder: (_, animation, __, child) => _UnfoldTransition(
             animation: animation,
             source: source,
-            interactive: dragDriven,
             child: child,
           ),
         );
@@ -586,14 +590,16 @@ class _PlayerCardRoute extends PageRouteBuilder<void> {
   @override
   final AnimationController controller;
   final Rect? source;
-  final bool dragDriven;
 
   @override
   AnimationController createAnimationController() => controller;
 
   @override
-  TickerFuture didPush() =>
-      dragDriven ? TickerFuture.complete() : super.didPush();
+  TickerFuture didPush() {
+    super.didPush();
+    // Ease the remaining travel on release. Geometry stays linear during drags.
+    return controller.animateTo(1, curve: AppMotion.emphasized);
+  }
 }
 
 /// 被点的迷你播放器的屏幕矩形
@@ -620,13 +626,11 @@ Rect? _barRect(BuildContext context) {
 class _UnfoldTransition extends StatelessWidget {
   final Animation<double> animation;
   final Rect? source;
-  final bool interactive;
   final Widget child;
 
   const _UnfoldTransition({
     required this.animation,
     required this.source,
-    required this.interactive,
     required this.child,
   });
 
@@ -646,12 +650,10 @@ class _UnfoldTransition extends StatelessWidget {
       animation: animation,
       child: RepaintBoundary(child: child),
       builder: (context, page) {
-        final t = interactive
-            ? animation.value
-            : AppMotion.emphasized.transform(animation.value);
+        final t = animation.value;
         final rect = from == null ? target : Rect.lerp(from, target, t)!;
-        final radius = 42 + (36 - 42) * t;
-        final opacity = from == null ? animation.value : t;
+        final radius = (from?.height ?? 62) / 2 * (1 - t) + 30 * t;
+
         return Stack(
           fit: StackFit.expand,
           children: [
@@ -660,25 +662,15 @@ class _UnfoldTransition extends StatelessWidget {
             ),
             Positioned.fromRect(
               rect: rect,
-              child: ClipPath(
-                clipBehavior: Clip.antiAlias,
-                clipper: ShapeBorderClipper(
-                  shape: ContinuousRounding(radius),
-                ),
-                child: Opacity(
-                  opacity: opacity,
-                  child: OverflowBox(
-                    alignment: Alignment.topLeft,
-                    minWidth: size.width,
-                    maxWidth: size.width,
-                    minHeight: size.height,
-                    maxHeight: size.height,
-                    // 内容钉在屏幕原位，只有窗口在长大，字不会跟着跑
-                    child: Transform.translate(
-                      offset: -rect.topLeft,
-                      child: page,
-                    ),
-                  ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(radius),
+                child: OverflowBox(
+                  alignment: Alignment.topLeft,
+                  minWidth: target.width,
+                  maxWidth: target.width,
+                  minHeight: target.height,
+                  maxHeight: target.height,
+                  child: page,
                 ),
               ),
             ),

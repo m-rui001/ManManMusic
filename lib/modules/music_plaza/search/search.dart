@@ -12,8 +12,6 @@ import "package:bobomusic/constants/cache_key.dart";
 import "package:bobomusic/db/db.dart";
 import "package:bobomusic/event_bus/event_bus.dart";
 import "package:bobomusic/modules/download/model.dart";
-import "package:bobomusic/modules/music_order/pages/search.dart"
-    as library_search;
 import "package:bobomusic/modules/music_order/utils.dart";
 import "package:bobomusic/utils/check_music_local_repeat.dart";
 import "package:bobomusic/utils/clear_html_tags.dart";
@@ -581,66 +579,63 @@ class SearchViewState extends State<SearchView> {
             Image.asset(appLogoAsset, fit: BoxFit.cover, cacheWidth: pixels);
         final tags = [item.origin.name, item.author];
 
-        return Pressable(
-          pressScale: .985,
-          pressedColor:
-              Theme.of(context).colorScheme.onSurface.withValues(alpha: .07),
-          pressedBorderRadius: BorderRadius.circular(14),
-          child: ListTile(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            leading: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: SizedBox.square(
-                  dimension: 50,
-                  child: cover == null
-                      ? placeholder
-                      : CachedNetworkImage(
-                          imageUrl: cover.url,
-                          httpHeaders: cover.headers,
-                          memCacheWidth: pixels,
-                          placeholder: (_, __) => placeholder,
-                          errorWidget: (_, __, ___) => placeholder,
-                          fit: BoxFit.cover,
-                        )),
-            ),
-            title: Text(
-              clearHtmlTags(item.name),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-            ),
-            subtitle: TextTags(tags: tags),
-            onTap: () => _onClickMusic(item),
-            onLongPress: () async {
-              try {
-                final detail = await service.searchDetail(item.id);
-                if (!mounted) return;
-                if (detail.type == SearchType.orderName) {
-                  _onClickCollection(detail);
-                } else {
-                  _showMusicActions(detail);
-                }
-              } catch (_) {
-                if (mounted) BotToast.showText(text: "音频详情加载失败");
-              }
-            },
-          ),
+        final radius = BorderRadius.vertical(
+          top: Radius.circular(index == 0 ? 20 : 6),
+          bottom: Radius.circular(index == _searchItemList.length - 1 ? 20 : 6),
         );
+        return Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 3),
+            child: Material(
+                color: Theme.of(context).colorScheme.surfaceContainer,
+                shape: RoundedRectangleBorder(borderRadius: radius),
+                clipBehavior: Clip.antiAlias,
+                child: Pressable(
+                  pressScale: .985,
+                  pressedColor: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: .07),
+                  pressedBorderRadius: radius,
+                  child: ListTile(
+                    shape: RoundedRectangleBorder(borderRadius: radius),
+                    leading: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: SizedBox.square(
+                          dimension: 50,
+                          child: cover == null
+                              ? placeholder
+                              : CachedNetworkImage(
+                                  imageUrl: cover.url,
+                                  httpHeaders: cover.headers,
+                                  memCacheWidth: pixels,
+                                  placeholder: (_, __) => placeholder,
+                                  errorWidget: (_, __, ___) => placeholder,
+                                  fit: BoxFit.cover,
+                                )),
+                    ),
+                    title: Text(
+                      clearHtmlTags(item.name),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                    subtitle: TextTags(tags: tags),
+                    onTap: () => _onClickMusic(item),
+                    onLongPress: () async {
+                      try {
+                        final detail = await service.searchDetail(item.id);
+                        if (!mounted) return;
+                        if (detail.type == SearchType.orderName) {
+                          _onClickCollection(detail);
+                        } else {
+                          _showMusicActions(detail);
+                        }
+                      } catch (_) {
+                        if (mounted) BotToast.showText(text: "音频详情加载失败");
+                      }
+                    },
+                  ),
+                )));
       },
-    );
-  }
-
-  void _switchScope(SearchScope scope) {
-    if (scope == SearchScope.bili) return;
-    final query = _keywordController.text;
-    final searchOnOpen = !_focusNode.hasFocus;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (_) => library_search.SearchOrderMusicView(
-          initialQuery: query,
-          searchOnOpen: searchOnOpen,
-        ),
-      ),
     );
   }
 
@@ -649,11 +644,9 @@ class SearchViewState extends State<SearchView> {
     return SearchOverlayScaffold(
       keywordController: _keywordController,
       focusNode: _focusNode,
-      hintText: "搜索",
+      hintText: "搜索 B 站歌曲、UP 主",
       onSearch: () => _searchHandler(true),
       onInput: _onInputChange,
-      scope: SearchScope.bili,
-      onScopeChanged: _switchScope,
       onClose: () => Navigator.of(context).pop(),
       body: buildBody(context),
       floatingActionButton: const PlayerView(cancelMargin: true),

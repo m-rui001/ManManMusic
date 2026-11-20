@@ -52,12 +52,11 @@ void main() {
         buildAppTheme(Colors.blue, Brightness.light).colorScheme.onSurface);
   });
 
-  testWidgets("搜索 overlay 保留内容滚动层、磨砂控件与双范围切换", (tester) async {
+  testWidgets("搜索 overlay 保留内容滚动层、磨砂控件和单一搜索入口", (tester) async {
     final controller = TextEditingController();
     final focusNode = FocusNode();
     addTearDown(controller.dispose);
     addTearDown(focusNode.dispose);
-    SearchScope? selectedScope;
     var closed = false;
 
     await tester.pumpWidget(
@@ -69,8 +68,6 @@ void main() {
           hintText: "搜索",
           onSearch: () {},
           onInput: (_) {},
-          scope: SearchScope.bili,
-          onScopeChanged: (scope) => selectedScope = scope,
           onClose: () => closed = true,
           body: ListView(
             children: const [ListTile(title: Text("实际搜索结果背景内容"))],
@@ -79,15 +76,13 @@ void main() {
       ),
     );
 
-    expect(find.byType(BackdropFilter), findsNWidgets(3));
+    expect(find.byType(BackdropFilter), findsNWidgets(2));
     expect(find.text("实际搜索结果背景内容"), findsOneWidget);
-    expect(find.text("B站"), findsOneWidget);
-    expect(find.text("资料库"), findsOneWidget);
+    expect(find.text("B站"), findsNothing);
+    expect(find.text("资料库"), findsNothing);
     await tester.enterText(find.byType(TextField), "马勒");
-    await tester.tap(find.text("资料库"));
     await tester.pump();
     expect(controller.text, "马勒");
-    expect(selectedScope, SearchScope.library);
     await tester.tap(find.byTooltip("关闭搜索"));
     expect(closed, isTrue);
   });
@@ -107,14 +102,12 @@ void main() {
             hintText: "搜索",
             onSearch: () {},
             onInput: (_) {},
-            scope: SearchScope.bili,
-            onScopeChanged: (_) {},
             onClose: () {},
             body: Builder(
               builder: (context) {
                 expect(
                   SearchOverlayScaffold.contentTopInset(context),
-                  greaterThan(130),
+                  equals(70),
                 );
                 return const SizedBox.expand();
               },
@@ -145,8 +138,6 @@ void main() {
         hintText: "Search",
         onSearch: () {},
         onInput: (_) {},
-        scope: SearchScope.library,
-        onScopeChanged: (_) {},
         onClose: () {},
         body: Builder(
             builder: (context) => ListView(
@@ -156,10 +147,10 @@ void main() {
                 )),
       ),
     ));
-    expect(tester.getSize(find.byType(TextField)).height, greaterThan(56));
-    final scopes = find.byType(AnimatedContainer).last;
+    expect(tester.getSize(find.byType(TextField)).height, greaterThan(48));
+    final field = find.byType(TextField);
     expect(tester.getTopLeft(find.text("First result")).dy,
-        closeTo(tester.getBottomLeft(scopes).dy + 14, .1));
+        closeTo(tester.getBottomLeft(field).dy + 14, .1));
     expect(tester.takeException(), isNull);
   });
   testWidgets("Last result can be selected above the keyboard", (tester) async {
@@ -178,8 +169,6 @@ void main() {
       hintText: "Search",
       onSearch: () {},
       onInput: (_) {},
-      scope: SearchScope.bili,
-      onScopeChanged: (_) {},
       onClose: () {},
       floatingActionButton: const Text("Mini player"),
       body: ListView.builder(

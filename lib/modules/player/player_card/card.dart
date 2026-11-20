@@ -217,39 +217,6 @@ class PlayerCardState extends State<PlayerCard> {
     }
   }
 
-  Widget _buildTopBar(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsetsDirectional.only(start: 13, end: 13),
-      child: Row(
-        children: [
-          Pressable(
-            child: IconButton(
-              tooltip: "收起播放器",
-              icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-          ),
-          const Spacer(),
-          Pressable(
-            child: IconButton(
-              tooltip: _lyrics ? "回到封面" : "歌词",
-              color: _lyrics ? colors.primary : colors.onSurfaceVariant,
-              icon: Icon(
-                _lyrics ? Icons.album_outlined : Icons.lyrics_outlined,
-                size: 22,
-              ),
-              onPressed: () {
-                AppHaptics.selection();
-                setState(() => _lyrics = !_lyrics);
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _toggleStage() {
     AppHaptics.selection();
     setState(() => _lyrics = !_lyrics);
@@ -349,21 +316,71 @@ class PlayerCardState extends State<PlayerCard> {
     );
   }
 
-  /// 封面舞台：方形封面 + 台面倒影，轻点切到歌词
-  Widget _buildStage(PlayerModel player, MusicItem music, bool wide) {
+  Widget _buildStage(PlayerModel player, MusicItem music, double safeTop) {
     final stage = _lyrics
-        ? _buildLyricsStage(music)
+        ? LyricsScroller(key: ValueKey(music.id))
         : LayoutBuilder(builder: (context, constraints) {
             final side = math.min(constraints.maxWidth, constraints.maxHeight);
-            return Center(child: _buildArtwork(player, side));
+            if (side <= 0) return const SizedBox.shrink();
+            final cover = Semantics(
+              button: true,
+              label: "查看歌词",
+              container: true,
+              child: GestureDetector(
+                onTap: _toggleStage,
+                child: SizedBox.square(
+                    dimension: side, child: _buildArtwork(player, side)),
+              ),
+            );
+            final animation = widget.transitionController;
+            if (animation == null) return Center(child: cover);
+            return AnimatedBuilder(
+              animation: animation,
+              child: cover,
+              builder: (context, child) {
+                final t = animation.value;
+                final end = Offset((constraints.maxWidth - side) / 2,
+                    (constraints.maxHeight - side) / 2);
+                // The stage starts 24dp from the card edge and below its safe area.
+                final origin = Offset(-12, 8 - 12 - safeTop);
+                return Align(
+                  alignment: Alignment.topLeft,
+                  child: Transform.translate(
+                    offset: Offset.lerp(origin, end, t)!,
+                    child: Transform.scale(
+                      alignment: Alignment.topLeft,
+                      scale: ui.lerpDouble(44 / side, 1, t)!,
+                      child: child,
+                    ),
+                  ),
+                );
+              },
+            );
           });
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 360),
+      reverseDuration: const Duration(milliseconds: 280),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: ScaleTransition(
+          scale: Tween(begin: .975, end: 1.0).animate(animation),
+          child: child,
+        ),
+      ),
+      child: KeyedSubtree(key: ValueKey(_lyrics), child: stage),
+    );
+  }
+
+  Widget _dismissGesture(Widget child) {
     return GestureDetector(
       onVerticalDragUpdate: (details) {
         final controller = widget.transitionController;
         if (controller == null) return;
         controller.value = (controller.value -
                 details.delta.dy / MediaQuery.sizeOf(context).height)
-            .clamp(0.0, 1.0);
+            .clamp(.001, 1.0);
       },
       onVerticalDragCancel: () {
         if (ModalRoute.of(context)?.isCurrent == true) {
@@ -380,25 +397,9 @@ class PlayerCardState extends State<PlayerCard> {
           controller.fling(velocity: 1.5);
         }
       },
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 360),
-        reverseDuration: const Duration(milliseconds: 280),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeInCubic,
-        transitionBuilder: (child, animation) => FadeTransition(
-          opacity: animation,
-          child: ScaleTransition(
-            scale: Tween(begin: .975, end: 1.0).animate(animation),
-            child: child,
-          ),
-        ),
-        child: KeyedSubtree(key: ValueKey(_lyrics), child: stage),
-      ),
+      behavior: HitTestBehavior.translucent,
+      child: child,
     );
-  }
-
-  Widget _buildLyricsStage(MusicItem music) {
-    return const LyricsScroller();
   }
 
   Widget _buildArtwork(PlayerModel player, double size) {
@@ -456,7 +457,13 @@ class PlayerCardState extends State<PlayerCard> {
     return Row(
       children: [
         if (_lyrics) ...[
-          TrackArtwork(music: music, size: 46, radius: 9),
+          Semantics(
+              button: true,
+              label: "回到封面",
+              container: true,
+              child: GestureDetector(
+                  onTap: _toggleStage,
+                  child: TrackArtwork(music: music, size: 46, radius: 9))),
           const SizedBox(width: 10)
         ],
         Expanded(
@@ -626,6 +633,7 @@ class PlayerCardState extends State<PlayerCard> {
     final music = player.current;
     if (music == null) return const SizedBox.shrink();
     final theme = Theme.of(context);
+    final safeTop = MediaQuery.paddingOf(context).top;
     final dark = theme.brightness == Brightness.dark;
     final tone = HSLColor.fromColor(_artTone);
     final colors = ColorScheme.fromSeed(
@@ -651,7 +659,7 @@ class PlayerCardState extends State<PlayerCard> {
                 child: ImageFiltered(
                   imageFilter: ui.ImageFilter.blur(sigmaX: 34, sigmaY: 34),
                   child: Opacity(
-                    opacity: .17,
+                    opacity: .64,
                     child: Image(
                       image: ResizeImage(_imageProvider!, width: 180),
                       fit: BoxFit.cover,
@@ -669,8 +677,8 @@ class PlayerCardState extends State<PlayerCard> {
                     tone
                         .withLightness(dark ? .24 : .88)
                         .toColor()
-                        .withValues(alpha: dark ? .62 : .78),
-                    colors.surface.withValues(alpha: dark ? .88 : .94),
+                        .withValues(alpha: dark ? .38 : .58),
+                    colors.surface.withValues(alpha: dark ? .60 : .80),
                     colors.surface,
                   ],
                   stops: const [0, .55, 1],
@@ -688,13 +696,13 @@ class PlayerCardState extends State<PlayerCard> {
                 ),
               ),
             ),
-            SafeArea(
+            _dismissGesture(SafeArea(
               child: LayoutBuilder(builder: (context, constraints) {
                 final wide = constraints.maxWidth > 640 &&
                     constraints.maxWidth > constraints.maxHeight;
                 final artwork = Padding(
                   padding: EdgeInsets.fromLTRB(24, 12, 24, wide ? 12 : 10),
-                  child: _buildStage(player, music, wide),
+                  child: _buildStage(player, music, safeTop),
                 );
                 final panel = Padding(
                   padding: const EdgeInsets.fromLTRB(24, 3, 24, 0),
@@ -702,7 +710,6 @@ class PlayerCardState extends State<PlayerCard> {
                 );
                 return Column(
                   children: [
-                    _buildTopBar(context),
                     const PartyLockBanner(),
                     Expanded(
                       child: wide
@@ -732,7 +739,7 @@ class PlayerCardState extends State<PlayerCard> {
                   ],
                 );
               }),
-            ),
+            )),
           ],
         ),
       ),

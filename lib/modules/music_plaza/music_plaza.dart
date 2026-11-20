@@ -1,4 +1,5 @@
 import "dart:math" as math;
+import "package:bobomusic/components/glass_pill.dart";
 
 import "package:bobomusic/components/continuous_rounding.dart";
 import "package:bobomusic/modules/bili_account/bili_login_gate.dart";
@@ -46,11 +47,9 @@ class _MusicPlazaViewState extends State<MusicPlazaView>
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-                child: Material(
-                  color: colors.surfaceContainer,
-                  shape: const ContinuousRounding(21),
-                  clipBehavior: Clip.antiAlias,
+                child: GlassPill(
                   child: ListTile(
+                    minTileHeight: 48,
                     leading: const Icon(Icons.search_rounded),
                     title: const Text("搜索歌曲、UP 主"),
                     onTap: () => Navigator.of(context).push(
