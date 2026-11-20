@@ -149,6 +149,9 @@ void main() {
     final playedAt = DateTime.fromMillisecondsSinceEpoch(1000);
     SharedPreferences.setMockInitialValues({
       "manman_play_history": jsonEncode([
+        {"music": {"id": "invalid-time"}, "at": 9000000000000000},
+        null,
+        {"music": {}},
         HistoryEntry(music: legacy, playedAt: playedAt, count: 4).toJson(),
       ]),
     });

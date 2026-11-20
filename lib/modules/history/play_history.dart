@@ -34,18 +34,26 @@ class PlayHistory {
     final storage = await SharedPreferences.getInstance();
     final raw = storage.getString(_key);
     if (raw == null || raw.isEmpty) return;
+    final Object? list;
     try {
-      final list = jsonDecode(raw);
-      if (list is List) {
-        _entries = list
-            .whereType<Map>()
-            .map((e) => HistoryEntry.fromJson(Map<String, dynamic>.from(e)))
-            .where((e) => e.music.id.isNotEmpty || e.music.localPath.isNotEmpty)
-            .toList();
-      }
-    } catch (_) {
-      _entries = [];
+      list = jsonDecode(raw);
+    } on FormatException {
+      return;
     }
+    if (list is! List) return;
+    final restored = <HistoryEntry>[];
+    for (final row in list.whereType<Map<String, dynamic>>()) {
+      try {
+        final entry = HistoryEntry.fromJson(row);
+        if (entry.music.id.isEmpty && entry.music.localPath.isEmpty) continue;
+        restored.add(entry);
+        if (restored.length == _maxCount) break;
+      } on ArgumentError {
+        // An out-of-range timestamp invalidates only its own record.
+        continue;
+      }
+    }
+    _entries = restored;
   }
 
   /// 记一首歌。播放器每次真正开始播放时调用。
