@@ -2,10 +2,7 @@ import "dart:async";
 import "dart:math" as math;
 
 import "package:bobomusic/components/sheet/bottom_sheet.dart";
-import "package:bobomusic/modules/player/lyrics_card/lyric_search.dart";
 import "package:bobomusic/modules/player/model.dart";
-import "package:bobomusic/modules/setting/playback_prefs.dart";
-import "package:bobomusic/origin_sdk/lyric/client.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:bobomusic/origin_sdk/service.dart";
 import "package:bobomusic/utils/clear_html_tags.dart";
@@ -21,9 +18,9 @@ import "package:provider/provider.dart";
 
 /// 播放页的歌词模式
 ///
-/// 当前行放大加粗并逐字点亮，其余行压暗；上下边缘渐隐，
-/// 拖动可以挑一句直接跳过去。歌词为空时先静默自动匹配，
-/// 匹配不到才让人手动搜索——不要一上来就甩一个空按钮。
+/// 歌词来自这条视频自己的 B 站字幕，切歌后静默自动匹配，
+/// 没有手动搜索——匹配不上就如实说没有。当前行放大加粗逐字点亮，
+/// 其余行压暗；上下边缘渐隐，拖动可以挑一句直接跳过去。
 class LyricsScroller extends StatefulWidget {
   const LyricsScroller({super.key});
 
@@ -55,41 +52,15 @@ class _LyricsScrollerState extends State<LyricsScroller> {
   Future<void> _autoMatch(MusicItem music) async {
     setState(() => _matching = true);
     try {
-      final keyword =
-          music.author.isEmpty ? music.name : "${music.name} ${music.author}";
-      final found = await lyricService.searchMusic(
-        SearchParams(keyword: keyword, page: 1, pageSize: 8),
-        silent: true,
-      );
-      final list = found?.list ?? const <SongItem>[];
-      if (list.isEmpty) return;
-      var best = list.first;
-      if (music.duration > 0) {
-        for (final candidate in list) {
-          if ((candidate.interval - music.duration).abs() <
-              (best.interval - music.duration).abs()) {
-            best = candidate;
-          }
-        }
-        // 时长差太多说明配错了歌，宁可不配
-        if ((best.interval - music.duration).abs() > 6) return;
-      }
-      final lyric = await lyricService.searchLyric(best.songmid, silent: true);
-      final text = lyric?.lyric.trim() ?? "";
-      if (text.isEmpty || !mounted) return;
+      final lrc = await service.getSubtitleLrc(music.id);
+      if (lrc == null || lrc.isEmpty || !mounted) return;
       if (!identical(music, context.read<PlayerModel>().current)) return;
-      await context.read<PlayerModel>().setLyrics(music, text);
+      await context.read<PlayerModel>().setLyrics(music, lrc);
     } catch (_) {
-      // 自动匹配失败不打扰，手动入口还在
+      // 自动匹配失败不打扰，面板里还能再试一次
     } finally {
       if (mounted) setState(() => _matching = false);
     }
-  }
-
-  void _openSearch(MusicItem music) {
-    Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => SearchLyricMusicView(track: music),
-    ));
   }
 
   void _openOptions(MusicItem music) {
@@ -113,9 +84,10 @@ class _LyricsScrollerState extends State<LyricsScroller> {
           onPressed: _offset == 0 ? null : () => setState(() => _offset = 0),
         ),
         SheetItem(
-          title: "重新匹配歌词",
-          icon: Icons.lyrics_outlined,
-          onPressed: () => _openSearch(music),
+          title: "重新匹配字幕",
+          subtitle: "再取一次这条视频的字幕",
+          icon: Icons.subtitles_outlined,
+          onPressed: () => _autoMatch(music),
         ),
         SheetItem(
           title: "移除当前歌词",
@@ -163,14 +135,14 @@ class _LyricsScrollerState extends State<LyricsScroller> {
     final model = _model;
 
     if (model == null) {
-      if (!_matching &&
-          PlaybackPrefs.instance.autoLyrics &&
-          !identical(_attempted, music)) {
+      final matchable = music.origin == OriginType.bili &&
+          music.localPath.isEmpty &&
+          int.tryParse(music.id.split("_").first) != null;
+      if (!_matching && matchable && !identical(_attempted, music)) {
         _attempted = music;
-        WidgetsBinding.instance
-            .addPostFrameCallback((_) => _autoMatch(music));
+        WidgetsBinding.instance.addPostFrameCallback((_) => _autoMatch(music));
       }
-      return _empty(context, music, colors);
+      return _empty(context, music, colors, matchable);
     }
 
     return Column(
@@ -222,7 +194,8 @@ class _LyricsScrollerState extends State<LyricsScroller> {
               if (_offset != 0)
                 Text(
                   "偏移 ${_offsetLabel()}",
-                  style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
+                  style:
+                      TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
                 ),
               const Spacer(),
               TextButton.icon(
@@ -293,7 +266,12 @@ class _LyricsScrollerState extends State<LyricsScroller> {
     );
   }
 
-  Widget _empty(BuildContext context, MusicItem music, ColorScheme colors) {
+  Widget _empty(
+    BuildContext context,
+    MusicItem music,
+    ColorScheme colors,
+    bool matchable,
+  ) {
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -306,27 +284,26 @@ class _LyricsScrollerState extends State<LyricsScroller> {
                   strokeWidth: 2, color: colors.onSurfaceVariant),
             ),
             const SizedBox(height: 14),
-            Text("正在匹配歌词",
+            Text("正在匹配字幕",
                 style: TextStyle(fontSize: 13, color: colors.onSurfaceVariant)),
           ] else ...[
-            Icon(Icons.lyrics_outlined, size: 30, color: colors.onSurfaceVariant),
+            Icon(Icons.subtitles_outlined,
+                size: 30, color: colors.onSurfaceVariant),
             const SizedBox(height: 12),
-            Text("这首歌还没有歌词",
-                style: TextStyle(fontSize: 13, color: colors.onSurfaceVariant)),
-            const SizedBox(height: 16),
-            FilledButton.tonalIcon(
-              onPressed: () {
-                _attempted = music;
-                _autoMatch(music);
-              },
-              icon: const Icon(Icons.auto_awesome_rounded, size: 17),
-              label: const Text("自动匹配"),
+            Text(
+              matchable ? "这条视频没有可用字幕" : "这首歌没有歌词",
+              style: TextStyle(fontSize: 13, color: colors.onSurfaceVariant),
             ),
-            const SizedBox(height: 4),
-            TextButton(
-              onPressed: () => _openSearch(music),
-              child: const Text("手动搜索", style: TextStyle(fontSize: 12)),
-            ),
+            if (matchable) ...[
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: () {
+                  _attempted = music;
+                  _autoMatch(music);
+                },
+                child: const Text("重新匹配", style: TextStyle(fontSize: 12)),
+              ),
+            ],
           ],
         ],
       ),

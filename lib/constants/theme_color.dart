@@ -62,6 +62,9 @@ ThemeData buildAppTheme(Color accent, Brightness brightness) {
     colorScheme: colors,
     primaryColor: colors.primary,
     scaffoldBackgroundColor: colors.surface,
+    // 按钮反馈走按压缩放（Pressable），不要 Material 的水波纹和灰罩
+    splashFactory: NoSplash.splashFactory,
+    highlightColor: Colors.transparent,
     appBarTheme: AppBarTheme(
       backgroundColor: colors.surface,
       foregroundColor: colors.onSurface,
@@ -71,7 +74,7 @@ ThemeData buildAppTheme(Color accent, Brightness brightness) {
     bottomSheetTheme: BottomSheetThemeData(
       backgroundColor: colors.surfaceContainer,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(10)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
     ),
   );

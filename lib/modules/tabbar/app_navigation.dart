@@ -1,6 +1,7 @@
 import "dart:async";
 
 import "package:bobomusic/event_bus/event_bus.dart";
+import "package:bobomusic/constants/motion.dart";
 import "package:bobomusic/modules/music_plaza/music_plaza.dart";
 import "package:bobomusic/modules/music_order/music_order.dart";
 import "package:bobomusic/modules/player/player.dart";
@@ -62,8 +63,13 @@ class AppNavigationState extends State<AppNavigation> {
       children: [
         Expanded(
           child: PageView(
-            physics: const NeverScrollableScrollPhysics(),
             controller: _pageController,
+            onPageChanged: (index) {
+              if (index == _index) return;
+              AppHaptics.selection();
+              FocusScope.of(context).unfocus();
+              setState(() => _index = index);
+            },
             children: const [
               MusicPlazaView(),
               PartyTabView(),
@@ -84,11 +90,10 @@ class AppNavigationState extends State<AppNavigation> {
 
   void _onChangePage(int index) {
     if (index == _index || index < 0 || index >= menus.length) return;
-    AppHaptics.selection();
-    FocusScope.of(context).unfocus();
-    _pageController.jumpToPage(index);
-    setState(() {
-      _index = index;
-    });
+    _pageController.animateToPage(
+      index,
+      duration: AppMotion.medium,
+      curve: AppMotion.standard,
+    );
   }
 }

@@ -5,6 +5,7 @@ import "dart:math" as math;
 import "dart:ui" as ui;
 
 import "package:bobomusic/components/continuous_rounding.dart";
+import "package:bobomusic/components/pressable.dart";
 import "package:bobomusic/components/sheet/bottom_sheet.dart";
 import "package:bobomusic/modules/bili_account/fav_sync.dart";
 import "package:bobomusic/modules/party/party_page.dart";
@@ -24,6 +25,7 @@ import "package:bobomusic/modules/share/share_sheet.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:bobomusic/utils/check_music_local_repeat.dart";
 import "package:bobomusic/utils/clear_html_tags.dart";
+import "package:bobomusic/utils/copy_track_name.dart";
 import "package:bobomusic/utils/haptics.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:flutter/cupertino.dart";
@@ -207,23 +209,27 @@ class PlayerCardState extends State<PlayerCard> {
       padding: const EdgeInsetsDirectional.only(start: 13, end: 13),
       child: Row(
         children: [
-          IconButton(
-            tooltip: "收起播放器",
-            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
-            onPressed: () => Navigator.of(context).pop(),
+          Pressable(
+            child: IconButton(
+              tooltip: "收起播放器",
+              icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
           ),
           const Spacer(),
-          IconButton(
-            tooltip: _lyrics ? "回到封面" : "歌词",
-            color: _lyrics ? colors.primary : colors.onSurfaceVariant,
-            icon: Icon(
-              _lyrics ? Icons.album_outlined : Icons.lyrics_outlined,
-              size: 22,
+          Pressable(
+            child: IconButton(
+              tooltip: _lyrics ? "回到封面" : "歌词",
+              color: _lyrics ? colors.primary : colors.onSurfaceVariant,
+              icon: Icon(
+                _lyrics ? Icons.album_outlined : Icons.lyrics_outlined,
+                size: 22,
+              ),
+              onPressed: () {
+                AppHaptics.selection();
+                setState(() => _lyrics = !_lyrics);
+              },
             ),
-            onPressed: () {
-              AppHaptics.selection();
-              setState(() => _lyrics = !_lyrics);
-            },
           ),
         ],
       ),
@@ -236,50 +242,50 @@ class PlayerCardState extends State<PlayerCard> {
   }
 
   Widget _moreActions(PlayerModel player, MusicItem music) {
-    return IconButton(
-      tooltip: "更多播放选项",
-      icon: const Icon(Icons.more_horiz_rounded),
-      onPressed: () => openBottomSheet(
-        context,
-        [
-          if (music.localPath.isEmpty)
+    return Pressable(
+      child: IconButton(
+        tooltip: "更多播放选项",
+        icon: const Icon(Icons.more_horiz_rounded),
+        onPressed: () => openBottomSheet(
+          context,
+          [
+            if (music.localPath.isEmpty)
+              SheetItem(
+                title: "下载",
+                subtitle: "存到本地，没网也能听",
+                icon: Icons.download_rounded,
+                onPressed: () {
+                  checkMusicLocalRepeat(context, music, () {
+                    context.read<DownloadModel>().download([music]);
+                  });
+                },
+              ),
+            if (music.id.contains("BV"))
+              SheetItem(
+                title: "打开哔哩哔哩",
+                subtitle: "去看这条视频",
+                icon: Icons.smart_display_outlined,
+                onPressed: () {
+                  final bv = RegExp(r"BV[0-9A-Za-z]+").firstMatch(music.id);
+                  if (bv != null) _launchBilibiliVideo(bv.group(0)!, player);
+                },
+              ),
             SheetItem(
-              title: "下载",
-              subtitle: "存到本地，没网也能听",
-              icon: Icons.download_rounded,
-              onPressed: () {
-                checkMusicLocalRepeat(context, music, () {
-                  context.read<DownloadModel>().download([music]);
-                });
-              },
+              title: "分享",
+              icon: Icons.ios_share_rounded,
+              onPressed: () => showShareSheet(context),
             ),
-          if (music.id.contains("BV"))
             SheetItem(
-              title: "打开哔哩哔哩",
-              subtitle: "去看这条视频",
-              icon: Icons.smart_display_outlined,
-              onPressed: () {
-                final bv = RegExp(r"BV[0-9A-Za-z]+").firstMatch(music.id);
-                if (bv != null) _launchBilibiliVideo(bv.group(0)!, player);
-              },
+              title: _vinyl ? "方形封面" : "黑胶封面",
+              icon: _vinyl ? Icons.crop_square_rounded : Icons.album_outlined,
+              onPressed: () => setState(() => _vinyl = !_vinyl),
             ),
-          SheetItem(
-            title: "分享",
-            icon: Icons.ios_share_rounded,
-            onPressed: () => showShareSheet(context),
+          ],
+          header: SheetHeader(
+            title: clearHtmlTags(music.name),
+            subtitle: clearHtmlTags(music.author),
+            track: music,
           ),
-          SheetItem(
-            title: _vinyl ? "方形封面" : "黑胶封面",
-            icon: _vinyl
-                ? Icons.crop_square_rounded
-                : Icons.album_outlined,
-            onPressed: () => setState(() => _vinyl = !_vinyl),
-          ),
-        ],
-        header: SheetHeader(
-          title: clearHtmlTags(music.name),
-          subtitle: clearHtmlTags(music.author),
-          track: music,
         ),
       ),
     );
@@ -349,17 +355,15 @@ class PlayerCardState extends State<PlayerCard> {
     if (size <= 0) return const SizedBox.shrink();
     final provider = _imageProvider;
     const shape = ContinuousRounding(26);
-    final placeholder =
-        Image.asset(errorCoverUrl, width: size, height: size, fit: BoxFit.cover);
+    final placeholder = Image.asset(errorCoverUrl,
+        width: size, height: size, fit: BoxFit.cover);
     return Center(
       child: DecoratedBox(
         decoration: const ShapeDecoration(
           shape: shape,
           shadows: [
             BoxShadow(
-                color: Color(0x3D000000),
-                blurRadius: 22,
-                offset: Offset(0, 8)),
+                color: Color(0x3D000000), blurRadius: 22, offset: Offset(0, 8)),
           ],
         ),
         child: ClipPath(
@@ -397,14 +401,17 @@ class PlayerCardState extends State<PlayerCard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                clearHtmlTags(music.name),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  color: colors.onSurface,
-                  fontWeight: FontWeight.w700,
-                  height: 1.13,
+              GestureDetector(
+                onLongPress: () => copyTrackName(music),
+                child: Text(
+                  clearHtmlTags(music.name),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    color: colors.onSurface,
+                    fontWeight: FontWeight.w700,
+                    height: 1.13,
+                  ),
                 ),
               ),
               if (music.author.isNotEmpty) ...[
@@ -421,12 +428,16 @@ class PlayerCardState extends State<PlayerCard> {
           ),
         ),
         const SizedBox(width: 8),
-        IconButton.filledTonal(
-          tooltip: isLike ? "取消收藏" : "收藏",
-          color: isLike ? colors.primary : colors.onSurface,
-          onPressed: _savingLike ? null : () => _toggleLike(music),
-          icon: Icon(
-              isLike ? Icons.favorite_rounded : Icons.favorite_border_rounded),
+        Pressable(
+          enabled: !_savingLike,
+          child: IconButton.filledTonal(
+            tooltip: isLike ? "取消收藏" : "收藏",
+            color: isLike ? colors.primary : colors.onSurface,
+            onPressed: _savingLike ? null : () => _toggleLike(music),
+            icon: Icon(isLike
+                ? Icons.favorite_rounded
+                : Icons.favorite_border_rounded),
+          ),
         ),
         const SizedBox(width: 4),
         _moreActions(player, music),
@@ -525,7 +536,7 @@ class PlayerCardState extends State<PlayerCard> {
             style: IconButton.styleFrom(
               fixedSize: const Size.square(56),
               backgroundColor: colors.onSurface.withValues(alpha: .10),
-              shape: const ContinuousRounding(27),
+              shape: const StadiumBorder(),
             ),
           ),
           child: Row(
@@ -576,7 +587,6 @@ class PlayerCardState extends State<PlayerCard> {
       brightness: theme.brightness,
       surface: tone.withLightness(dark ? .145 : .95).toColor(),
     );
-    final cover = _imageProvider;
     return Theme(
       data: theme.copyWith(
         colorScheme: colors,
@@ -590,12 +600,6 @@ class PlayerCardState extends State<PlayerCard> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            ArtworkBackdrop(
-              provider: cover,
-              surface: colors.surface,
-              tone: _artTone,
-              brightness: theme.brightness,
-            ),
             DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(

@@ -7,6 +7,7 @@ import "package:shared_preferences/shared_preferences.dart";
 import "../origin_types.dart";
 import "./auth.dart";
 import "./sign.dart";
+import "./subtitle.dart";
 import "./ticket.dart";
 import "./types.dart";
 
@@ -71,6 +72,8 @@ class BiliClient implements OriginService {
           return handler.next(error);
         },
         onResponse: (Response response, ResponseInterceptorHandler handler) {
+          // 静默请求（字幕自动匹配等）失败时不弹提示，不打扰听歌
+          final silent = response.requestOptions.extra["silent"] == true;
           final logData = {
             "requestOptions": response.requestOptions,
             "url": response.realUri.toString(),
@@ -81,9 +84,11 @@ class BiliClient implements OriginService {
             return handler.next(response);
           }
           if (response.statusCode! < 200 || response.statusCode! > 300) {
-            BotToast.showText(
-                text:
-                    "请求失败: ${response.statusCode} ${response.statusMessage} ${response.data}");
+            if (!silent) {
+              BotToast.showText(
+                  text:
+                      "请求失败: ${response.statusCode} ${response.statusMessage} ${response.data}");
+            }
             throw DioException(
               requestOptions: response.requestOptions,
               response: response,
@@ -101,7 +106,7 @@ class BiliClient implements OriginService {
           final resData = response.data["data"];
 
           if (code != 0) {
-            BotToast.showText(text: "请求失败: $message");
+            if (!silent) BotToast.showText(text: "请求失败: $message");
             throw DioException(
               requestOptions: response.requestOptions,
               response: response,
@@ -110,7 +115,7 @@ class BiliClient implements OriginService {
             );
           }
           if (resData["v_voucher"] != null) {
-            BotToast.showText(text: "请求失败，触发风控，请稍后重试");
+            if (!silent) BotToast.showText(text: "请求失败，触发风控，请稍后重试");
             throw DioException(
               requestOptions: response.requestOptions,
               response: response,
@@ -393,6 +398,75 @@ class BiliClient implements OriginService {
 
   /// 正在查询中的 cid，避免并发重复请求
   final Map<String, Future<String?>> _cidPending = {};
+
+  /// 字幕 JSON 在 CDN 上，返回的不是 {code, data} 结构，
+  /// 不能走上面那套业务拦截器，单独用一个干净的 Dio。
+  final _subtitleDio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 10),
+    headers: {"UserAgent": _userAgent, "Referer": _referer},
+  ));
+
+  /// 取当前视频的 CC 字幕，转成 LRC 文本；没有字幕返回 null
+  ///
+  /// 只读 web 接口：player/v2 拿字幕列表，再取字幕 JSON。
+  /// 优先人工中文字幕，其次 AI 中文，最后兜底第一条。
+  Future<String?> getSubtitleLrc(String id) async {
+    final BiliId biliid;
+    try {
+      biliid = BiliId.unicode(id);
+    } catch (_) {
+      return null;
+    }
+    if (int.tryParse(biliid.aid) == null && biliid.bvid.isEmpty) return null;
+    var cid = biliid.cid ?? "";
+    if (cid.isEmpty) {
+      cid = await _fetchCid(aid: biliid.aid, bvid: biliid.bvid) ?? "";
+      if (cid.isEmpty) return null;
+    }
+    try {
+      await init();
+      final query = _signParams({
+        "aid": biliid.aid,
+        "bvid": biliid.bvid,
+        "cid": cid,
+      });
+      final response = await dio.get(
+        Uri.parse("https://api.bilibili.com/x/player/wbi/v2")
+            .replace(queryParameters: query)
+            .toString(),
+        options: Options(
+          extra: {"silent": true},
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+      final data = response.data is Map ? response.data["data"] : null;
+      final subtitle = data is Map ? data["subtitle"] : null;
+      final list = subtitle is Map ? subtitle["subtitles"] : null;
+      if (list is! List || list.isEmpty) return null;
+      final entries = list.whereType<Map>().toList();
+      Map? chosen;
+      for (final lan in const ["zh-Hans", "zh-CN", "zh", "ai-zh"]) {
+        for (final entry in entries) {
+          if (entry["lan"] == lan) {
+            chosen = entry;
+            break;
+          }
+        }
+        if (chosen != null) break;
+      }
+      chosen ??= entries.first;
+      var url = "${chosen["subtitle_url"] ?? ""}";
+      if (url.isEmpty) return null;
+      if (url.startsWith("//")) url = "https:$url";
+      final json = await _subtitleDio.get(url);
+      final body = json.data is String ? jsonDecode(json.data) : json.data;
+      if (body is! Map<String, dynamic>) return null;
+      return subtitleToLrc(body);
+    } catch (_) {
+      return null;
+    }
+  }
 
   // 获取音乐播放地址
   //

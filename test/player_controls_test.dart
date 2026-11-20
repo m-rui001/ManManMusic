@@ -8,7 +8,9 @@ import "package:bobomusic/modules/player/player.dart";
 import "package:bobomusic/modules/player/player_card/card.dart";
 import "package:bobomusic/modules/player/player_card/progress.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
+import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
+import "package:flutter/services.dart";
 import "package:flutter_lyric/lyrics_reader_widget.dart";
 import "package:flutter_test/flutter_test.dart";
 import "package:provider/provider.dart";
@@ -129,7 +131,7 @@ void main() {
       ),
     );
     await tester.tap(find.text(player.track.name));
-    // 播放页背景一直在缓慢流动，pumpAndSettle 永远等不到静止
+    // 展开动画 520ms，等窗口长到位再断言
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
     expect(find.byType(PlayerCard), findsOneWidget);
@@ -207,6 +209,52 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
     unawaited(positions.close());
+  });
+
+  testWidgets("长按迷你播放器曲名复制干净文本", (tester) async {
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(() => TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, null));
+
+    final player = LayoutPlayer(playing: false);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<PlayerModel>.value(
+        value: player,
+        child: MaterialApp(
+          navigatorObservers: [BotToastNavigatorObserver()],
+          builder: BotToastInit(),
+          home: const Scaffold(body: PlayerView()),
+        ),
+      ),
+    );
+    await tester.longPress(find.text(player.track.name));
+    await tester.pump();
+    final clip = calls.where((c) => c.method == "Clipboard.setData").single;
+    expect((clip.arguments as Map)["text"], player.track.name);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets("迷你播放器往上拖展开播放页", (tester) async {
+    final player = LayoutPlayer(playing: false);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<PlayerModel>.value(
+        value: player,
+        child: const MaterialApp(home: Scaffold(body: PlayerView())),
+      ),
+    );
+    expect(find.byType(PlayerCard), findsNothing);
+    await tester.drag(
+        find.byType(LinearProgressIndicator), const Offset(0, -80));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byType(PlayerCard), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }
 

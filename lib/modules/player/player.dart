@@ -1,11 +1,13 @@
 import "dart:async";
 
 import "package:bobomusic/components/continuous_rounding.dart";
+import "package:bobomusic/components/pressable.dart";
 import "package:bobomusic/constants/motion.dart";
 import "package:bobomusic/modules/party/party_control.dart";
 import "package:bobomusic/modules/party/party_page.dart";
 import "package:bobomusic/modules/player/artwork.dart";
 import "package:bobomusic/utils/clear_html_tags.dart";
+import "package:bobomusic/utils/copy_track_name.dart";
 import "package:bobomusic/utils/haptics.dart";
 import "package:bot_toast/bot_toast.dart";
 import "package:flutter/material.dart";
@@ -14,10 +16,18 @@ import "package:bobomusic/modules/player/list.dart";
 import "package:bobomusic/modules/player/model.dart";
 import "package:provider/provider.dart";
 
-class PlayerView extends StatelessWidget {
+class PlayerView extends StatefulWidget {
   final bool cancelMargin;
 
   const PlayerView({super.key, this.cancelMargin = false});
+
+  @override
+  State<PlayerView> createState() => _PlayerViewState();
+}
+
+class _PlayerViewState extends State<PlayerView> {
+  double? _dragStart;
+
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerModel>();
@@ -25,52 +35,69 @@ class PlayerView extends StatelessWidget {
     if (music == null) return const SizedBox.shrink();
     final colors = Theme.of(context).colorScheme;
     return Padding(
-      padding: EdgeInsets.fromLTRB(14, 4, 14, cancelMargin ? 6 : 34),
-      child: Material(
-        color: colors.surfaceContainerHigh,
-        shape: const ContinuousRounding(42),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              height: 60,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: () => showPlayerCard(context),
-                      child: const PlayInfo(),
+      padding: EdgeInsets.fromLTRB(14, 4, 14, widget.cancelMargin ? 6 : 34),
+      // 往上拖迷你播放器（含进度细线）直接展开播放页，和点一下等价
+      child: GestureDetector(
+        onVerticalDragStart: (details) =>
+            _dragStart = details.globalPosition.dy,
+        onVerticalDragEnd: (details) {
+          final start = _dragStart;
+          _dragStart = null;
+          final velocity = details.primaryVelocity ?? 0;
+          final distance =
+              start == null ? 0 : start - details.globalPosition.dy;
+          if (velocity < -300 || distance > 28) showPlayerCard(context);
+        },
+        child: Material(
+          color: colors.surfaceContainerHigh,
+          shape: const ContinuousRounding(42),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                height: 60,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Pressable(
+                        pressScale: .97,
+                        child: InkWell(
+                          onTap: () => showPlayerCard(context),
+                          onLongPress: () => copyTrackName(music),
+                          child: const PlayInfo(),
+                        ),
+                      ),
                     ),
-                  ),
-                  const PartyLockBadge(),
-                  PlayButton(size: 26, color: colors.onSurface, flat: true),
-                  NextButton(size: 26, color: colors.onSurface),
-                  const SizedBox(width: 7),
-                ],
+                    const PartyLockBadge(),
+                    PlayButton(size: 26, color: colors.onSurface, flat: true),
+                    NextButton(size: 26, color: colors.onSurface),
+                    const SizedBox(width: 7),
+                  ],
+                ),
               ),
-            ),
-            StreamBuilder<Duration>(
-              stream: player.positions,
-              initialData: player.currentPosition,
-              builder: (context, snapshot) {
-                final total = player.duration?.inMilliseconds ?? 0;
-                final position = snapshot.data?.inMilliseconds ?? 0;
-                return Padding(
-                  // 胶囊底边只有中间一段是直的，缩进小于圆角会被裁掉两头
-                  padding: const EdgeInsets.symmetric(horizontal: 34),
-                  child: LinearProgressIndicator(
-                    value: total > 0 ? (position / total).clamp(0.0, 1.0) : 0,
-                    minHeight: 2,
-                    borderRadius: BorderRadius.circular(1),
-                    color: colors.primary,
-                    backgroundColor:
-                        colors.outlineVariant.withValues(alpha: .35),
-                  ),
-                );
-              },
-            ),
-          ],
+              StreamBuilder<Duration>(
+                stream: player.positions,
+                initialData: player.currentPosition,
+                builder: (context, snapshot) {
+                  final total = player.duration?.inMilliseconds ?? 0;
+                  final position = snapshot.data?.inMilliseconds ?? 0;
+                  return Padding(
+                    // 胶囊底边只有中间一段是直的，缩进小于圆角会被裁掉两头
+                    padding: const EdgeInsets.symmetric(horizontal: 34),
+                    child: LinearProgressIndicator(
+                      value: total > 0 ? (position / total).clamp(0.0, 1.0) : 0,
+                      minHeight: 2,
+                      borderRadius: BorderRadius.circular(1),
+                      color: colors.primary,
+                      backgroundColor:
+                          colors.outlineVariant.withValues(alpha: .35),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -105,7 +132,8 @@ class PartyLockBadge extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.lock_outline, size: 11, color: colors.onSurfaceVariant),
+                Icon(Icons.lock_outline,
+                    size: 11, color: colors.onSurfaceVariant),
                 const SizedBox(width: 3),
                 Text(
                   "房主控制",
@@ -207,34 +235,39 @@ class PlayButton extends StatelessWidget {
 
         if (prominent) {
           final colors = Theme.of(context).colorScheme;
-          return IconButton.filled(
-            tooltip: label,
-            onPressed: toggle,
-            style: IconButton.styleFrom(
-              minimumSize: const Size(0, 68),
-              shape: const ContinuousRounding(28),
-              backgroundColor: colors.onSurface,
-              foregroundColor: colors.surface,
+          return Pressable(
+            pressScale: .95,
+            child: IconButton.filled(
+              tooltip: label,
+              onPressed: toggle,
+              style: IconButton.styleFrom(
+                minimumSize: const Size(0, 68),
+                shape: const StadiumBorder(),
+                backgroundColor: colors.onSurface,
+                foregroundColor: colors.surface,
+              ),
+              iconSize: 34,
+              icon: morph(player.isPlaying
+                  ? Icons.pause_rounded
+                  : Icons.play_arrow_rounded),
             ),
-            iconSize: 34,
-            icon: morph(player.isPlaying
-                ? Icons.pause_rounded
-                : Icons.play_arrow_rounded),
           );
         }
-        return IconButton(
-          tooltip: label,
-          color: color ?? primaryColor,
-          iconSize: size,
-          padding: const EdgeInsets.only(bottom: 0),
-          icon: morph(flat
-              ? (player.isPlaying
-                  ? Icons.pause_rounded
-                  : Icons.play_arrow_rounded)
-              : (player.isPlaying
-                  ? Icons.pause_circle_filled
-                  : Icons.play_circle_filled)),
-          onPressed: toggle,
+        return Pressable(
+          child: IconButton(
+            tooltip: label,
+            color: color ?? primaryColor,
+            iconSize: size,
+            padding: const EdgeInsets.only(bottom: 0),
+            icon: morph(flat
+                ? (player.isPlaying
+                    ? Icons.pause_rounded
+                    : Icons.play_arrow_rounded)
+                : (player.isPlaying
+                    ? Icons.pause_circle_filled
+                    : Icons.play_circle_filled)),
+            onPressed: toggle,
+          ),
         );
       },
     );
@@ -249,12 +282,15 @@ class PrevButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerModel>();
-    return IconButton(
-      tooltip: "上一首",
-      color: color ?? Theme.of(context).primaryColor,
-      iconSize: size,
-      onPressed: player.current == null ? null : player.prev,
-      icon: const Icon(Icons.skip_previous_rounded),
+    return Pressable(
+      enabled: player.current != null,
+      child: IconButton(
+        tooltip: "上一首",
+        color: color ?? Theme.of(context).primaryColor,
+        iconSize: size,
+        onPressed: player.current == null ? null : player.prev,
+        icon: const Icon(Icons.skip_previous_rounded),
+      ),
     );
   }
 }
@@ -272,12 +308,15 @@ class NextButton extends StatelessWidget {
         (music.orderName.isNotEmpty ||
             player.collectionQueue.isNotEmpty ||
             player.playerList.isNotEmpty);
-    return IconButton(
-      tooltip: "下一首",
-      color: color ?? Theme.of(context).primaryColor,
-      iconSize: size,
-      onPressed: canSkip ? player.next : null,
-      icon: const Icon(Icons.skip_next_rounded),
+    return Pressable(
+      enabled: canSkip,
+      child: IconButton(
+        tooltip: "下一首",
+        color: color ?? Theme.of(context).primaryColor,
+        iconSize: size,
+        onPressed: canSkip ? player.next : null,
+        icon: const Icon(Icons.skip_next_rounded),
+      ),
     );
   }
 }
@@ -295,15 +334,17 @@ class PlayerListButton extends StatelessWidget {
 
     return Consumer<PlayerModel>(
       builder: (context, player, child) {
-        return IconButton(
-          color: color ?? primaryColor,
-          iconSize: size,
-          tooltip: "播放队列",
-          onPressed: () {
-            showPlayerList(context);
-          },
-          icon: const Icon(
-            Icons.queue_music,
+        return Pressable(
+          child: IconButton(
+            color: color ?? primaryColor,
+            iconSize: size,
+            tooltip: "播放队列",
+            onPressed: () {
+              showPlayerList(context);
+            },
+            icon: const Icon(
+              Icons.queue_music,
+            ),
           ),
         );
       },
@@ -324,17 +365,19 @@ class ModeButton extends StatelessWidget {
 
     return Consumer<PlayerModel>(
       builder: (context, player, child) {
-        return IconButton(
-          color: color ?? primaryColor,
-          iconSize: size,
-          tooltip: player.playerMode.name,
-          onPressed: () {
-            AppHaptics.selection();
-            player.togglePlayerMode();
-            BotToast.showText(text: "${player.playerMode.name}模式");
-          },
-          icon: Icon(
-            player.playerMode.icon,
+        return Pressable(
+          child: IconButton(
+            color: color ?? primaryColor,
+            iconSize: size,
+            tooltip: player.playerMode.name,
+            onPressed: () {
+              AppHaptics.selection();
+              player.togglePlayerMode();
+              BotToast.showText(text: "${player.playerMode.name}模式");
+            },
+            icon: Icon(
+              player.playerMode.icon,
+            ),
           ),
         );
       },
@@ -412,9 +455,8 @@ class _UnfoldTransition extends StatelessWidget {
         final t = AppMotion.emphasized.transform(animation.value);
         final rect = from == null ? target : Rect.lerp(from, target, t)!;
         // 内容晚一点浮现，先让容器长到位，避免小窗口里塞满字
-        final opacity = from == null
-            ? animation.value
-            : ((t - .18) / .82).clamp(0.0, 1.0);
+        final opacity =
+            from == null ? animation.value : ((t - .18) / .82).clamp(0.0, 1.0);
         return Stack(
           fit: StackFit.expand,
           children: [

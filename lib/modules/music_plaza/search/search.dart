@@ -3,6 +3,7 @@
 import "dart:async";
 
 import "package:bobomusic/components/sheet/bottom_sheet.dart";
+import "package:bobomusic/components/search_field.dart";
 import "package:bobomusic/constants/cache_key.dart";
 import "package:bobomusic/db/db.dart";
 import "package:bobomusic/event_bus/event_bus.dart";
@@ -473,13 +474,14 @@ class SearchViewState extends State<SearchView> {
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        title: _SearchForm(
+        title: SearchField(
           keywordController: _keywordController,
+          focusNode: _focusNode,
+          hintText: "请输入歌曲名或歌手名搜索曲目",
           onSearch: () {
             _searchHandler(true);
           },
           onInput: _onInputChange,
-          focusNode: _focusNode,
         ),
         actions: [
           TextButton(
@@ -491,54 +493,6 @@ class SearchViewState extends State<SearchView> {
       ),
       body: buildBody(context),
       floatingActionButton: const PlayerView(cancelMargin: true),
-    );
-  }
-}
-
-class _SearchForm extends StatefulWidget {
-  final TextEditingController keywordController;
-  final Function() onSearch;
-  final Function(String value) onInput;
-  final FocusNode focusNode;
-
-  const _SearchForm({
-    required this.keywordController,
-    required this.onSearch,
-    required this.onInput,
-    required this.focusNode,
-  });
-
-  @override
-  State<_SearchForm> createState() => _SearchFormState();
-}
-
-class _SearchFormState extends State<_SearchForm> {
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: widget.keywordController,
-      onSubmitted: (value) => widget.onSearch(),
-      focusNode: widget.focusNode,
-      decoration: const InputDecoration(
-        filled: true,
-        fillColor: Color.fromARGB(255, 239, 240, 241),
-        constraints: BoxConstraints(maxHeight: 35),
-        border: UnderlineInputBorder(
-          borderSide: BorderSide.none,
-          borderRadius: BorderRadius.all(Radius.circular(20)),
-        ),
-        hintText: "请输入歌曲名或歌手名搜索曲目",
-        hintStyle: TextStyle(fontSize: 12),
-        contentPadding: EdgeInsets.symmetric(vertical: 13.5, horizontal: 16),
-      ),
-      onChanged: (value) {
-        if (value.isEmpty) {
-          widget.onSearch();
-          return;
-        }
-
-        widget.onInput(value);
-      },
     );
   }
 }

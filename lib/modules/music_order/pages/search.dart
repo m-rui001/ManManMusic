@@ -1,6 +1,7 @@
 import "dart:async";
 
 import "package:bobomusic/components/music_list_tile/music_list_tile.dart";
+import "package:bobomusic/components/search_field.dart";
 import "package:bobomusic/components/sheet/bottom_sheet.dart";
 import "package:bobomusic/constants/cache_key.dart";
 import "package:bobomusic/db/db.dart";
@@ -91,7 +92,8 @@ class SearchOrderMusicViewState extends State<SearchOrderMusicView> {
 
   updateSearchHistory(String keyword, {bool isDelete = false}) async {
     final localStorage = await SharedPreferences.getInstance();
-    final list = localStorage.getStringList(CacheKey.searchOrderMusicHistory) ?? [];
+    final list =
+        localStorage.getStringList(CacheKey.searchOrderMusicHistory) ?? [];
     if (list.contains(keyword)) {
       list.remove(keyword);
     }
@@ -132,40 +134,44 @@ class SearchOrderMusicViewState extends State<SearchOrderMusicView> {
 
   Widget buildSearchHistory() {
     return Container(
-      padding: const EdgeInsets.only(left: 10, right: 10, bottom: 70),
-      width: double.infinity,
-      child: ListView(
-        children: _searchHistory.map((keyword) {
-          return InkWell(
-            borderRadius: const BorderRadius.all(Radius.circular(4)),
-            onTap: () {
-              _keywordController.text = keyword;
-              _searchHandler(true);
-            },
-            child: Container(
-              padding: const EdgeInsets.only(
-                top: 6,
-                bottom: 6,
-                left: 18,
-                right: 12,
+        padding: const EdgeInsets.only(left: 10, right: 10, bottom: 70),
+        width: double.infinity,
+        child: ListView(
+          children: _searchHistory.map((keyword) {
+            return InkWell(
+              borderRadius: const BorderRadius.all(Radius.circular(4)),
+              onTap: () {
+                _keywordController.text = keyword;
+                _searchHandler(true);
+              },
+              child: Container(
+                padding: const EdgeInsets.only(
+                  top: 6,
+                  bottom: 6,
+                  left: 18,
+                  right: 12,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(keyword,
+                        style: const TextStyle(
+                            fontSize: 16,
+                            color: Color.fromARGB(255, 146, 146, 145),
+                            overflow: TextOverflow.ellipsis)),
+                    InkWell(
+                      child: const Icon(Icons.delete_forever,
+                          size: 16, color: Color.fromARGB(255, 146, 146, 145)),
+                      onTap: () {
+                        updateSearchHistory(keyword, isDelete: true);
+                      },
+                    )
+                  ],
+                ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(keyword, style: const TextStyle(fontSize: 16, color: Color.fromARGB(255, 146, 146, 145), overflow: TextOverflow.ellipsis)),
-                  InkWell(
-                    child: const Icon(Icons.delete_forever, size: 16, color: Color.fromARGB(255, 146, 146, 145)),
-                    onTap: () {
-                      updateSearchHistory(keyword, isDelete: true);
-                    },
-                  )
-                ],
-              ),
-            ),
-          );
-        }).toList(),
-      )
-    );
+            );
+          }).toList(),
+        ));
   }
 
   Widget buildSearchSuggest() {
@@ -214,30 +220,29 @@ class SearchOrderMusicViewState extends State<SearchOrderMusicView> {
           title: "编辑信息",
           icon: Icons.edit_outlined,
           onPressed: () {
-            Navigator.of(context).push(
-              ModalBottomSheetRoute(
-                isScrollControlled: true,
-                builder: (context) {
-                  return Padding(
+            Navigator.of(context).push(ModalBottomSheetRoute(
+              isScrollControlled: true,
+              builder: (context) {
+                return Padding(
                     padding: EdgeInsets.only(
                       bottom: MediaQuery.of(context).viewInsets.bottom,
                     ),
                     child: EditMusic(
                       musicItem: data,
                       onOk: (music) async {
-                        await db.update(TableName.musicLocal, musicItem2Row(music: music));
+                        await db.update(
+                            TableName.musicLocal, musicItem2Row(music: music));
 
-                        if (player.current != null && player.current!.playId == music.playId) {
+                        if (player.current != null &&
+                            player.current!.playId == music.playId) {
                           player.current = music;
                         }
 
                         _searchHandler(true);
                       },
-                    )
-                  );
-                },
-              )
-            );
+                    ));
+              },
+            ));
           },
         ),
       ],
@@ -264,9 +269,8 @@ class SearchOrderMusicViewState extends State<SearchOrderMusicView> {
       itemBuilder: (ctx, index) {
         if (searchMusicList.isEmpty) {
           return SizedBox(
-            height: MediaQuery.of(context).size.height - 200,
-            child: const Center(child: Text("没有匹配的歌曲"))
-          );
+              height: MediaQuery.of(context).size.height - 200,
+              child: const Center(child: Text("没有匹配的歌曲")));
         }
         if (index == searchMusicList.length) {
           return SizedBox(
@@ -297,13 +301,14 @@ class SearchOrderMusicViewState extends State<SearchOrderMusicView> {
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        title: _SearchForm(
+        title: SearchField(
           keywordController: _keywordController,
+          focusNode: _focusNode,
+          hintText: "搜索曲目、合集或作者",
           onSearch: () {
             _searchHandler(true);
           },
           onInput: _onInputChange,
-          focusNode: _focusNode,
         ),
         actions: [
           TextButton(
@@ -315,54 +320,6 @@ class SearchOrderMusicViewState extends State<SearchOrderMusicView> {
       ),
       body: buildBody(context),
       floatingActionButton: const PlayerView(cancelMargin: true),
-    );
-  }
-}
-
-class _SearchForm extends StatefulWidget {
-  final TextEditingController keywordController;
-  final Function() onSearch;
-  final Function(String value) onInput;
-  final FocusNode focusNode;
-
-  const _SearchForm({
-    required this.keywordController,
-    required this.onSearch,
-    required this.onInput,
-    required this.focusNode,
-  });
-
-  @override
-  State<_SearchForm> createState() => _SearchFormState();
-}
-
-class _SearchFormState extends State<_SearchForm> {
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: widget.keywordController,
-      onSubmitted: (value) => widget.onSearch(),
-      focusNode: widget.focusNode,
-      decoration: const InputDecoration(
-        filled: true,
-        fillColor: Color.fromARGB(255, 239, 240, 241),
-        constraints: BoxConstraints(maxHeight: 35),
-        border: UnderlineInputBorder(
-          borderSide: BorderSide.none,
-          borderRadius: BorderRadius.all(Radius.circular(20)),
-        ),
-        hintText: "搜索曲目、合集或作者",
-        hintStyle: TextStyle(fontSize: 12),
-        contentPadding: EdgeInsets.symmetric(vertical: 13.5, horizontal: 16),
-      ),
-      onChanged: (value) {
-        if (value.isEmpty) {
-          widget.onSearch();
-          return;
-        }
-
-        widget.onInput(value);
-      },
     );
   }
 }

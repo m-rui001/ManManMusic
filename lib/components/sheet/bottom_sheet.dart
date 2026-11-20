@@ -1,4 +1,5 @@
 import "package:bobomusic/components/continuous_rounding.dart";
+import "package:bobomusic/components/pressable.dart";
 import "package:bobomusic/modules/player/artwork.dart";
 import "package:bobomusic/origin_sdk/origin_types.dart";
 import "package:bobomusic/utils/haptics.dart";
@@ -141,9 +142,8 @@ class _ActionSheet extends StatelessWidget {
           if (item.icon != null) ...[
             Icon(item.icon,
                 size: 24,
-                color: item.destructive
-                    ? colors.error
-                    : colors.onSurfaceVariant),
+                color:
+                    item.destructive ? colors.error : colors.onSurfaceVariant),
             const SizedBox(width: 16),
           ],
           Expanded(
@@ -197,19 +197,24 @@ class _ActionSheet extends StatelessWidget {
             color: Colors.transparent,
             shape: shape,
             clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              customBorder: shape,
+            child: Pressable(
+              pressScale: .98,
               onTap: enabled
                   ? () {
                       Navigator.of(context).pop();
                       item.onPressed!();
                     }
                   : null,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 56),
-                child: enabled
-                    ? content
-                    : Opacity(opacity: .38, child: content),
+              builder: (context, pressed) => AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                color: pressed
+                    ? colors.onSurface.withValues(alpha: .07)
+                    : Colors.transparent,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 56),
+                  child:
+                      enabled ? content : Opacity(opacity: .38, child: content),
+                ),
               ),
             ),
           ),
