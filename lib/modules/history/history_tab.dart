@@ -220,7 +220,8 @@ class HistoryTabState extends State<HistoryTab> {
                                         ? Icons.graphic_eq_rounded
                                         : Icons.pause_rounded)
                                     : Text(
-                                        _relativeTime(entry.playedAt),
+                                        historyTimeLabel(
+                                            entry.playedAt, DateTime.now()),
                                         style: theme.textTheme.labelSmall
                                             ?.copyWith(
                                           color: colors.onSurfaceVariant,
@@ -333,13 +334,27 @@ class HistoryTabState extends State<HistoryTab> {
       ),
     );
   }
+}
 
-  String _relativeTime(DateTime t) {
-    final diff = DateTime.now().difference(t);
-    if (diff.inMinutes < 1) return "刚刚";
-    if (diff.inHours < 1) return "${diff.inMinutes} 分钟前";
-    if (diff.inDays < 1) return "${diff.inHours} 小时前";
-    if (diff.inDays < 30) return "${diff.inDays} 天前";
-    return "${t.month}-${t.day}";
+String historyTimeLabel(DateTime playedAt, DateTime now) {
+  final played = playedAt.toLocal();
+  final today = now.toLocal();
+  // Compare calendar dates independently of daylight-saving hour changes.
+  final days = DateTime.utc(today.year, today.month, today.day)
+      .difference(DateTime.utc(played.year, played.month, played.day))
+      .inDays;
+  if (days == 0) {
+    final elapsed = today.difference(played);
+    if (elapsed.inMinutes < 1) return "刚刚";
+    if (elapsed.inHours < 1) return "${elapsed.inMinutes} 分钟前";
+    return "${elapsed.inHours} 小时前";
   }
+  if (days == 1) {
+    final clock =
+        "${played.hour.toString().padLeft(2, '0')}:${played.minute.toString().padLeft(2, '0')}";
+    return "昨天 $clock";
+  }
+  if (days > 1 && days < 30) return "$days 天前";
+  final date = "${played.month}月${played.day}日";
+  return played.year == today.year ? date : "${played.year}年$date";
 }

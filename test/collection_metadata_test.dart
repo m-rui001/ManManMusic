@@ -1,5 +1,7 @@
 import "dart:convert";
 
+import "package:bobomusic/modules/history/history_tab.dart"
+    show historyTimeLabel;
 import "package:bobomusic/db/db.dart";
 import "package:bobomusic/modules/history/play_history.dart";
 import "package:bobomusic/modules/music_order/collection_subtitle.dart";
@@ -11,6 +13,14 @@ import "package:flutter_test/flutter_test.dart";
 import "package:shared_preferences/shared_preferences.dart";
 
 void main() {
+  test("历史时间按本地日期区分昨天并保留往年年份", () {
+    final now = DateTime(2026, 1, 1, 0, 10);
+    expect(historyTimeLabel(DateTime(2025, 12, 31, 23, 58), now), "昨天 23:58");
+    expect(historyTimeLabel(DateTime(2026, 1, 1, 0, 5), now), "5 分钟前");
+    expect(historyTimeLabel(DateTime(2024, 12, 31), now), "2024年12月31日");
+    expect(historyTimeLabel(DateTime(2025, 12, 30), now), "2 天前");
+  });
+
   test("合集按接口页大小加载并保留跨页顺序", () async {
     final calls = <int>[];
     final season = await loadSeasonPages((page, size) async {
@@ -149,7 +159,10 @@ void main() {
     final playedAt = DateTime.fromMillisecondsSinceEpoch(1000);
     SharedPreferences.setMockInitialValues({
       "manman_play_history": jsonEncode([
-        {"music": {"id": "invalid-time"}, "at": 9000000000000000},
+        {
+          "music": {"id": "invalid-time"},
+          "at": 9000000000000000
+        },
         null,
         {"music": {}},
         HistoryEntry(music: legacy, playedAt: playedAt, count: 4).toJson(),
