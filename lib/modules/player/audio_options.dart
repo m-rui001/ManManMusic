@@ -135,7 +135,7 @@ class _AudioDetails extends StatelessWidget {
   _TrackInfo _parse(String description) {
     var format = "";
     var bitrate = "";
-    var source = "在线播放";
+    var source = description.trim().isEmpty ? "尚未载入" : "在线播放";
     for (final part in description.split(" · ")) {
       final token = part.trim();
       if (token.isEmpty) continue;
@@ -151,9 +151,8 @@ class _AudioDetails extends StatelessWidget {
         format = token;
       }
     }
-    final kbps = int.tryParse(
-            RegExp(r"(\d+)").firstMatch(bitrate)?.group(1) ?? "") ??
-        0;
+    final kbps =
+        int.tryParse(RegExp(r"(\d+)").firstMatch(bitrate)?.group(1) ?? "") ?? 0;
     final tier = switch (format) {
       "FLAC" => "无损",
       "杜比音轨" => "杜比全景声",
@@ -170,11 +169,11 @@ class _AudioDetails extends StatelessWidget {
       bitrate: bitrate,
       source: source,
       tier: tier,
-      restricted: format == "FLAC" || format == "杜比音轨",
+      restricted: source == "在线播放" && (format == "FLAC" || format == "杜比音轨"),
       icon: switch (format) {
         "FLAC" => Icons.workspace_premium_outlined,
         "杜比音轨" => Icons.surround_sound_outlined,
-        "本地文件" => Icons.folder_outlined,
+        _ when source == "本地文件" => Icons.folder_outlined,
         _ => source == "本机缓存"
             ? Icons.offline_pin_outlined
             : Icons.graphic_eq_rounded,

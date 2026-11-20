@@ -86,6 +86,34 @@ void main() {
     expect(restoredQueueIndex([a], b, 0), -1);
   });
 
+  testWidgets("音质详情区分尚未载入、本地、缓存和在线来源", (tester) async {
+    for (final (description, source, needsAccountNote) in [
+      ("", "尚未载入", false),
+      ("本地文件", "本地文件", false),
+      ("FLAC · 约 900 kbps · 本机缓存", "本机缓存", false),
+      ("FLAC · 约 900 kbps", "在线播放", true),
+    ]) {
+      await tester.pumpWidget(ChangeNotifierProvider<PlayerModel>.value(
+        value: LayoutPlayer(description: description),
+        child: MaterialApp(
+            home: Scaffold(
+                body: Builder(
+                    builder: (context) => TextButton(
+                        onPressed: () => showAudioOptions(context),
+                        child: const Text("音质"))))),
+      ));
+      await tester.tap(find.text("音质"));
+      await tester.pumpAndSettle();
+      expect(find.text(source), findsOneWidget);
+      expect(find.textContaining("登录哔哩哔哩账号"),
+          needsAccountNote ? findsOneWidget : findsNothing);
+      if (source == "本地文件")
+        expect(find.byIcon(Icons.folder_outlined), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+    }
+  });
+
   testWidgets("横屏大字号下可以滚动查看音轨码率", (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(640, 300);
@@ -649,7 +677,12 @@ class LyricTestPlayer extends PlayerModel {
 }
 
 class LayoutPlayer extends TestPlayer {
-  LayoutPlayer({this.playing = true}) : super(const Duration(seconds: 906));
+  LayoutPlayer({this.playing = true, this.description = ""})
+      : super(const Duration(seconds: 906));
+
+  final String description;
+  @override
+  String get sourceDescription => description;
 
   final bool playing;
 
