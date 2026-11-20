@@ -71,15 +71,21 @@ class PlayerCardState extends State<PlayerCard> {
       _initCover();
       _initState();
     }));
+  }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initCover();
-      _initState();
-    });
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final current = context.watch<PlayerModel>().current;
+    if (identical(current, _artworkTrack)) return;
+    // Clear the old image before painting the new track's title.
+    _initCover();
+    _initState();
   }
 
   Future<void> _initState() async {
-    final current = Provider.of<PlayerModel>(context, listen: false).current;
+    if (!mounted) return;
+    final current = context.read<PlayerModel>().current;
     if (current == null) return;
 
     final liked = await FavSyncService.isInMyMusic(current.id);
@@ -92,11 +98,12 @@ class PlayerCardState extends State<PlayerCard> {
   Future<void> _initCover() async {
     if (!mounted) return;
     final current = context.read<PlayerModel>().current;
-    if (current == null || identical(current, _artworkTrack)) return;
+    if (identical(current, _artworkTrack)) return;
     _artworkTrack = current;
-    final image = musicArtwork(current.cover);
+    isLike = false;
+    final image = current == null ? null : musicArtwork(current.cover);
     _loadImage(image);
-    if (image != null) return;
+    if (image != null || current == null) return;
     final lookup = restoreTrackMetadata(current);
     if (lookup == null) return;
     final restored = musicArtwork((await lookup)?.cover ?? "");
