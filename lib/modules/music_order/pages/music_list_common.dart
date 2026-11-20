@@ -204,11 +204,18 @@ class MusicListCommonState extends State<MusicListCommon> {
           destructive: true,
           onPressed: () async {
             EasyLoading.show(maskType: EasyLoadingMaskType.black);
-            await db.deleteByMid(widget.tabName, musicItem.id);
-            EasyLoading.dismiss();
-
-            _loadData();
-            eventBus.fire(RefreshTabList());
+            try {
+              final removed = await db.removeFromOrder(widget.tabName, musicItem);
+              if (removed == 0) {
+                EasyLoading.showInfo("未找到要移除的曲目");
+              } else {
+                EasyLoading.dismiss();
+              }
+              if (mounted) _loadData();
+              eventBus.fire(RefreshTabList());
+            } catch (_) {
+              EasyLoading.showError("移除失败，请重试");
+            }
           },
         ),
       ],

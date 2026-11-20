@@ -220,8 +220,21 @@ abstract class BaseDatabaseHelper {
     }
   }
 
+  Future<int> removeFromOrder(String tableName, MusicItem music) async {
+    if (music.id.isNotEmpty) return deleteByMid(tableName, music.id);
+    final db = await database;
+    if (music.playId.isNotEmpty) {
+      return db.delete(tableName, where: "playId = ?", whereArgs: [music.playId]);
+    }
+    if (music.localPath.isEmpty) return 0;
+    return db.delete(tableName,
+        where: "COALESCE(mid, '') = '' AND COALESCE(playId, '') = '' AND origin = ? AND localPath = ?",
+        whereArgs: [music.origin.value, music.localPath]);
+  }
+
   /// 按歌曲 mid 精确删除（只删这一首，不会误删同名歌曲）
   Future<int> deleteByMid(String tableName, String mid) async {
+    if (mid.isEmpty) return 0;
     try {
       Database db = await database;
       return await db.delete(tableName, where: "mid =?", whereArgs: [mid]);
